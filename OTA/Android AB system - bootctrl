@@ -1,0 +1,48 @@
+# 文章目录
+
+    Achitecture
+    misc
+    bootctrl
+        module_getCurrentSlot
+        module_setActiveBootSlot
+
+# Android A/B system系列
+
+    Android A/B System概述
+    Android A/B System - Generate OTA Package
+    Android A/B system - update_engine
+
+# Achitecture
+
+在Android A/B System概述中有讲到A升B的一个例子。下面这张图是想说明两个问题：
+
+    启动的时候是如何知道要从A启动还是B启动？
+    升级的时候是如何要更新A还是B？
+
+图中有两个流程，和涉及的一些模块：
+
+模块：
+
+    bootloader：启动的早期阶段，叫preloader/lk都行
+    misc：单独的一块分区，存放启动的信息，也是今天研究的重点
+    update_verifier：当前slot启动成功，会将当前的slot设置为successful，表示这个slot是可以成功启动的
+    update_engine：Android负责升级流程的守护进程
+    bootctrl HAL：google规定的HAL，各个IC厂商有自己的底层实现，是获取misc信息的软件接口
+
+流程：
+
+    boot flow
+        get active slot：读misc的信息，从而知道当前要从slot A启动还是slot B启动
+        mark slot successful：启动成功的时候，标记当前slot为successful
+    update flow
+        trigger update and read update package
+        get current slot：获取当前slot，假设当前slot为A，那么要更新slot B；当前为B，那么要更新slot A
+        write data to another slot：更新
+        set active slot：更新完成以后，切换slot，则下次启动从更新的slot启动
+
+ ![](image/20191220162245162.png)
+
+
+
+
+ ddfff

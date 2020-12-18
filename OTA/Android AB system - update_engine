@@ -1,0 +1,222 @@
+# 文章目录
+
+  update_engine overview
+
+  trigger update_engine to start update
+
+  Action
+      InstallAction
+
+      DownloadPlanAction
+
+          ZERO/DISCARD
+          REPLACE/REPLACE_BZ/REPLACE_XZ
+          SOURCE_COPY
+          SOURCE_BSDIFF/BROTLI_BSDIFF
+
+      FilesystemVerifierAction
+
+      PostinstallRunnerAction
+
+# Android A/B System系列
+
+    Android A/B System概述
+    Android A/B system - bootctrl
+    Android A/B System -Generate OTA Package
+
+# update_engine overview
+
+update engine是A/B update的核心逻辑，这一部分代码在system/update_engine这里面。
+
+    在后台运行
+    会调用bootctrl HAL接口
+    通过update_engine.rc执行
+    不会修改partition table
+
+update_engine_client
+
+    只是为了debug，进程会获取当前升级状态
+
+update_verifier
+
+    通过update_verifier.rc执行
+    标记successful_flag，在misc分区
+
+trigger update_engine to start update
+
+升级命令：
+
+    python update_device.py --file update.zip
+
+  update.zip里面有以下几个内容，其中脚本需要的是：
+
+      payload.bin
+      payload_properties.txt
+
+  ![](image/20200104154049283.png)
+
+  通过adb，会传入升级需要的参数：
+
+    url：升级包的位置
+    offset：payload.bin在压缩包的偏移
+    size：payload_properties.txt的size
+    headerKeyValuePairs
+
+触发升级后，update engine会做两件事：
+
+    Init()
+        boot_control_ （bootctrl HAL对应的应用层对象）
+        hardware_
+        certificate_checker_
+        update_attempter_（最核心的升级逻辑）
+        prefs_（保存进度的信息，假设升级的时候突然中断，重新恢复就是从prefs获取信息）
+
+  ApplyUpdatePayload()
+
+        BuildUpdateActions()
+            InstallPlanAction
+            DownloadAction
+            FilesystemVerfierAction
+            PostinstallRunnerAction
+
+        UpdateBootFlags() 检查当前slot是否已经标记为successful状态
+            已经标记，执行CompleteUpdateBootFlags()
+            没有标记，调用MarkBootSuccessfulAsync()标记successful，再执行CompleteUpdateBootFlags()
+        StartProcessing() 执行Action列表的每个Action
+
+
+![](image/20200104154852799.png)
+
+
+## Action
+
+升级的每个阶段都是通过Action来组织的，ActionProcess用来管理Action，在BuildUpdateActions()
+已经订好了Action的执行先后顺序：
+
+    InstallAction
+    DownloadAction
+    FileSystemVerifierAction
+    PostinstallRunnerAction
+
+由下面的类图可以看出DownloadAction FileSystemVerifierAction PostinstallRunnerAction 是继承于
+InstallPlanAction ，执行完一个Action，会传递给下一个Action，install_plan。
+
+![](image/20200104161847931.png)
+
+
+Action和Action的消息通过ActionPipe传递，每个Action都有两个ActionPipe，一个out，一个in。
+
+![](image/20200104162004426.png)
+
+InstallAction
+
+InstallPlanAction比较简单，仅仅将install_plan_设置为了输出对象，传递给下一个Action
+DownloadPlanAction
+
+首先是看PerformAction()函数，它首先获取InstallPlan，对resume_payload_index_，payload_进行恢复，之后设置target_slot为
+unboot，最后开始downloading。
+![](image/20200104173240222.png)
+
+然后去恢复数据，prefs_会存储next_data_offset，找到这个地方接着transfer数据，最后执行DeltaPerformer::Write()去写入target slot。
+
+![](image/20200104173625229.png)
+
+
+下面是download_action.cc的逻辑，其核心逻辑是delta_performer.cc的Write函数。Write函数做了这么几件事：
+
+    UpdateOverallProgress()
+    ParsePayloadMetadata()
+    ParseManifestPartition()
+    OpenCurrentPartition()
+    ValidateOperationHash()
+    PerformXXXXXOperation()
+        PerformReplaceOperation()
+        PerformZeroOrDiscardOperation()
+        PerformMoveOperation()
+        PerformBsdiffOperation()
+        PerformSourceCopyOperation()
+        PerformSourceBsdiffOperation()
+        PerformPuffDiffOperation()
+
+![](image/20200104163308310.png)
+
+上面的步骤就是把payload.bin按照下面的结构分解，写到flash中。
+
+![](image/20200104163425870.png)
+
+在Android A/B System -Generate OTA Package有讲到payload.bin中的数据被组织成一个一个的operation，operation中有Type信息，
+根据Type，做不同的处理，然后写到flash中。
+
+下面来看具体不同类型的operation是如何计算成真实的数据。
+
+![](image/20200104165219824.png)
+
+下面来看具体不同类型的operation是如何计算成真实的数据。
+
+ZERO/DISCARD
+
+PerformZeroOrDiscardOperation(): ZERO/DISCARD这里比较简单，就是根据operation的每个Extent中的start_block和num_blocks信息，写入zero.data()。
+
+![](image/20200104172605341.png)
+
+REPLACE/REPLACE_BZ/REPLACE_XZ
+
+PerformReplaceOperation()：先把operation的数据取出来放进buffer，根据类型选择不同的Writer。
+
+![](image/20200104172707818.png)
+
+SOURCE_COPY
+
+PerformSourceCopyOperation()：
+
+    获取block_num和start_address放进buffer（既有source的信息，也有target的信息）
+    从source_partition读block到buffer
+    将buffer的内容写入target_partition
+    验证operation的source hash
+
+![](image/20200104172801301.png)
+
+SOURCE_BSDIFF/BROTLI_BSDIFF
+
+PerformSourceBsdiffOperation()：
+
+    获取operation的patch到buffer
+    读取source block
+    验证source hash
+    打入bspatch并写入target partition
+
+![](image/20200104172842736.png)
+
+
+还有一点，在实际操作中，可以看到log中有执行进度的更新，这些操作数更新进度是怎么计算的呢？如下图所示：
+
+For example：
+
+    Partition A: 2 operations
+    Partition B: 4 operations
+    Partition C: 6 operations
+
+那么num_total_operations_ = 2 + 4 + 6，acc_num_operations_ = {2, 6, 12}
+
+假设此时执行到了第2个操作，next_operation_num_ = 2，而2是等于acc_num_operations_[0]的，而存放操作的数组是从0开始的，也就是说，
+当next_operation_num_等于acc_num_operations_时也就是说当前分区的操作已经执行完了，应该切换到下一个分区了，
+最后根据next_operation_num_和acc_num_operations_计算出操作类型的索引，获取对应的操作类型。
+
+![](image/2020010417293022.png)
+
+## FilesystemVerifierAction
+
+FilesystemVerifierAction的作用有：
+
+    对target的所有partition做hash
+    计算出来的hash会和InstallPlan（也就是payload.bin）中的hash做验证（这个hash值也不是一次算出来，是每次读取一部分，就计算并更新一部分）
+    如果计算出来的hash，和升级包中的hash不匹配，会重新计算source partition的hash，会返回error。
+
+![](image/20200104173035313.png)
+
+## PostinstallRunnerAction
+
+PostinstallRunnerAction运行download update的postinstall脚本，并且调用bootctrl HAL的SetActiveBootSlot()去将slot切换为target，
+那下次就是从target启动了。
+
+![](image/20200104173118717.png)

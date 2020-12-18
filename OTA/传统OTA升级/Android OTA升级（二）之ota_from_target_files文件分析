@@ -1,0 +1,636 @@
+## 概要：
+
+    此部分为全包升级主要实现过程，涉及到ota_from_target_files 文件，这个也是制作全包和差分包的主要工具，接下来我们就着重分析怎么利用这个工具制作
+    full_ota_package的。
+
+
+主要流程：
+![](image/20200707194552141.png)
+
+源码分析：
+
+上节中Makefile中otapackage目标最后的cmd为：
+
+```
+$(hide) MTK_SECURITY_SW_SUPPORT=$(MTK_SECURITY_SW_SUPPORT)MKBOOTIMG=$(MKBOOTIMG) \
+
+         ./build/tools/releasetools/ota_from_target_files-v \
+
+              --block \
+
+              -p $(HOST_OUT) \
+
+              -k $(KEY_CERT_PAIR) \
+
+              $(if $(OEM_OTA_CONFIG), -o$(OEM_OTA_CONFIG)) \
+
+              $(BUILT_TARGET_FILES_PACKAGE) $@
+```
+
+所以跳到ota_from_target_files python文件中，接下来我们先看一下这个文件的作用，usage以及cmd所带的参数的意义。
+
+```
+Given a target-files zipfile, produces an OTA package that installs
+that build.  An incremental OTA is produced if -i is given, otherwise
+a full OTA is produced.
+Usage:  ota_from_target_files [flags] input_target_files output_ota_package
+  --board_config  <file>
+      Deprecated.
+  -k (--package_key) <key> Key to use to sign the package (default is
+the value of default_system_dev_certificate from the input
+target-files's META/misc_info.txt, or
+      "build/target/product/security/testkey" if that value is not
+specified).
+      For incremental OTAs, the default value is based on the source
+target-file, not the target build.
+  -i  (--incremental_from)  <file>
+      Generate an incremental OTA using the given target-files zip as
+the starting build.
+  -v  (--verify)
+      Remount and verify the checksums of the files written to the
+system and vendor (if used) partitions.  Incremental builds only.
+  -o  (--oem_settings)  <file>
+      Use the file to specify the expected OEM-specific properties
+on the OEM partition of the intended device.
+  -w  (--wipe_user_data)
+      Generate an OTA package that will wipe the user data partition
+when installed.
+  -n  (--no_prereq)
+      Omit the timestamp prereq check normally included at the top of
+the build scripts (used for developer OTA packages which
+legitimately need to go back and forth).
+  -e  (--extra_script)  <file>
+      Insert the contents of file at the end of the update script.
+  -r  (--preloader)  <file>
+      Specify 'preloader.img' to upgrade.
+  -l  (--logo)  <file>
+      Specify 'logo.img' to upgrade.
+  -u  (--uboot)  <file>
+      Specify 'uboot.img/lk.img' to upgrade.
+  -a  (--aslr_mode)  <on|off>
+      Specify whether to turn on ASLR for the package (on by default).
+  -2  (--two_step)
+      Generate a 'two-step' OTA package, where recovery is updated
+first, so that any changes made to the system partition are done
+using the new recovery (new kernel, etc.).
+  --block
+      Generate a block-based OTA if possible.  Will fall back to a
+file-based OTA if the target_files is older and doesn't support
+block-based OTAs.
+  -b  (--binary)  <file>
+      Use the given binary as the update-binary in the output package,
+instead of the binary in the build's target_files.  Use for
+development only.
+  -t  (--worker_threads) <int>
+      Specifies the number of worker-threads that will be used when
+generating patches for incremental updates (defaults to 3).
+  -f  (--special_factory_reset)
+      After upgrade, it will execute special factory reset.
+  -z  (--trustonic)  <file>
+      Specify 'mobicore.bin' to upgrade.
+```
+
+
+文件的作用如英文描述：给出一个target_file的zip包生成一个ota包，如果带–i 参数则生成差分包，否则生成full_ota_package
+
+Usage: ota_from_target_files [flags] input_target_filesoutput_ota_package
+
+–board_config
+
+
+-k :指定sign package使用的key
+
+-i : 制作差分包，后面跟差分包基础包
+
+-v：verify功能
+
+-o：指定oem厂商信息
+
+-w：清楚data区
+
+-n：是否检查时间戳信息，以便确定向前或者向后升级
+
+-e：指定额外的升级脚本
+
+-r：是否升级preloader分区
+
+-l：是否升级logo分区
+
+-u：是否升级uboot分区
+
+-a：是否打开ASLR
+
+-2：生成一个two-step ota包
+
+–block：生成一个block_base的ota包
+
+-b：指定一个update-binary存放到ota包中
+
+-t：指定线程数
+
+-f：指定是否恢复出厂设置
+
+-z：指定mobicore.bin
+
+从此处开始执行，然后跳到main函数中
+
+```
+if __name__ == '__main__':
+try:
+common.CloseInheritedPipes()
+main(sys.argv[1:])
+except common.ExternalError, e:
+print
+print "   ERROR: %s" % (e,)
+print
+sys.exit(1)
+finally:
+common.Cleanup()
+
+```
+
+下面这一段代码主要作用是解析命令行参数，除了上面已经分析的参数外，另外加上了
+
+Common.ParseOptions()接口中的参数列表，如下：
+
+```
+for o, a in opts:
+
+if o in ("-h", "--help"):
+
+Usage(docstring)
+
+sys.exit()
+
+elif o in ("-v", "--verbose"):
+
+     OPTIONS.verbose = True
+
+elif o in ("-p", "--path"):
+
+      OPTIONS.search_path = a
+
+elif o in ("--signapk_path",):
+
+      OPTIONS.signapk_path = a
+
+elif o in ("--extra_signapk_args",):
+
+     OPTIONS.extra_signapk_args = shlex.split(a)
+
+elif o in ("--java_path",):
+
+      OPTIONS.java_path = a
+
+elif o in ("--java_args",):
+
+      OPTIONS.java_args = a
+
+elif o in ("--public_key_suffix",):
+
+      OPTIONS.public_key_suffix = a
+
+elif o in ("--private_key_suffix",):
+
+      OPTIONS.private_key_suffix = a
+
+elif o in ("-s", "--device_specific"):
+
+      OPTIONS.device_specific = a
+
+elif o in ("-x", "--extra"):
+
+key, value = a.split("=", 1)
+
+OPTIONS.extras[key] = value
+
+else:
+
+if extra_option_handler is None or notextra_option_handler(o, a):
+
+assert False, "unknown option \"%s\""% (o,)
+
+```
+
+由之前Makefile的cmd来看：
+
+```
+./build/tools/releasetools/ota_from_target_files-v \
+
+              --block \
+
+              -p $(HOST_OUT) \
+
+              -k $(KEY_CERT_PAIR) \
+
+              $(if $(OEM_OTA_CONFIG), -o$(OEM_OTA_CONFIG)) \
+
+             $(BUILT_TARGET_FILES_PACKAGE) $@
+
+```
+
+此段代码执行结束后：
+
+OPTIONS.block_based = True
+
+OPTIONS.verbose = True（此处注意：-v代表verbose；–verify代表verify）
+
+OPTIONS.search_path= $(HOST_OUT) /* xxx/out/host/linux-x86 */
+
+OPTIONS.package_key = $(KEY_CERT_PAIR)
+
+args = [‘xxx-target_files-eng.xx.zip’,’xxx-ota-eng.xx.zip’]//前者是obj下的压缩包，后者是最终的ota包。
+
+如有疑惑，请自行参考getopt解析命令行参数模块代码
+
+```
+def main(argv):
+def option_handler(o, a):
+if o == "--board_config":
+pass   # deprecated
+elif o in ("-k", "--package_key"):
+      OPTIONS.package_key = a
+elif o in ("-i", "--incremental_from"):
+      OPTIONS.incremental_source = a
+elif o in ("-w", "--wipe_user_data"):
+      OPTIONS.wipe_user_data = True
+elif o in ("-n", "--no_prereq"):
+      OPTIONS.omit_prereq = True
+elif o in ("-o", "--oem_settings"):
+      OPTIONS.oem_source = a
+elif o in ("-e", "--extra_script"):
+      OPTIONS.extra_script = a
+elif o in ("-a", "--aslr_mode"):
+      if a in ("on", "On", "true", "True", "yes", "Yes"):
+        OPTIONS.aslr_mode = True
+else:
+        OPTIONS.aslr_mode = False
+elif o in ("-t", "--worker_threads"):
+if a.isdigit():
+        OPTIONS.worker_threads = int(a)
+else:
+raise ValueError("Cannot parse value %r for option %r - only "
+                         "integers are allowed." % (a, o))
+elif o in ("-f", "--special_factory_reset"):
+      OPTIONS.special_factory_reset = True
+elif o in ("-x", "--tee"):
+      OPTIONS.tee = a
+elif o in ("-z", "--trustonic"):
+      OPTIONS.trustonic = a
+elif o in ("-2", "--two_step"):
+      OPTIONS.two_step = True
+elif o in ("-r", "--preloader"):
+      OPTIONS.preloader = a
+elif o in ("-l", "--logo"):
+      OPTIONS.logo = a
+elif o in ("-u", "--uboot"):
+      OPTIONS.uboot = a
+elif o in ("-f", "--special_factory_reset"):
+      OPTIONS.special_factory_reset = True
+elif o in ("-g", "--ubifs"):
+      OPTIONS.ubifs = True
+elif o == "--no_signing":
+      OPTIONS.no_signing = True
+elif o in ("--verify"):
+      OPTIONS.verify = True
+elif o == "--block":
+      OPTIONS.block_based = True
+elif o in ("-b", "--binary"):
+      OPTIONS.updater_binary = a
+elif o in ("--no_fallback_to_full",):
+      OPTIONS.fallback_to_full = False
+else:
+return False
+return True
+
+args = common.ParseOptions(argv, __doc__,
+                             extra_opts="b:k:i:d:wfgne:r:l:u:x:z:t:a:2o:",
+                             extra_long_opts=["board_config=",
+                                              "package_key=",
+                                              "incremental_from=",
+                                              "wipe_user_data",
+                                              "special_factory_reset",
+                                              "ubifs",
+                                              "tee=",
+                                              "trustonic=",
+                                              "no_prereq",
+                                              "extra_script=",
+                                              "preloader=",
+                                              "logo=",
+                                              "uboot=",
+                                              "worker_threads=",
+                                              "aslr_mode=",
+                                              "two_step",
+                                              "no_signing",
+                                              "block",
+                                              "binary=",
+                                              "oem_settings=",
+                                              "verify",
+                                              "no_fallback_to_full",
+                                              ],
+                             extra_option_handler=option_handler)
+if os.getenv("MTK_SECURITY_SW_SUPPORT", "no")=="no":
+    OPTIONS.mtk_sec_boot_sig_tail = False
+if len(args) != 2:
+common.Usage(__doc__)
+sys.exit(1)
+
+```
+
+```
+/*此处为false*/
+if OPTIONS.extra_script is not None:
+    	OPTIONS.extra_script = open(OPTIONS.extra_script).read()
+```
+
+解压输入压缩包到一个中间文件夹，并把目录赋给OPTIONS.input_tem,同时创建一个输入压缩包的ZipFile（zipfile.py中）实例：input_zip
+
+```
+print "unzipping target target-files..."
+  OPTIONS.input_tmp, input_zip = common.UnzipTemp(args[0])
+
+```
+
+把输入压缩包的解压目录赋给OPTIONS.target_tmp。
+
+通过input_zip读取压缩包中的META/misc_info.txt文件，以及RECOVERY/RAMDISK/etc/recovery.fstab，SYSTEM/build.prop等文件，
+并把文件内容并转换成字典形式OPTIONS.info_dict，建立字典代码如下：
+
+```
+def LoadDictionaryFromLines(lines):
+
+  d = {}
+
+for line in lines:
+
+line = line.strip()
+
+if not line or line.startswith("#"):continue
+
+if "=" in line:
+
+name, value = line.split("=", 1)
+
+d[name] = value
+
+return d
+```
+
+```
+OPTIONS.target_tmp = OPTIONS.input_tmp
+  OPTIONS.info_dict = common.LoadInfoDict(input_zip)
+```
+
+
+如果OPTIONS.info_dict中存在key selinux_fc,则key对应键值为：tmpxxx/BOOT/RAMDISK/file_contexts
+
+如果冗余模式为真，则打印字典内容，此处为真。
+
+
+
+```
+# If this image was originally labelled with SELinux contexts, make sure we
+  # also apply the labels in our new image. During building, the "file_contexts"
+  # is in the out/ directory tree, but for repacking from target-files.zip it's
+  # in the root directory of the ramdisk.
+if "selinux_fc" in OPTIONS.info_dict:
+    OPTIONS.info_dict["selinux_fc"] = os.path.join(OPTIONS.input_tmp, "BOOT", "RAMDISK",
+        "file_contexts")
+
+if OPTIONS.verbose:
+print "--- target info ---"
+common.DumpInfoDict(OPTIONS.info_dict)
+
+```
+
+如果调用者利用-s/–device_specific指定了device-specific extension路径，则使用它
+
+否者使用META/releasetools.py如果此文件存在target_files压缩包中
+
+如果以上都没有，则通过查找字典中的key：‘tool_extension’，来作为device_specific
+
+
+```
+#If the caller explicitly specified the device-specific extensions
+ # path via -s/--device_specific, use that.  Otherwise, use
+  # META/releasetools.py if it is present inthe target target_files.
+ # Otherwise, take the path of the file from 'tool_extensions' in the
+  # info dict and look for that in the localfilesystem, relative to
+  # the current directory.
+
+ifOPTIONS.device_specific is None:
+    from_input =os.path.join(OPTIONS.input_tmp, "META", "releasetools.py")
+ifos.path.exists(from_input):
+print"(using device-specific extensions from target_files)"
+     OPTIONS.device_specific = from_input
+else:
+      OPTIONS.device_specific = OPTIONS.info_dict.get("tool_extensions",None)
+
+ifOPTIONS.device_specific is not None:
+OPTIONS.device_specific =os.path.abspath(OPTIONS.device_specific)
+
+```
+
+S1：此处OPTIONS.mtk_sec_boot_sig_tail为真，读取boot.sig ,recovery.sig内容
+
+```
+while True:
+if OPTIONS.mtk_sec_boot_sig_tail:
+      #After WriteIncrementalOTAPackage, input_zip seems scramble, so read *.sig at first
+      boot_sig = input_zip.read("META/boot.sig")
+      recovery_sig = input_zip.read("META/recovery.sig")
+```
+
+此处为false，所以走else语句：
+创建一个temp_zip_file临时文件夹的_TemporaryFileWrapper实例
+
+然后创建一个zipfile实例output_zip，以temp_zip_file为入参。其实就是对1中的临时文件进行一个zipfile实例化，最后可以利用zipfile中的属性
+方法对这个文件进行操作
+
+```
+if OPTIONS.no_signing:
+if os.path.exists(args[1]): os.unlink(args[1])
+      output_zip = zipfile.ZipFile(args[1], "w", compression=zipfile.ZIP_DEFLATED)
+else:
+      temp_zip_file = tempfile.NamedTemporaryFile()
+      output_zip = zipfile.ZipFile(temp_zip_file, "w",
+compression=zipfile.ZIP_DEFLATED)
+
+```
+判断是否带-i参数，有则进行差分包制作，无则进行全包制作. 此处没有, 所以走if语句为真，然后跳到WriteFullOTAPackage(input_zip,output_zip)中执行，
+可参考后文详细分析
+
+```
+if OPTIONS.incremental_source is None:
+WriteFullOTAPackage(input_zip,output_zip)
+ifOPTIONS.package_key is None:
+        OPTIONS.package_key =OPTIONS.info_dict.get(
+            "default_system_dev_certificate",
+           "build/target/product/security/testkey")
+ifnot OPTIONS.mtk_sec_boot_sig_tail:
+break
+else:
+print"unzipping source target-files..."
+      OPTIONS.source_tmp, source_zip =common.UnzipTemp(OPTIONS.incremental_source)
+      OPTIONS.target_info_dict =OPTIONS.info_dict
+      OPTIONS.source_info_dict =common.LoadInfoDict(source_zip)
+if"selinux_fc" in OPTIONS.source_info_dict:
+       OPTIONS.source_info_dict["selinux_fc"] =os.path.join(OPTIONS.source_tmp, "BOOT", "RAMDISK",
+                                                             "file_contexts")
+ifOPTIONS.package_key is None:
+       OPTIONS.package_key = OPTIONS.source_info_dict.get(
+           "default_system_dev_certificate",
+            "build/target/product/security/testkey")
+ifOPTIONS.verbose:
+print"--- source info ---"
+common.DumpInfoDict(OPTIONS.source_info_dict)
+try:
+WriteIncrementalOTAPackage(input_zip,source_zip, output_zip)
+ifnot OPTIONS.mtk_sec_boot_sig_tail:
+break
+exceptValueError:
+ifnot OPTIONS.fallback_to_full: raise
+print"--- failed to build incremental; falling back to full ---"
+        OPTIONS.incremental_source = None
+        output_zip.close()
+
+
+```
+
+
+下面这几步是判断是否进行preloader，logo，uboot，tee等分区进行升级，如不需要，则忽略
+```
+#  if OPTIONS.preloader is not None or OPTIONS.uboot is not None or OPTIONS.logo is not None:
+#    script.AppendExtra('assert(run_program(\"/system/bin/dd\", \"if=/dev/zero\", \"of=/proc/driver/mtd_writeable\", \"bs=3\", \"count=1\"));')
+
+if OPTIONS.logo is not None:
+    logo_img = open(OPTIONS.logo).read()
+common.ZipWriteStr(output_zip, "logo.img", logo_img)
+script.WriteRawImage2("logo", "logo.img")
+
+if OPTIONS.preloader is not None:
+    preloader_img = open(OPTIONS.preloader).read()
+common.ZipWriteStr(output_zip, "preloader.img", preloader_img)
+script.WriteRawImage2("preloader", "preloader.img")
+
+if OPTIONS.uboot is not None:
+    uboot_img = open(OPTIONS.uboot).read()
+common.ZipWriteStr(output_zip, "uboot.img", uboot_img)
+script.WriteRawImage2("uboot", "uboot.img")
+
+
+  #tonykuo start
+if OPTIONS.tee is not None:
+    tee_img = open(OPTIONS.tee).read()
+common.ZipWriteStr(output_zip, "tee.img", tee_img)
+script.WriteRawImage2("tee1", "tee.img")
+  #tonykuo end
+
+  #koshi start
+if OPTIONS.trustonic is not None:
+    trustonic_img = open(OPTIONS.trustonic).read()
+common.ZipWriteStr(output_zip, "mobicore.bin", trustonic_img)
+script.WriteRawImage2("tee
+```
+
+
+制作ota包命令行中是否带有"-f","–special_factory_reset"参数，没有则不执行下面语句，此处为False
+
+    #wschen
+    if OPTIONS.special_factory_reset:
+    script.AppendExtra('special_factory_reset();')
+
+
+制作ota包命令行中是否带有"-w", "–wipe_user_data"参数，没有则不执行下面语句：
+
+清楚data分区。此处为False
+
+    if OPTIONS.wipe_user_data:
+    script.ShowProgress(0.1, 10)
+    script.FormatPartition("/data")
+
+  writeFullOTAPackage函数运行完毕
+  接下来再继续跳到main函数剩余部分接着执行
+  ```
+  if OPTIONS.incremental_source is None:
+WriteFullOTAPackage(input_zip, output_zip)
+if OPTIONS.package_key is None:
+        OPTIONS.package_key = OPTIONS.info_dict.get(
+            "default_system_dev_certificate",
+            "build/target/product/security/testkey")
+if not OPTIONS.mtk_sec_boot_sig_tail:
+break
+else:
+print "unzipping source target-files..."
+      OPTIONS.source_tmp, source_zip = common.UnzipTemp(OPTIONS.incremental_source)
+      OPTIONS.target_info_dict = OPTIONS.info_dict
+      OPTIONS.source_info_dict = common.LoadInfoDict(source_zip)
+if "selinux_fc" in OPTIONS.source_info_dict:
+        OPTIONS.source_info_dict["selinux_fc"] = os.path.join(OPTIONS.source_tmp, "BOOT", "RAMDISK",
+                                                              "file_contexts")
+if OPTIONS.package_key is None:
+        OPTIONS.package_key = OPTIONS.source_info_dict.get(
+            "default_system_dev_certificate",
+            "build/target/product/security/testkey")
+if OPTIONS.verbose:
+print "--- source info ---"
+common.DumpInfoDict(OPTIONS.source_info_dict)
+try:
+WriteIncrementalOTAPackage(input_zip, source_zip, output_zip)
+if not OPTIONS.mtk_sec_boot_sig_tail:
+break
+except ValueError:
+if not OPTIONS.fallback_to_full: raise
+print "--- failed to build incremental; falling back to full ---"
+        OPTIONS.incremental_source = None
+        output_zip.close()
+
+  ```
+
+此处为真，接下来在临时升级文件包中写入sig/boot.sig; sig/recovery.sig文件
+
+其中源data（boot_sig,recovery_sig）为上文S1步骤中的内容
+
+```
+if OPTIONS.mtk_sec_boot_sig_tail:
+common.ZipWriteStr(output_zip, "sig/boot.sig", boot_sig)
+common.ZipWriteStr(output_zip, "sig/recovery.sig", recovery_sig)
+break;
+  output_zip.close()
+
+```
+
+对中间升级文件包进行前签名，生成最终的升级包
+
+1.running: openssl pkcs8 -inbuild/target/product/security/testkey.pk8 -inform DER -nocrypt
+
+2.running: java -Xmx2048m -jarout/host/linux-x86/framework/signapk.jar -wbuild/target/product/security/testkey.x509.pembuild/target/product/security/testkey.pk8 /tmp/tmpBXjz5Z out/target/product/xxxx/xxxx-ota-eng.wan.zip
+
+最终生成升级包
+
+    第2步中会调用build/tools/signapk/signapk.java文件，生成
+
+
+META-INF/MANIFEST.MF,META-INF/CERT.RSA,META-INF/CERT.SF,
+
+META-INF/com/android/otacert文件
+
+
+```
+if not OPTIONS.no_signing:
+SignOutput(temp_zip_file.name, args[1])
+    temp_zip_file.close()
+
+print "done."
+
+```
+
+最终压缩包中的文件列表如下：
+
+![](image/20200707200432824.png)
+
+着重看下META-INF/com/google/android下的两个升级文件：
+
+Update-binary：升级工具，可执行文件
+
+Updater-script:升级脚本.

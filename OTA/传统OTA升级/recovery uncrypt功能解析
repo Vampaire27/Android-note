@@ -1,0 +1,627 @@
+
+
+我们通常对一个文件可以直接读写操作，或者普通的分区(没有文件系统)也是一样，直接对/dev/block/boot直接读写，就可以获取里面的数据内容了。
+
+当我们在ota升级的时候，把升级包下载到cache/data分区，然后进入recovery系统后，把cache/data分区mount之后，即可从对应的分区获取zip升级包升级了，
+
+前提是我们需要挂载对应的分区cache或者data，这样才能给读升级包升级，如果不挂载分区，我们能给直接从/dev/block/data获取升级包升级吗？
+
+这就是我们今天讨论的主题，不挂载data分区，如何从/dev/block/data获取升级包升级， 这个依赖bootable/recovery/uncrypt/uncrypt.cpp下面的代码实现了，
+
+我们通过获取update.zip升级包， 是如何在/dev/block/data存储的。 我们知道了update.zip如何在/dev/block/data存储的，
+
+那么就可以直接从/dev/block/data读取升级包升级了。下面对uncrypt.cpp源码分析：
+
+    static constexpr int WINDOW_SIZE = 5;
+    static constexpr int FIBMAP_RETRY_LIMIT = 3;
+
+    // uncrypt provides three services: SETUP_BCB, CLEAR_BCB and UNCRYPT.
+    //
+    // SETUP_BCB and CLEAR_BCB services use socket communication and do not rely
+    // on /cache partitions. They will handle requests to reboot into recovery
+    // (for applying updates for non-A/B devices, or factory resets for all
+    // devices).
+    //
+    // UNCRYPT service still needs files on /cache partition (UNCRYPT_PATH_FILE
+    // and CACHE_BLOCK_MAP). It will be working (and needed) only for non-A/B
+    // devices, on which /cache partitions always exist.
+
+    static const std::string CACHE_BLOCK_MAP = "/cache/recovery/block.map";
+    static const std::string UNCRYPT_PATH_FILE = "/cache/recovery/uncrypt_file";
+    static const std::string UNCRYPT_STATUS = "/cache/recovery/uncrypt_status";
+    static const std::string UNCRYPT_SOCKET = "uncrypt";
+
+    WINDOW_SIZE = 5; 每次当有5个block size大小的数据，就写一次。
+
+    FIBMAP_RETRY_LIMIT = 3;  调用 ioctl(fd, FIBMAP, block) 尝试的次数。
+
+    CACHE_BLOCK_MAP = "/cache/recovery/block.map"  关于升级包的存储信息及稀疏块列表的描述文件。
+
+    UNCRYPT_PATH_FILE = "/cache/recovery/uncrypt_file";  存储原始升级包的路径。
+
+    UNCRYPT_STATUS = "/cache/recovery/uncrypt_status";  对升级包uncrypt操作的状态结果。
+
+    UNCRYPT_SOCKET = "uncrypt";    使用 /dev/socket/uncrypt 通信
+
+        static int write_at_offset(unsigned char* buffer, size_t size, int wfd, off64_t offset) {
+            if (TEMP_FAILURE_RETRY(lseek64(wfd, offset, SEEK_SET)) == -1) {
+                PLOG(ERROR) << "error seeking to offset " << offset;
+                return -1;
+            }
+            if (!android::base::WriteFully(wfd, buffer, size)) {
+                PLOG(ERROR) << "error writing offset " << offset;
+                return -1;
+            }
+            return 0;
+        }
+
+写长度为size的buffer数据到wfd偏移offset地方
+
+    static void add_block_to_ranges(std::vector<int>& ranges, int new_block) {
+        if (!ranges.empty() && new_block == ranges.back()) {
+            // If the new block comes immediately after the current range,
+            // all we have to do is extend the current range.
+            ++ranges.back();
+        } else {
+            // We need to start a new range.
+            ranges.push_back(new_block);
+            ranges.push_back(new_block + 1);
+        }
+    }
+
+生成升级包的block块的稀疏列表， 比如1001 1004， 如果new block为1004， 则稀疏范围为1001 1005， 如果new block非1004，比如为1120， 则稀疏列表为 1001 1004， 1120 1121。
+
+1001 1004表示为1001 1002 1003三个block，不包含1004
+
+    static struct fstab* read_fstab() {
+        fstab = fs_mgr_read_fstab_default();
+        if (!fstab) {
+            LOG(ERROR) << "failed to read default fstab";
+            return NULL;
+        }
+
+        return fstab;
+    }
+
+读取分区挂载表
+
+    static const char* find_block_device(const char* path, bool* encryptable, bool* encrypted, bool *f2fs_fs) {
+        // Look for a volume whose mount point is the prefix of path and
+        // return its block device.  Set encrypted if it's currently
+        // encrypted.
+
+        // ensure f2fs_fs is set to 0 first.
+        if (f2fs_fs)
+            *f2fs_fs = false;
+        for (int i = 0; i < fstab->num_entries; ++i) {
+            struct fstab_rec* v = &fstab->recs[i];
+            if (!v->mount_point) {
+                continue;
+            }
+            int len = strlen(v->mount_point);
+            if (strncmp(path, v->mount_point, len) == 0 &&
+                (path[len] == '/' || path[len] == 0)) {
+                *encrypted = false;
+                *encryptable = false;
+                if (fs_mgr_is_encryptable(v) || fs_mgr_is_file_encrypted(v)) {
+                    *encryptable = true;
+                    if (android::base::GetProperty("ro.crypto.state", "") == "encrypted") {
+                        *encrypted = true;
+                    }
+                }
+                if (f2fs_fs && strcmp(v->fs_type, "f2fs") == 0)
+                    *f2fs_fs = true;
+                return v->blk_device;
+            }
+        }
+
+        return NULL;
+    }
+
+通过升级包路径（/data/xxx_ota_20180823.zip）获取升级包对应的device（/dev/block/data）,并且通过解析fstab判断（data）分区是否加密，*encrypted = true; 是否支持加密， *encryptable = true;
+
+    static bool write_status_to_socket(int status, int socket) {
+        // If socket equals -1, uncrypt is in debug mode without socket communication.
+        // Skip writing and return success.
+        if (socket == -1) {
+            return true;
+        }
+        int status_out = htonl(status);
+        return android::base::WriteFully(socket, &status_out, sizeof(int));
+    }
+
+通过socket保存uncrypt status
+
+    // Parse uncrypt_file to find the update package name.
+    static bool find_uncrypt_package(const std::string& uncrypt_path_file, std::string* package_name) {
+        CHECK(package_name != nullptr);
+        std::string uncrypt_path;
+        if (!android::base::ReadFileToString(uncrypt_path_file, &uncrypt_path)) {
+            PLOG(ERROR) << "failed to open \"" << uncrypt_path_file << "\"";
+            return false;
+        }
+
+        // Remove the trailing '\n' if present.
+        *package_name = android::base::Trim(uncrypt_path);
+        return true;
+    }
+
+通过读取/cache/recovery/uncrypt_file 获取原始升级包名字
+
+    static int retry_fibmap(const int fd, const char* name, int* block, const int head_block) {
+        CHECK(block != nullptr);
+        for (size_t i = 0; i < FIBMAP_RETRY_LIMIT; i++) {
+            if (fsync(fd) == -1) {
+                PLOG(ERROR) << "failed to fsync \"" << name << "\"";
+                return kUncryptFileSyncError;
+            }
+            if (ioctl(fd, FIBMAP, block) != 0) {
+                PLOG(ERROR) << "failed to find block " << head_block;
+                return kUncryptIoctlError;
+            }
+            if (*block != 0) {
+                return kUncryptNoError;
+            }
+            sleep(1);
+        }
+        LOG(ERROR) << "fibmap of " << head_block << "always returns 0";
+        return kUncryptIoctlError;
+    }
+
+通过 ioctl(fd, FIBMAP, block) 调用，获取升级包的每个block的数据，在 /dev/block/data的实际存储数据的block对应的索引。尝试三次后返回失败。
+
+    static int produce_block_map(const char* path, const char* map_file, const char* blk_dev,
+                                 bool encrypted, bool f2fs_fs, int socket) {
+        std::string err;
+        if (!android::base::RemoveFileIfExists(map_file, &err)) {
+            LOG(ERROR) << "failed to remove the existing map file " << map_file << ": " << err;
+            return kUncryptFileRemoveError;
+        }
+        std::string tmp_map_file = std::string(map_file) + ".tmp";
+        android::base::unique_fd mapfd(open(tmp_map_file.c_str(),
+                                            O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR));
+        if (mapfd == -1) {
+            PLOG(ERROR) << "failed to open " << tmp_map_file;
+            return kUncryptFileOpenError;
+        }
+
+        // Make sure we can write to the socket.
+        if (!write_status_to_socket(0, socket)) {
+            LOG(ERROR) << "failed to write to socket " << socket;
+            return kUncryptSocketWriteError;
+        }
+
+        struct stat sb;
+        if (stat(path, &sb) != 0) {
+            LOG(ERROR) << "failed to stat " << path;
+            return kUncryptFileStatError;
+        }
+
+        LOG(INFO) << " block size: " << sb.st_blksize << " bytes";
+
+        int blocks = ((sb.st_size-1) / sb.st_blksize) + 1;
+        LOG(INFO) << "  file size: " << sb.st_size << " bytes, " << blocks << " blocks";
+
+        std::vector<int> ranges;
+
+        std::string s = android::base::StringPrintf("%s\n%" PRId64 " %" PRId64 "\n",
+                           blk_dev, static_cast<int64_t>(sb.st_size),
+                           static_cast<int64_t>(sb.st_blksize));
+        if (!android::base::WriteStringToFd(s, mapfd)) {
+            PLOG(ERROR) << "failed to write " << tmp_map_file;
+            return kUncryptWriteError;
+        }
+
+        std::vector<std::vector<unsigned char>> buffers;
+        if (encrypted) {
+            buffers.resize(WINDOW_SIZE, std::vector<unsigned char>(sb.st_blksize));
+        }
+        int head_block = 0;
+        int head = 0, tail = 0;
+
+        android::base::unique_fd fd(open(path, O_RDONLY));
+        if (fd == -1) {
+            PLOG(ERROR) << "failed to open " << path << " for reading";
+            return kUncryptFileOpenError;
+        }
+
+        android::base::unique_fd wfd;
+        if (encrypted) {
+            wfd.reset(open(blk_dev, O_WRONLY));
+            if (wfd == -1) {
+                PLOG(ERROR) << "failed to open " << blk_dev << " for writing";
+                return kUncryptBlockOpenError;
+            }
+        }
+
+    #ifndef F2FS_IOC_SET_DONTMOVE
+    #ifndef F2FS_IOCTL_MAGIC
+    #define F2FS_IOCTL_MAGIC		0xf5
+    #endif
+    #define F2FS_IOC_SET_DONTMOVE		_IO(F2FS_IOCTL_MAGIC, 13)
+    #endif
+        if (f2fs_fs && ioctl(fd, F2FS_IOC_SET_DONTMOVE) < 0) {
+            PLOG(ERROR) << "Failed to set non-movable file for f2fs: " << path << " on " << blk_dev;
+            return kUncryptIoctlError;
+        }
+
+        off64_t pos = 0;
+        int last_progress = 0;
+        while (pos < sb.st_size) {
+            // Update the status file, progress must be between [0, 99].
+            int progress = static_cast<int>(100 * (double(pos) / double(sb.st_size)));
+            if (progress > last_progress) {
+                last_progress = progress;
+                write_status_to_socket(progress, socket);
+            }
+
+            if ((tail+1) % WINDOW_SIZE == head) {
+                // write out head buffer
+                int block = head_block;
+                if (ioctl(fd, FIBMAP, &block) != 0) {
+                    PLOG(ERROR) << "failed to find block " << head_block;
+                    return kUncryptIoctlError;
+                }
+
+                if (block == 0) {
+                    LOG(ERROR) << "failed to find block " << head_block << ", retrying";
+                    int error = retry_fibmap(fd, path, &block, head_block);
+                    if (error != kUncryptNoError) {
+                        return error;
+                    }
+                }
+
+                add_block_to_ranges(ranges, block);
+                if (encrypted) {
+                    if (write_at_offset(buffers[head].data(), sb.st_blksize, wfd,
+                                        static_cast<off64_t>(sb.st_blksize) * block) != 0) {
+                        return kUncryptWriteError;
+                    }
+                }
+                head = (head + 1) % WINDOW_SIZE;
+                ++head_block;
+            }
+
+            // read next block to tail
+            if (encrypted) {
+                size_t to_read = static_cast<size_t>(
+                        std::min(static_cast<off64_t>(sb.st_blksize), sb.st_size - pos));
+                if (!android::base::ReadFully(fd, buffers[tail].data(), to_read)) {
+                    PLOG(ERROR) << "failed to read " << path;
+                    return kUncryptReadError;
+                }
+                pos += to_read;
+            } else {
+                // If we're not encrypting; we don't need to actually read
+                // anything, just skip pos forward as if we'd read a
+                // block.
+                pos += sb.st_blksize;
+            }
+            tail = (tail+1) % WINDOW_SIZE;
+        }
+
+        while (head != tail) {
+            // write out head buffer
+            int block = head_block;
+            if (ioctl(fd, FIBMAP, &block) != 0) {
+                PLOG(ERROR) << "failed to find block " << head_block;
+                return kUncryptIoctlError;
+            }
+
+            if (block == 0) {
+                LOG(ERROR) << "failed to find block " << head_block << ", retrying";
+                int error = retry_fibmap(fd, path, &block, head_block);
+                if (error != kUncryptNoError) {
+                    return error;
+                }
+            }
+
+            add_block_to_ranges(ranges, block);
+            if (encrypted) {
+                if (write_at_offset(buffers[head].data(), sb.st_blksize, wfd,
+                                    static_cast<off64_t>(sb.st_blksize) * block) != 0) {
+                    return kUncryptWriteError;
+                }
+            }
+            head = (head + 1) % WINDOW_SIZE;
+            ++head_block;
+        }
+
+        if (!android::base::WriteStringToFd(
+                android::base::StringPrintf("%zu\n", ranges.size() / 2), mapfd)) {
+            PLOG(ERROR) << "failed to write " << tmp_map_file;
+            return kUncryptWriteError;
+        }
+        for (size_t i = 0; i < ranges.size(); i += 2) {
+            if (!android::base::WriteStringToFd(
+                    android::base::StringPrintf("%d %d\n", ranges[i], ranges[i+1]), mapfd)) {
+                PLOG(ERROR) << "failed to write " << tmp_map_file;
+                return kUncryptWriteError;
+            }
+        }
+
+        if (fsync(mapfd) == -1) {
+            PLOG(ERROR) << "failed to fsync \"" << tmp_map_file << "\"";
+            return kUncryptFileSyncError;
+        }
+        if (close(mapfd.release()) == -1) {
+            PLOG(ERROR) << "failed to close " << tmp_map_file;
+            return kUncryptFileCloseError;
+        }
+
+        if (encrypted) {
+            if (fsync(wfd) == -1) {
+                PLOG(ERROR) << "failed to fsync \"" << blk_dev << "\"";
+                return kUncryptFileSyncError;
+            }
+            if (close(wfd.release()) == -1) {
+                PLOG(ERROR) << "failed to close " << blk_dev;
+                return kUncryptFileCloseError;
+            }
+        }
+
+        if (rename(tmp_map_file.c_str(), map_file) == -1) {
+            PLOG(ERROR) << "failed to rename " << tmp_map_file << " to " << map_file;
+            return kUncryptFileRenameError;
+        }
+        // Sync dir to make rename() result written to disk.
+        std::string file_name = map_file;
+        std::string dir_name = dirname(&file_name[0]);
+        android::base::unique_fd dfd(open(dir_name.c_str(), O_RDONLY | O_DIRECTORY));
+        if (dfd == -1) {
+            PLOG(ERROR) << "failed to open dir " << dir_name;
+            return kUncryptFileOpenError;
+        }
+        if (fsync(dfd) == -1) {
+            PLOG(ERROR) << "failed to fsync " << dir_name;
+            return kUncryptFileSyncError;
+        }
+        if (close(dfd.release()) == -1) {
+            PLOG(ERROR) << "failed to close " << dir_name;
+            return kUncryptFileCloseError;
+        }
+        return 0;
+    }
+
+这个是最核心的函数了，主要就是通过这个函数来完成稀疏列表的生成，我们先看下函数的参数：
+
+const char* path：  升级包路径，eg：/data/xxxx.zip
+
+const char* map_file： map文件， eg：/cache/recovery/block.map
+
+const char* blk_dev:    device设备， eg： /dev/block/data
+
+bool encrypted:  是否加密
+
+bool f2fs_fs： 是否是f2fs
+
+int socket： socket句柄
+
+把升级包/data/xxxx.zip生成稀疏的描述文件，保存在/cache/recovery/block.map， 即本函数的目的。
+
+函数代码比较多，从上至下，主要的功能如下：
+
+（1）删除/cache/recovery/block.map, 新建/cache/recovery/block.map.tmp文件
+
+（2）确认对socket句柄对应的/dev/socket/uncrypt 有写的权限
+
+（3）确认升级包存在
+
+（4）block.map第一行保存为：/dev/block/data
+
+                          第二行保存为：352268727 4096    （升级包大小， block大小）
+
+（5）申请 5个block size大小的buffer空间。
+
+（6）打开升级包（/data/xxxx.zip），句柄为fd, 打开device /dev/block/data,句柄为wfd。
+
+（7）循环按照block size大小，通过偏移指定的block，获取每个block数据在device的实际block索引，保存升级包的实际存储block的稀疏列表。
+
+   如果data分区是加密的，那么每次获取每个block实际索引时，读取解密后的block数据到buffer， 每当有5个block数据时，然后把buffer数据写到实际的对应的索引block里。
+
+   这样实际索引的block里存储的就是解密后的数据。
+
+（8）最后把不足5个block数据的buffer写到对应的实际的block中去，这样稀疏列表包含的block中保存的就是解密后的升级包数据。
+
+（9）把稀疏列表写到/cache/recovery/block.map.tmp
+
+（10）关闭相关所有的句柄，/cache/recovery/block.map.tmp重名为/cache/recovery/block.map，fsync数据同步到磁盘。
+
+    static int uncrypt(const char* input_path, const char* map_file, const int socket) {
+        LOG(INFO) << "update package is \"" << input_path << "\"";
+
+        // Turn the name of the file we're supposed to convert into an absolute path, so we can find
+        // what filesystem it's on.
+        char path[PATH_MAX+1];
+        if (realpath(input_path, path) == nullptr) {
+            PLOG(ERROR) << "failed to convert \"" << input_path << "\" to absolute path";
+            return kUncryptRealpathFindError;
+        }
+
+        bool encryptable;
+        bool encrypted;
+        bool f2fs_fs;
+        const char* blk_dev = find_block_device(path, &encryptable, &encrypted, &f2fs_fs);
+        if (blk_dev == nullptr) {
+            LOG(ERROR) << "failed to find block device for " << path;
+            return kUncryptBlockDeviceFindError;
+        }
+
+        // If the filesystem it's on isn't encrypted, we only produce the
+        // block map, we don't rewrite the file contents (it would be
+        // pointless to do so).
+        LOG(INFO) << "encryptable: " << (encryptable ? "yes" : "no");
+        LOG(INFO) << "  encrypted: " << (encrypted ? "yes" : "no");
+
+        // Recovery supports installing packages from 3 paths: /cache,
+        // /data, and /sdcard.  (On a particular device, other locations
+        // may work, but those are three we actually expect.)
+        //
+        // On /data we want to convert the file to a block map so that we
+        // can read the package without mounting the partition.  On /cache
+        // and /sdcard we leave the file alone.
+        if (strncmp(path, "/data/", 6) == 0) {
+            LOG(INFO) << "writing block map " << map_file;
+            return produce_block_map(path, map_file, blk_dev, encrypted, f2fs_fs, socket);
+        }
+
+        return 0;
+    }
+
+uncrypt的函数接口:
+
+ （1）获取升级包的绝对路径
+
+（2）通过升级包路径，获取升级包存储的device（/dev/block/data）
+
+（3）判断路径，如果存储在/data 分区，则调用produce_block_map函数生成block.map
+
+    static void log_uncrypt_error_code(UncryptErrorCode error_code) {
+        if (!android::base::WriteStringToFile(android::base::StringPrintf(
+                "uncrypt_error: %d\n", error_code), UNCRYPT_STATUS)) {
+            PLOG(WARNING) << "failed to write to " << UNCRYPT_STATUS;
+        }
+    }
+
+把uncrypt的错误code写到/cache/recovery/uncrypt_status
+
+    static bool uncrypt_wrapper(const char* input_path, const char* map_file, const int socket) {
+        // Initialize the uncrypt error to kUncryptErrorPlaceholder.
+        log_uncrypt_error_code(kUncryptErrorPlaceholder);
+
+        std::string package;
+        if (input_path == nullptr) {
+            if (!find_uncrypt_package(UNCRYPT_PATH_FILE, &package)) {
+                write_status_to_socket(-1, socket);
+                // Overwrite the error message.
+                log_uncrypt_error_code(kUncryptPackageMissingError);
+                return false;
+            }
+            input_path = package.c_str();
+        }
+        CHECK(map_file != nullptr);
+
+        auto start = std::chrono::system_clock::now();
+        int status = uncrypt(input_path, map_file, socket);
+        std::chrono::duration<double> duration = std::chrono::system_clock::now() - start;
+        int count = static_cast<int>(duration.count());
+
+        std::string uncrypt_message = android::base::StringPrintf("uncrypt_time: %d\n", count);
+        if (status != 0) {
+            // Log the time cost and error code if uncrypt fails.
+            uncrypt_message += android::base::StringPrintf("uncrypt_error: %d\n", status);
+            if (!android::base::WriteStringToFile(uncrypt_message, UNCRYPT_STATUS)) {
+                PLOG(WARNING) << "failed to write to " << UNCRYPT_STATUS;
+            }
+
+            write_status_to_socket(-1, socket);
+            return false;
+        }
+
+        if (!android::base::WriteStringToFile(uncrypt_message, UNCRYPT_STATUS)) {
+            PLOG(WARNING) << "failed to write to " << UNCRYPT_STATUS;
+        }
+
+        write_status_to_socket(100, socket);
+
+        return true;
+    }
+
+uncrypt功能的入口函数， 根据 input_path 指定路径的升级包（如果input_path为空， 读取/cache/recovery/uncrypt_file），生成map_file文件。
+
+    static bool clear_bcb(const int socket) {
+        std::string err;
+        if (!clear_bootloader_message(&err)) {
+            LOG(ERROR) << "failed to clear bootloader message: " << err;
+            write_status_to_socket(-1, socket);
+            return false;
+        }
+        write_status_to_socket(100, socket);
+        return true;
+    }
+
+    static bool setup_bcb(const int socket) {
+        // c5. receive message length
+        int length;
+        if (!android::base::ReadFully(socket, &length, 4)) {
+            PLOG(ERROR) << "failed to read the length";
+            return false;
+        }
+        length = ntohl(length);
+
+        // c7. receive message
+        std::string content;
+        content.resize(length);
+        if (!android::base::ReadFully(socket, &content[0], length)) {
+            PLOG(ERROR) << "failed to read the message";
+            return false;
+        }
+        LOG(INFO) << "  received command: [" << content << "] (" << content.size() << ")";
+        std::vector<std::string> options = android::base::Split(content, "\n");
+        std::string wipe_package;
+        for (auto& option : options) {
+            if (android::base::StartsWith(option, "--wipe_package=")) {
+                std::string path = option.substr(strlen("--wipe_package="));
+                if (!android::base::ReadFileToString(path, &wipe_package)) {
+                    PLOG(ERROR) << "failed to read " << path;
+                    return false;
+                }
+                option = android::base::StringPrintf("--wipe_package_size=%zu", wipe_package.size());
+            }
+        }
+
+        // c8. setup the bcb command
+        std::string err;
+        if (!write_bootloader_message(options, &err)) {
+            LOG(ERROR) << "failed to set bootloader message: " << err;
+            write_status_to_socket(-1, socket);
+            return false;
+        }
+        if (!wipe_package.empty() && !write_wipe_package(wipe_package, &err)) {
+            PLOG(ERROR) << "failed to set wipe package: " << err;
+            write_status_to_socket(-1, socket);
+            return false;
+        }
+        // c10. send "100" status
+        write_status_to_socket(100, socket);
+        return true;
+    }
+
+uncrypt --clear-bcb  清除bcb数据
+
+uncrypt --setup-bcb 设置bcb数据
+
+    static void usage(const char* exename) {
+        fprintf(stderr, "Usage of %s:\n", exename);
+        fprintf(stderr, "%s [<package_path> <map_file>]  Uncrypt ota package.\n", exename);
+        fprintf(stderr, "%s --clear-bcb  Clear BCB data in misc partition.\n", exename);
+        fprintf(stderr, "%s --setup-bcb  Setup BCB data by command file.\n", exename);
+    }
+
+    int main(int argc, char** argv) {
+
+    ......
+
+    }
+
+usage 与 main 函数就不再解释了，没啥好解释的了，到此uncrypt.cpp所有的功能函数都解释了。
+
+
+
+我们使用uncrypt生成一个block.map试试
+
+    uncrypt /data/ota.zip /cache/recovery/block.map
+
+    console:/ # cat /cache/recovery/block.map
+    /dev/block/data
+    352268727 4096
+    7
+    1098851 1098867
+    38064 38080
+    38112 38144
+    38208 38400
+    43520 63744
+    65536 98304
+    100352 133108
+
+即把/data/ota.zip 生成了 /cache/recovery/block.map文件， 通过/cache/recovery/block.map中的block稀疏描述，就可以获取升级包升级了。

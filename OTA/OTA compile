@@ -1,0 +1,68 @@
+1、首先高通平台的编译流程与android原生态的编译流程一样，需要经历以下几步：
+
+   a. source build/envsetup.sh;
+
+   b. lunch 选择项目
+
+   c. make -j24
+
+    编译完之后
+
+   4.make otapackage
+
+   5. mkdir OTA
+
+   然后进行烧录，把out\target\product\msm8909\obj\PACKAGING\target_files_intermediates目录下的msm8909-target_files-eng.zpeng.zip拷贝到OTA目录下，可以命名为msm8909-target_files-eng.zpeng_A.zip,
+
+  6. 然后进行一下修改，直接进行make otapackage，生成一个新包再out\target\product\msm8909\obj\PACKAGING\target_files_intermediates目录下，再把msm8909-target_files-eng.zpeng.zip拷贝到OTA下可以命名为msm8909-target_files-eng.zpeng_B.zip,
+
+  7. 可以开始进行差分包制作， 在src根目录下执行./build/tools/releasetools/ota_from_target_files -i <A包> <B包> <差分包名>。这里必须在src根目录下执行,因为ota_from_target_files.py这个脚本里面写定了相对路径的引用文件。
+
+如：./build/tools/releasetools/ota_from_target_files -v -t MMC -i
+
+ ./OTA/msm8909-target_files-eng.zpeng_A.zip
+
+./OTA/msm8909-target_files-eng.zpeng_B.zip
+
+./OTA/update.zip
+
+8. 在/OTA/update.zip  就是升级用的差分包。
+
+注意：-t MMC 是
+
+
+
+9. 出现如下错误，需要添加 -p out/host/linux-x86/
+
+```
+File "/home/huzhongyang/code/android11_init/build/make/tools/releasetools/common.py", line 1847, in SignFile
+  proc.returncode, stdoutdata))
+ExternalError: Failed to run signapk.jar: return code 1:
+Error: Unable to access jarfile /home/huzhongyang/code/android11_init/build/make/tools/framework/signapk.jar
+```
+
+10.出现如下错误，请执行 make out/host/linux-x86/framework/signapk.jar
+
+```
+File "/home/huzhongyang/code/android11_init/build/make/tools/releasetools/common.py", line 1847, in SignFile
+  proc.returncode, stdoutdata))
+ExternalError: Failed to run signapk.jar: return code 1:
+Error: Unable to access jarfile out/host/linux-x86/framework/signapk.jar
+
+```
+
+
+
+
+10.app 签名问题。
+1、生成shared.priv.pem
+openssl pkcs8 -in platform.pk8 -inform DER -outform PEM -out shared.priv.pem -nocrypt
+
+2、生成pkcs12
+openssl pkcs12 -export -in platform.x509.pem -inkey shared.priv.pem -out shared.pk12 -name androidreleasekey
+
+输入密码android，默认是android，如是自己制作的key，输入对应的密码)
+
+3、生成release.keystore
+
+keytool -importkeystore -deststorepass android -destkeypass android -destkeystore release.keystore -srckeystore shared.pk12 -srcstoretype PKCS12 -srcstorepass android -alias androidreleasekey

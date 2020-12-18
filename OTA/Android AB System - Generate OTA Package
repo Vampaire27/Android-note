@@ -1,0 +1,695 @@
+# 文章目录
+
+  Makefile
+
+    ota_from_target_files.py
+    OTA Package Format
+        protobuf
+            protobuf是什么？
+            语法
+        update_metadata.proto
+
+
+  Generate Flow
+
+        Generate
+            Full OTA Package
+            Delta OTA Package
+            DeltaReadPartition()
+            FragmentOperation()
+            SortOperationByDestination(aops)
+            MergeOperations()
+            AddSourceHash()
+        Hash
+        Signature
+
+
+  Reference
+
+## Makefile
+
+  先说点无关的，Makefile这个东西还是要耐心点看，不要浮躁。这里推荐一篇适合小白阅读的讲解：
+  Make 命令教程
+  另外复杂的逻辑，读起来很绕，可以在Makefile里面把变量打印出来看看：
+  makefile 打印变量的值
+
+  这一节的目标是搞清楚：执行make otapackage这个命令的时候，发生了什么？
+  Makefile的路径：build/make/core/Makefile
+
+  下面开始分析：
+  可以看到.PHONY: otapackage，它依赖于$(INTERNAL_OTA_PACKAGE_TARGET)。
+
+  ![](image/20190829192718241.png)
+
+  接下来看$(INTERNAL_OTA_PACKAGE_TARGET)，先来看它生成的文件名字是什么：
+
+  ![](image/20190831162403941.png)
+
+```
+  PRODUCT_OUT := $(TARGET_PRODUCT_OUT_ROOT)/$(TARGET_DEVICE)
+    TARGET_PRODUCT_OUT_ROOT) := $(TARGET_OUT_ROOT)/product
+        TARGET_OUT_ROOT := $(OUT_DIR)/target
+            OUT_DIR := out
+
+    TARGET_DEVICE := $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_DEVICE)
+        INTERNAL_PRODUCT := $(call resolve-short-product-name, $(TARGET_PRODUCT))
+name = $(TARGET_PRODUCT)-ota-$(FILE_NAME_TAG)
+    FILE_NAME_TAG := eng.$(USER)
+```
+
+如上是依赖关系，可以在build/make里面搜索到，那么总结起来，最终生成的文件是：
+
+    out/target/product/$(TARGET_OUT_ROOT)/$(TARGET_PRODUCT)-ota-eng.$(USER).zip
+
+假设$(TARGET_OUT_ROOT)为tardis，$USER为root，那么最终的结果为：
+
+    out/target/product/tardis/tardis-ota-eng.root.zip
+
+
+接下来看$(INTERNAL_OTA_PACKAGE_TARGET)的依赖关系：
+
+    $(BRILLO_UPDATE_PAYLOAD)（for a/b system，这个之后再讲）
+    $(BUILT_TARGET_FILES_PACKAGE)
+    $(HOST_OUT)
+    $(KEY_CERT_PAIR)
+
+/build/core/Makefile
+
+![](image/20190831162338722.png)
+
+
+1. $(HOST_OUT)
+
+HOST_OUT := $(HOST_OUT_ROOT)/$(HOST_OS)-$(HOST_PREBUILT_ARCH)
+
+
+
+    HOST_OUT_ROOT := $(OUT_DIR)/host
+    HOST_OS := linux
+    HOST_PREBUILT_ARCH := x86
+
+$(HOST_OUT)实际为out/host/linux-x86
+
+2. $(KEY_CERT_PAIR)
+
+
+    KEY_CERT_PAIR := $(DEFAULT_KEY_CERT_PAIR)
+
+    DEFAULT_KEY_CERT_PAIR := $(DEFAULT_SYSTEM_DEV_CERTIFICATE)
+
+![](image/20190901144554509.png)
+
+所以，$(KEY_CERT_PAIR)默认值为build/target/product/security/testkey
+
+
+3. $(BUILT_TARGET_FILES_PACKAGE)
+
+![](image/20190901145207335.png)
+
+BUILT_TARGET_FILES_PACKAGE:= $(intermediates)/$(name).zip
+
+    intermediates := $(call intermediates-dir-for,PACKAGING,target_files)
+    intermediates-dir-for是函数，后面的是参数，这句话的意思是寻找out/target/product/$(TARGET_PRODUCT)/obj/中PACKAGING类型文件中以target_files开头的目录。
+    name
+    前面分析过，name是$(TARGET_PRODUCT)-ota-eng.$(USER)
+    假设$(TARGET_OUT_ROOT)为tardis，$USER为root，那么name就是tradis-ota-eng.root
+    它的作用是生成了最终包的中间包。
+
+## Summary
+
+总结来看，make otapackage这个命令，最终执行的是如下的命令，也就是生成完整包的命令。
+
+./build/tools/releasetools/ota_from_target_files -v \
+    -p out/host/linux-x86 \
+    -k \build/target/product/security/testkey \
+	out/target/product/tardis/obj/PACKAGING/target_files_intermediates/tardis-ota.eng.root.zip \
+	out/target/product/tardis/tardis-ota.eng.root.zip
+
+## ota_from_target_files.py
+
+ota_from_target_files.py吃一些参数，我这里列举一些常用的：
+
+    -p：Search for binaries run by this script
+    -i：Generate an incremental OTA using the given target-files zip as the starting build.
+    -k：Key to use to sign the package
+    -v：Show command lines being executed
+
+这些命令的传递关系如图所示：
+
+    ota_from_target_files(WriteABOTAPackageWithBrilloScript())
+        brillo_update_payload
+            delta_generator(generate_delta_main.cc)
+
+其中，ota_from_target_file将命令，参数翻译成brillo_update_payload [cmd] [args]
+brillo_update_payload包括如下命令：（每个命令后面带参数，有很多，这里不再赘述）
+
+    generate --xxxxx
+    hash
+    sign
+    properities
+
+![](image/20190919152336931.png)
+
+![](image/20190919152354320.png)
+
+
+## OTA Package Format
+protobuf
+protobuf是什么？
+
+xxx.proto文件表示一种结构化的存储方式，它有如下特点：
+
+    smaller
+    faster
+    simpler
+
+Google 官方解释：Protocol Buffers
+语法
+
+For example：
+
+![](image/20190919163337375.png)
+
+message相当于jave的class，C的struct，message里面开头的变量有三种：
+
+    required：a well-formed message must have exactly one of this field.
+    optional：a well-formed message can have zero or one of this field (but not more than one).
+    repeated：this field can be repeated any number of times (including zero) in a well-formed message. The order of the repeated values will be preserved.
+
+## update_metadata.proto
+
+payload.bin的结构在update_metadata.proto中看：/system/update_engine/update_metadata.proto
+
+下面具体来看这个文件，其实在这个文件中已经有注释：（struct delta_update_file）
+
+除了一些基础信息，内容如图所示：
+
+    Header: magic/version/manifest_size/metadata_signature_size
+    protobuf:
+        manifest[]:存储blob[]的组织信息，在升级的时候告诉update_engine如何分解这些数据
+        metadata_signature_message
+    blobs[]:数据
+    signature:签名
+
+
+![](image/2019091916354222.png)
+
+```
+20 // struct delta_update_file {
+21 //   char magic[4] = "CrAU";
+22 //   uint64 file_format_version;
+23 //   uint64 manifest_size;  // Size of protobuf DeltaArchiveManifest
+24 //
+25 //   // Only present if format_version > 1:
+26 //   uint32 metadata_signature_size;
+27 //
+28 //   // The Bzip2 compressed DeltaArchiveManifest
+29 //   char manifest[];
+30 //
+31 //   // The signature of the metadata (from the beginning of the payload up to
+32 //   // this location, not including the signature itself). This is a serialized
+33 //   // Signatures message.
+34 //   char medatada_signature_message[metadata_signature_size];
+35 //
+36 //   // Data blobs for files, no specific format. The specific offset
+37 //   // and length of each data blob is recorded in the DeltaArchiveManifest.
+38 //   struct {
+39 //     char data[];
+40 //   } blobs[];
+41 //
+42 //   // These two are not signed:
+43 //   uint64 payload_signatures_message_size;
+44 //   char payload_signatures_message[];
+45 //
+46 // };
+
+```
+
+
+下面这幅图看起来更加清晰，简而言之，update_metadata.proto这个文件中的7个message就是用来组装DeltaArchiveManifest。
+DeltaArchiveManifest可以理解为升级包的安装说明书。这7个message分别是：
+
+    Extent
+    Signatures
+    PartitionInfo
+    ImageInfo
+    InstallOperation：每一个Partition分区都有一个InstallOperation数组
+    PartitionUpdate：Describes the update to apply to a single partition.
+    DeltaArchiveManifest
+
+![](image/20190919163709544.png)
+
+DeltaArchiveManifest
+下面来看DeltaArchiveManifest的内容：
+
+    InstallOperation
+    block_size（差分包，文件系统的block size必须是4096）
+    signatures_offset/signtures_size
+    PartitionInfo
+    ImageInfo
+    PartitionUpdate
+    minor_version
+    max_timestamp
+
+```
+253 message DeltaArchiveManifest {
+254   // Only present in major version = 1. List of install operations for the
+255   // kernel and rootfs partitions. For major version = 2 see the |partitions|
+256   // field.
+257   repeated InstallOperation install_operations = 1;
+258   repeated InstallOperation kernel_install_operations = 2;
+259
+260   // (At time of writing) usually 4096
+261   optional uint32 block_size = 3 [default = 4096];
+262
+263   // If signatures are present, the offset into the blobs, generally
+264   // tacked onto the end of the file, and the length. We use an offset
+265   // rather than a bool to allow for more flexibility in future file formats.
+266   // If either is absent, it means signatures aren't supported in this
+267   // file.
+268   optional uint64 signatures_offset = 4;
+269   optional uint64 signatures_size = 5;
+270
+271   // Only present in major version = 1. Partition metadata used to validate the
+272   // update. For major version = 2 see the |partitions| field.
+273   optional PartitionInfo old_kernel_info = 6;
+274   optional PartitionInfo new_kernel_info = 7;
+275   optional PartitionInfo old_rootfs_info = 8;
+276   optional PartitionInfo new_rootfs_info = 9;
+277
+278   // old_image_info will only be present for delta images.
+279   optional ImageInfo old_image_info = 10;
+280
+281   optional ImageInfo new_image_info = 11;
+282
+283   // The minor version, also referred as "delta version", of the payload.
+284   optional uint32 minor_version = 12 [default = 0];
+285
+286   // Only present in major version >= 2. List of partitions that will be
+287   // updated, in the order they will be updated. This field replaces the
+288   // |install_operations|, |kernel_install_operations| and the
+289   // |{old,new}_{kernel,rootfs}_info| fields used in major version = 1. This
+290   // array can have more than two partitions if needed, and they are identified
+291   // by the partition name.
+292   repeated PartitionUpdate partitions = 13;
+293
+294   // The maximum timestamp of the OS allowed to apply this payload.
+295   // Can be used to prevent downgrading the OS.
+296   optional int64 max_timestamp = 14;
+297 }
+```
+
+InstallOperation
+
+    Type
+        REPLACE：Replace destination extents with attached data.
+        REPLACE_BZ：Replace destination extents with attached bzipped data.
+        REPLACE_XZ：Replace destination extents with attached xz data.
+        MOVE：Move source extents to destination extents.
+        BSDIFF：The data is a bsdiff binary diff.
+        SOURCE_COPY：Copy from source to target partition without data.（适用于source和target一样的情况）
+        SOURCE_BSDIFF：
+            Read from source partition
+            Read bsdiff binary patch from update.zip
+            Write (a+b) results to target partition
+        ZERO：Write zeros in the destination.
+        DISCARD：Discard the destination blocks， reading as undefined.
+        BROTLI_BSDIFF：Like SOURCE_BSDIFF, but compressed with brotli.
+        PUFFDIFF：The data is in puffdiff format.
+    data_offset/data_length
+    Extent
+        start_block
+        num_block
+    data_sha256_hash/src_sha256_hash
+
+
+
+```
+  message InstallOperation {
+155   enum Type {
+156     REPLACE = 0;  // Replace destination extents w/ attached data
+157     REPLACE_BZ = 1;  // Replace destination extents w/ attached bzipped data
+158     MOVE = 2;  // Move source extents to destination extents
+159     BSDIFF = 3;  // The data is a bsdiff binary diff
+160
+161     // On minor version 2 or newer, these operations are supported:
+162     SOURCE_COPY = 4; // Copy from source to target partition
+163     SOURCE_BSDIFF = 5; // Like BSDIFF, but read from source partition
+164
+165     // On minor version 3 or newer and on major version 2 or newer, these
+166     // operations are supported:
+167     REPLACE_XZ = 8; // Replace destination extents w/ attached xz data.
+168
+169     // On minor version 4 or newer, these operations are supported:
+170     ZERO = 6;  // Write zeros in the destination.
+171     DISCARD = 7;  // Discard the destination blocks, reading as undefined.
+172     BROTLI_BSDIFF = 10;  // Like SOURCE_BSDIFF, but compressed with brotli.
+173
+174     // On minor version 5 or newer, these operations are supported:
+175     PUFFDIFF = 9;  // The data is in puffdiff format.
+176   }
+177   required Type type = 1;
+178   // The offset into the delta file (after the protobuf)
+179   // where the data (if any) is stored
+180   optional uint32 data_offset = 2;
+181   // The length of the data in the delta file
+182   optional uint32 data_length = 3;
+183
+184   // Ordered list of extents that are read from (if any) and written to.
+185   repeated Extent src_extents = 4;
+186   // Byte length of src, equal to the number of blocks in src_extents *
+187   // block_size. It is used for BSDIFF and SOURCE_BSDIFF, because we need to
+188   // pass that external program the number of bytes to read from the blocks we
+189   // pass it.  This is not used in any other operation.
+190   optional uint64 src_length = 5;
+191
+192   repeated Extent dst_extents = 6;
+193   // Byte length of dst, equal to the number of blocks in dst_extents *
+194   // block_size. Used for BSDIFF and SOURCE_BSDIFF, but not in any other
+195   // operation.
+196   optional uint64 dst_length = 7;
+197
+198   // Optional SHA 256 hash of the blob associated with this operation.
+199   // This is used as a primary validation for http-based downloads and
+200   // as a defense-in-depth validation for https-based downloads. If
+201   // the operation doesn't refer to any blob, this field will have
+202   // zero bytes.
+203   optional bytes data_sha256_hash = 8;
+204
+205   // Indicates the SHA 256 hash of the source data referenced in src_extents at
+206   // the time of applying the operation. If present, the update_engine daemon
+207   // MUST read and verify the source data before applying the operation.
+208   optional bytes src_sha256_hash = 9;
+209 }
+
+  ```
+
+
+# PartitionInfo
+    size
+    hash
+
+
+```
+    130 message PartitionInfo {
+    131   optional uint64 size = 1;
+    132   optional bytes hash = 2;
+    133 }
+
+```
+
+
+Extent
+
+```
+117 message Extent {
+118   optional uint64 start_block = 1;
+119   optional uint64 num_blocks = 2;
+120 }
+
+```
+
+For example, a file stored in blocks 9, 10, 11, 2, 18, 12 (in that order) would be stored in extents { {9, 3}, {2, 1}, {18, 1}, {12, 1} }
+{9,3}的意思是，start_block = 9， 连续的有三个(9,10,11)，num_block = 3
+
+ImageInfo
+```
+141 message ImageInfo {
+142   optional string board = 1;
+143   optional string key = 2;
+144   optional string channel = 3;
+145   optional string version = 4;
+146
+147   // If these values aren't present, they should be assumed to match
+148   // the equivalent value above. They are normally only different for
+149   // special image types such as nplusone images.
+150   optional string build_channel = 5;
+151   optional string build_version = 6;
+152 }
+```
+
+PartitionUpdate
+
+    partition_name
+    run_postinstall
+    postinstall_path
+    filesystem_type
+    old_partition_info/new_partition_info（PartitionInfo）：全包升级，只有new_partition_info有内容；差分升级，有- - old_partition_info/new_partition_info都有内容
+    operations（InstallOperation）
+
+```
+211 // Describes the update to apply to a single partition.
+212 message PartitionUpdate {
+213   // A platform-specific name to identify the partition set being updated. For
+214   // example, in Chrome OS this could be "ROOT" or "KERNEL".
+215   required string partition_name = 1;
+216
+217   // Whether this partition carries a filesystem with post-install program that
+218   // must be run to finalize the update process. See also |postinstall_path| and
+219   // |filesystem_type|.
+220   optional bool run_postinstall = 2;
+221
+222   // The path of the executable program to run during the post-install step,
+223   // relative to the root of this filesystem. If not set, the default "postinst"
+224   // will be used. This setting is only used when |run_postinstall| is set and
+225   // true.
+226   optional string postinstall_path = 3;
+227
+228   // The filesystem type as passed to the mount(2) syscall when mounting the new
+229   // filesystem to run the post-install program. If not set, a fixed list of
+230   // filesystems will be attempted. This setting is only used if
+231   // |run_postinstall| is set and true.
+232   optional string filesystem_type = 4;
+233
+234   // If present, a list of signatures of the new_partition_info.hash signed with
+235   // different keys. If the update_engine daemon requires vendor-signed images
+236   // and has its public key installed, one of the signatures should be valid
+237   // for /postinstall to run.
+238   repeated Signatures.Signature new_partition_signature = 5;
+239
+240   optional PartitionInfo old_partition_info = 6;
+241   optional PartitionInfo new_partition_info = 7;
+242
+243   // The list of operations to be performed to apply this PartitionUpdate. The
+244   // associated operation blobs (in operations[i].data_offset, data_length)
+245   // should be stored contiguously and in the same order.
+246   repeated InstallOperation operations = 8;
+247
+248   // Whether a failure in the postinstall step for this partition should be
+249   // ignored.
+250   optional bool postinstall_optional = 9;
+251 }
+```
+
+Signatures
+
+```
+122 message Signatures {
+123   message Signature {
+124     optional uint32 version = 1;
+125     optional bytes data = 2;
+126   }
+127   repeated Signature signatures = 1;
+128 }
+```
+
+## Generate Flow
+
+generate_delta_main.cc
+关于这一部分，放在system/engine/payload_generator 文件夹下。先从generate_delta_main.cc开始看，刚开始看的时候，完全不知道从哪里分析
+，好在log还很完整，所以可以通过log来学习，generate_delta_main.cc做了如下事情：
+
+    将flags转化为PayloadGenerationConfig
+    Generate：GenerateUpdatePayloadFile()
+    Hash：CalculateHashForSigning()
+    Sign：AddSignatureToPayload()
+
+delta_diff_generator.cc
+GenerateUpdatePayloadFile()
+
+    全包：FullUpdateGenerator()，请看Full OTA Package
+    差分：ABGenerator()，请看Delta OTA Package
+
+log会打印出：
+
+    Generating full update(or delta update)
+    Partition name: xxx
+    Partition size: xxxx
+    Block count: xxxx
+
+For example：
+![](image/20191217214120628.png)
+
+
+## Generate
+### Full OTA Package
+
+从FullUpdateGenerator()往下看：
+/system/update_engine/payload_generator/full_update_generator.cc
+几个重要的变量：
+
+    partition_blocks：partition有多少个block
+    chunk_blocks：一个chunk有多少个block
+    num_chunks：partition有多少个chunk
+
+num_chunks=(partition_blocks + chunk_blocks - 1)/chunk_blocks
+
+For example:
+boot.img partition size是16777216，block size = 4096，那么：
+
+    partition_blocks：4096
+    chunk_blocks：512
+    num_chunks：(4096+512-1)/512=8
+
+![](image/20191217214203124.png)
+
+
+FullUpdateGenerator::GenerateOperations()把每个partition，分成了多个chunk，一个thread处理一个chunk中的数据（thread_pool的大小与CPU有关，这里max_threads=16）。
+
+/system/update_engine/payload_generator/blob_file_writer.cc
+
+ * StoreBlob
+ ![](image/20191217214234281.png)
+
+ /system/update_engine/payload_generator/payload_file.cc
+
+ 全部的partition都写完以后，开始Write payload file：PayloadFile::WritePayload()
+
+    * Writing final delta file header
+    * Writing final delta file protobuf
+    * Writing final delta file data blobs
+
+    ![](image/2019121721425897.png)
+
+    到这里generate就结束了。
+
+  ## Delta OTA Package
+
+  system/update_engine/payload_generator/ab_generator.cc
+
+      GenerateOperations()
+          DeltaReadPartition()
+          FragmentOperation()
+          SortOperationByDestination(aops)
+          MergeOperations()
+          AddSourceHash()
+
+  ```
+  bool ABGenerator::GenerateOperations(
+    const PayloadGenerationConfig& config,
+    const PartitionConfig& old_part,
+    const PartitionConfig& new_part,
+    BlobFileWriter* blob_file,
+    vector<AnnotatedOperation>* aops) {
+  TEST_AND_RETURN_FALSE(old_part.name == new_part.name);
+
+  ssize_t hard_chunk_blocks = (config.hard_chunk_size == -1 ? -1 :
+                               config.hard_chunk_size / config.block_size);
+  size_t soft_chunk_blocks = config.soft_chunk_size / config.block_size;
+
+  aops->clear();
+  TEST_AND_RETURN_FALSE(diff_utils::DeltaReadPartition(aops,
+                                                       old_part,
+                                                       new_part,
+                                                       hard_chunk_blocks,
+                                                       soft_chunk_blocks,
+                                                       config.version,
+                                                       blob_file));
+  LOG(INFO) << "done reading " << new_part.name;
+
+  TEST_AND_RETURN_FALSE(
+      FragmentOperations(config.version, aops, new_part.path, blob_file));
+  SortOperationsByDestination(aops);
+
+  // Use the soft_chunk_size when merging operations to prevent merging all
+  // the operations into a huge one if there's no hard limit.
+  size_t merge_chunk_blocks = soft_chunk_blocks;
+  if (hard_chunk_blocks != -1 &&
+      static_cast<size_t>(hard_chunk_blocks) < soft_chunk_blocks) {
+    merge_chunk_blocks = hard_chunk_blocks;
+  }
+
+  TEST_AND_RETURN_FALSE(MergeOperations(
+      aops, config.version, merge_chunk_blocks, new_part.path, blob_file));
+
+  if (config.version.minor >= kOpSrcHashMinorPayloadVersion)
+    TEST_AND_RETURN_FALSE(AddSourceHash(aops, old_part.path));
+
+  return true;
+}
+
+  ```
+  在接着往下看之前，需要了解几个基本概念：
+
+  Partition Type：
+
+
+      Raw Partition: ex boot.img
+
+      FileSystem Partition: system.img
+
+
+  FileSystem Type:
+
+      raw
+      ext2
+      squashfs
+
+
+  带文件系统的Partition会先解析为一个一个的file，可以用过xxx.map查看。这些Partition最终会被拆分成一个一个的block
+
+
+  system/update_engine/payload_generator/block_mapping.h
+
+  BlockMapping:
+
+      block id: The block id assigned to this unique block
+      byte_offset: The location on this unique block on disk
+      block data: The location of block data
+
+
+  AnnotatedOperation:
+
+      op: The InstallOperation, as defined by the protobuf.
+
+
+  DeltaReadPartition()
+
+  /system/update_engine/payload_generator/delta_diff_utils.cc
+
+  统计Zero block和新旧相同的block
+
+      DeltaReadPartition()
+          DeltaMoveAndZeroBlocks()
+          /system/update_engine/payload_generator/delta_diff_utils.cc
+          以文件为单位做差分，每个文件都会生成对应的operations
+
+      DeltaReadPartition()
+          vector<FileDeltaProcessor> file_delta_processors
+              file_delta_processors.emplace_back()
+          MergeOperation(aops)
+          DeltaReadFile()
+              ReadExtentsToDiff()
+
+  FragmentOperation()
+
+  /system/update_engine/payload_generator/delta_diff_utils.cc
+
+  假如operation中有超过一个extents，就会被拆分
+  SortOperationByDestination(aops)
+
+  /system/update_engine/payload_generator/delta_diff_utils.cc
+
+  假如operation中有超过一个extents，就会被拆分
+  MergeOperations()
+
+  /system/update_engine/payload_generator/delta_diff_utils.cc
+  对operation进行排序，也就是vector<AnnotatedOperation>* aops
+
+  AddSourceHash()
+
+  加上source partition的hash值
+
+  Hash
+
+  ![](image/20191217214350249.png)

@@ -1,0 +1,13 @@
+
+
+adb reboot bootloader
+fastboot devices
+
+fastboot flash aboot out/target/product/$BUILD_PROJECT_NAME/emmc_appsboot.mbn
+fastboot flash boot out/target/product/$BUILD_PROJECT_NAME/boot.img
+fastboot flash system out/target/product/$BUILD_PROJECT_NAME/system.img
+fastboot flash userdata out/target/product/$BUILD_PROJECT_NAME/userdata.img
+fastboot flash persist out/target/product/$BUILD_PROJECT_NAME/persist.img
+fastboot flash recovery out/target/product/$BUILD_PROJECT_NAME/recovery.img
+
+fastboot reboot  //重启

@@ -1,0 +1,288 @@
+文章目录
+
+    Overview
+    Partition selection (slots)
+        Non-A/B System Partition
+        A/B System Partition
+    Common example scenarios
+    Implementing A/B Updates
+        Implementing the boot control HAL
+        Setting up the kernel
+        Setting build variables
+    Life of an A/B update
+    Generate OTA Package
+    Reference
+
+
+A/B system是工作后接收的第一个模块，接近一年的时间，才算有所了解，被PL/PM催过无数次，也被客户的各种奇葩问题虐过。A/B system作为Android新推出的一个功能，网上资料很少，不然就是长篇大论扔代码的。所以想尽量写出易读易懂的文章，来快速的了解A/B system如何运作的。
+
+    Android A/B system - bootctrl
+        启动的时候如何知道是加载slot A还是slot B
+    Android A/B System - Generate OTA Package
+        ota package（payload.bin）的结构
+        ota package如何组织
+    Android A/B system - update_engine
+        升级flow
+
+Overview
+
+A/B update又叫无缝升级，是Android提出的一种新的升级方式。可以简单理解为，内存中有两套系统（假设为A和B），你正在使用A，B在更新，你仍然可以使用，等B升级好了，再切换为B。
+
+优点：
+
+    更新系统的时候不会影响用户的操作，不需要长时间的等待（因为有两套系统）
+    更新系统的时候不会刷成砖头（失败了可以回到原来的系统，系统中总是有一套可用的系统）
+
+缺点：
+
+    因为有两套系统，所以占用更多的内存
+    bootloader变复杂（在启动的时候要做A or B的判断等操作）
+
+与传统OTA方式相比，A/B的变换：
+
+    Partition（系统分区）
+        A/B：两套分区（slot A slot B）
+        Non-A/B：一套分区
+    Bootloader
+        A/B：由boot control HAL控制
+        Non-A/B：读取misc分区的信息，决定启动Android系统还是Recovery系统
+    Build
+        A/B：只有boot.img，没有recovery.img
+        Non-A/B：boot.img和recovery.img
+    Packages
+        A/B与Non-A/B生成OTA包的工具和命令跟传统方式一样，但是生成内容的格式不一样了
+
+Partition selection (slots)
+Non-A/B System Partition
+
+    bootloader
+    boot
+    system
+    vendor
+    userdata
+    cache
+    recovery
+    misc
+
+A/B System Partition
+
+    bootloader
+    boot_a boot_b
+    system_a system_b
+    vendor_a vendor_b
+    userdata
+    misc
+
+Common example scenarios
+
+Ps：这一节参考Android A/B System OTA分析
+
+slot A或slot B都有三个属性：
+
+    active bootloader选择active属性的运行，排他属性，slot A或slot B有且仅有一个为active
+    bootable 表示该分区是一个完整可以启动的系统
+    successful 表明该分区在当前或上一次启动中可以正确运行
+
+Common example scenarios
+
+    Normal case 系统当前运行在slot B，slot B当前具有active bootable successful三个属性
+    Update in progress 系统当前运行在slot B， slot B检测到slot A要升级，将slot A设为unbootable，准备升级
+    Update applied, reboot pending slot A升级完成后，具有bootable（此时还不知道是否升级成功），而且此时reboot后从slot A启动，所以slot A具有active，slot B没有active
+    System rebooted into new update 成功启动后，当前运行系统为slot A，具有active bootable successful三个属性，slot B仍然具有bootable successful
+
+ ![AB slot status](image/20190314211856837.png)
+
+
+# Implementing A/B Updates
+## Implementing the boot control HAL
+
+这一部分是bootloader中的一个部分，每个芯片厂商不同，这一部分可以分为：
+
+    boot_control HAL（hardware/libhardware/include/hardware/boot_control.h）
+    boot_control test tool（system/extras/bootctl）
+
+如图是bootloader的flow，首先会判断有效的slot有几个，如果只有一个，就从该slot启动；如果有多个，则从高优先级的slot启动。如果没有成功启动，则retry_count减1（一般初始值为3），
+如果retry_count为0，则标记该slot无效。
+
+ ![AB slot status](image/20190315144236949.png)
+
+
+ Android提供了.h，c/cpp由IC厂商自己实现
+
+通过函数名字可以知道函数的作用
+
+    void (*init)(struct boot_control_module *module)
+    unsigned (*getNumberSlots)(struct boot_control_module *module)
+    unsigned (*getCurrentSlot)(struct boot_control_module *module)
+    int (*markBootSuccessful)(struct boot_control_module *module)
+    int (*setActiveBootSlot)(struct boot_control_module *module, unsigned slot)
+    int (*setSlotAsUnbootable)(struct boot_control_module *module, unsigned slot)
+    int (*isSlotBootable)(struct boot_control_module *module, unsigned slot)
+    const char* (*getSuffix)(struct boot_control_module *module, unsigned slot)
+    int (*isSlotMarkedSuccessful)(struct boot_control_module *module, unsigned slot)
+
+
+```
+/*
+ * Copyright (C) 2015 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+#ifndef ANDROID_INCLUDE_HARDWARE_BOOT_CONTROL_H
+#define ANDROID_INCLUDE_HARDWARE_BOOT_CONTROL_H
+#include <hardware/hardware.h>
+__BEGIN_DECLS
+#define BOOT_CONTROL_MODULE_API_VERSION_0_1  HARDWARE_MODULE_API_VERSION(0, 1)
+/**
+ * The id of this module
+ */
+#define BOOT_CONTROL_HARDWARE_MODULE_ID "bootctrl"
+/*
+ * The Boot Control HAL is designed to allow for managing sets of redundant
+ * partitions, called slots, that can be booted from independantly. Slots
+ * are sets of partitions whose names differ only by a given suffix.
+ * They are identified here by a 0 indexed number, and associated with their
+ * suffix, which can be appended to the base name for any particular partition
+ * to find the one associated with that slot. The bootloader must pass the suffix
+ * of the currently active slot either through a kernel command line property at
+ * androidboot.slot_suffix, or the device tree at /firmware/android/slot_suffix.
+ * The primary use of this set up is to allow for background updates while the
+ * device is running, and to provide a fallback in the event that the update fails.
+ */
+/**
+ * Every hardware module must have a data structure named HAL_MODULE_INFO_SYM
+ * and the fields of this data structure must begin with hw_module_t
+ * followed by module specific information.
+ */
+typedef struct boot_control_module {
+    struct hw_module_t common;
+    /*
+     * (*init)() perform any initialization tasks needed for the HAL.
+     * This is called only once.
+     */
+    void (*init)(struct boot_control_module *module);
+    /*
+     * (*getNumberSlots)() returns the number of available slots.
+     * For instance, a system with a single set of partitions would return
+     * 1, a system with A/B would return 2, A/B/C -> 3...
+     */
+    unsigned (*getNumberSlots)(struct boot_control_module *module);
+    /*
+     * (*getCurrentSlot)() returns the value letting the system know
+     * whether the current slot is A or B. The meaning of A and B is
+     * left up to the implementer. It is assumed that if the current slot
+     * is A, then the block devices underlying B can be accessed directly
+     * without any risk of corruption.
+     * The returned value is always guaranteed to be strictly less than the
+     * value returned by getNumberSlots. Slots start at 0 and
+     * finish at getNumberSlots() - 1
+     */
+    unsigned (*getCurrentSlot)(struct boot_control_module *module);
+    /*
+     * (*markBootSuccessful)() marks the current slot
+     * as having booted successfully
+     *
+     * Returns 0 on success, -errno on error.
+     */
+    int (*markBootSuccessful)(struct boot_control_module *module);
+    /*
+     * (*setActiveBootSlot)() marks the slot passed in parameter as
+     * the active boot slot (see getCurrentSlot for an explanation
+     * of the "slot" parameter). This overrides any previous call to
+     * setSlotAsUnbootable.
+     * Returns 0 on success, -errno on error.
+     */
+    int (*setActiveBootSlot)(struct boot_control_module *module, unsigned slot);
+    /*
+     * (*setSlotAsUnbootable)() marks the slot passed in parameter as
+     * an unbootable. This can be used while updating the contents of the slot's
+     * partitions, so that the system will not attempt to boot a known bad set up.
+     * Returns 0 on success, -errno on error.
+     */
+    int (*setSlotAsUnbootable)(struct boot_control_module *module, unsigned slot);
+    /*
+     * (*isSlotBootable)() returns if the slot passed in parameter is
+     * bootable. Note that slots can be made unbootable by both the
+     * bootloader and by the OS using setSlotAsUnbootable.
+     * Returns 1 if the slot is bootable, 0 if it's not, and -errno on
+     * error.
+     */
+    int (*isSlotBootable)(struct boot_control_module *module, unsigned slot);
+    /*
+     * (*getSuffix)() returns the string suffix used by partitions that
+     * correspond to the slot number passed in parameter. The returned string
+     * is expected to be statically allocated and not need to be freed.
+     * Returns NULL if slot does not match an existing slot.
+     */
+    const char* (*getSuffix)(struct boot_control_module *module, unsigned slot);
+    /*
+     * (*isSlotMarkedSucessful)() returns if the slot passed in parameter has
+     * been marked as successful using markBootSuccessful.
+     * Returns 1 if the slot has been marked as successful, 0 if it's
+     * not the case, and -errno on error.
+     */
+    int (*isSlotMarkedSuccessful)(struct boot_control_module *module, unsigned slot);
+    void* reserved[31];
+} boot_control_module_t;
+__END_DECLS
+#endif  // ANDROID_INCLUDE_HARDWARE_BOOT_CONTROL_H
+```
+
+实例：
+这里使用bootctl工具可以看到当前的slot等等。当然每个IC厂的内部实现不一样。
+ ![AB slot status](image/20190620144406705.png)
+
+# Setting up the kernel
+
+前面说到ramdisk在boot.img和system.img都有一份，那么启动的时候怎么决定用哪个img呢？
+可以看google的这笔patch：initramfs: Add skip_initramfs command line option.（init/initramfs.c）
+
+__setup("skip_initramfs", skip_initramfs_param) 这里如果命令行（kernel command line）的skip_initramfs 参数。
+
+    如果设置skip_initramfs，do_skip_initramfs会置一，并调用default_rootfs()。
+    如果没有设置skip_initramfs，调用unpack_to_rootfs()。
+
+  ![](image/20190620153556484.png)
+
+  default_rootfs()这里创建了一个简单的rootfs，只有三个节点：
+
+    /dev
+    /dev/console
+    /root
+
+
+  ![](image/20190620164800214.png)
+
+  总结来看：
+如果系统设置了skip_initramfs参数，就会跳过boot.img的ramdisk，加载Android系统；
+  ![](image/20190620174944799.png)
+如果系统没有设置skip_initramfs参数，就会加载Recovery系统
+
+如果系统没有设置skip_initramfs参数，就会加载Recovery系统
+
+rootwait init=/init ro
+
+# Setting build variables
+
+  ![](image/20190315154224444.png)
+
+
+# Life of an A/B update
+
+ ![](image/20190624155009435.png)
+
+
+ # Generate OTA Package
+
+ ![](image/20190627094516893.png)
+ ![](image/20190627094457886.png)

@@ -1,0 +1,181 @@
+# Android 屏幕
+
+本部分将介绍各种 Android 屏幕设置的 AOSP 实现，其中包括应用快捷方式、圆形启动器图标、勿扰 (DND)、多窗口模式（分屏、自由格式和画中画）
+、高动态范围 (HDR) 视频、夜间模式和零售演示模式。
+
+# 多屏幕
+
+Android 10 支持跨屏和可折叠的手持设备，利用外部屏幕和其他设备类型。
+多屏幕还支持很多 Automotive 专用功能，如司机屏幕、乘客屏幕以及后座娱乐系统。
+
+
+# 多窗口模式
+
+在 Android 7.0 及更高版本中，设备可以使用多窗口模式同时显示多个应用。Android 支持三种多窗口模式配置：
+
+    分屏是默认的多窗口模式实现，可为用户提供两个 Activity 窗格来放置应用。
+    自由窗口允许用户动态调整 Activity 窗格大小，并在屏幕上显示两个以上的应用。
+    画中画 (PIP) 允许 Android 设备在用户与其他应用互动时在小窗口中播放视频内容。
+
+
+# 实现
+
+    Android 7.0 及更高版本中会默认启用多窗口模式支持。要停用该功能，请在设备的 config.xml 文件中将
+    config_supportsMultiWindow 标记设为 false。所有低内存设备（声明 ActivityManager.isLowRam() 的设备）
+    默认停用多窗口模式。低内存设备会忽略 config_supportsMultiWindow 标记的值。
+
+
+# 分屏
+
+多窗口模式的默认体验是分屏模式，在这种模式下，系统会从设备中间以横向或纵向方式划分系统界面。用户可以根据设备的屏幕方向左右或上下拖动分界线来调整窗口大小。
+
+启用分屏后，设备制造商可以选择要启用自由窗口还是“画中画”模式。
+
+在 Android 8.0 及更高版本中，在用户点按主屏幕时，系统会压缩启动器的大小以改进分屏效果。如需实现方面的详细信息，请参阅分屏交互。
+
+
+# 自由窗口
+
+通过 config_supportsMultiWindow 标记启用多窗口模式后，设备制造商可以允许启用自由窗口。此模式在较大的设备（例如平板电脑）上最为有用。
+
+要支持自由窗口模式，请在 /android/frameworks/base/core/java/android/content/pm/PackageManager.java 中启用
+PackageManager#FEATURE_FREEFORM_WINDOW_MANAGEMENT 系统功能，并在 config.xml. 中将 config_freeformWindowManagement 设为 true。
+
+    <bool name="config_freeformWindowManagement">true</bool>
+
+
+# 多窗口支持
+
+Android 7.0 新增对同时显示多个应用的支持。在手持设备上，两个应用可以在分屏模式中左右并排或上下并排显示。在电视设备上，应用可以使用画中画模式，
+在用户与另一个应用交互的同时继续播放视频。
+如果您的应用面向 Android 7.0（API 级别 24）或更高版本，则您可以配置应用处理多窗口显示的方式。
+例如，您可以指定 Activity 的最小允许尺寸。您还可停用应用的多窗口显示，确保系统仅以全屏模式显示应用。
+
+# 概览
+Android 允许多个应用同时共享屏幕。例如，用户可以分屏显示应用，在左边查看网页，同时在右边写电子邮件。用户体验取决于 Android 操作系统的版本和设备类型：
+
+   运行 Android 7.0 的手持设备支持分屏模式。在此模式中，系统以左右并排或上下并排的方式分屏显示两个应用。用户可以拖动两个应用之间的分界线，放大其中一个应用，同时缩小另一个应用。
+   从 Android 8.0 开始，应用可以将自身置于画中画模式，从而使其能在用户浏览其他应用或与之交互时继续显示内容。
+   较大设备的制造商可选择启用自由形状模式，在该模式中，用户可以自由调整各 Activity 的尺寸。若制造商启用此功能，设备将同时具有自由形状模式和分屏模式。
+
+![splitscrren](image/mw-splitscreen.png)
+
+
+# 多窗口生命周期
+
+多窗口模式不会更改 Activity 生命周期。
+
+在多窗口模式中，只有最近在指定时间内与用户交互的 Activity 为活动状态。此 Activity 被视为顶端 Activity，而且是唯一处于 RESUMED 状态的 Activity。
+所有其他可见的 Activity 均处于 STARTED 而非 RESUMED 的状态。但是，这些处于可见而非恢复状态的 Activity 在系统中享有比不可见 Activity 更高的优先级。
+如果用户与其中一个可见的 Activity 交互，则该 Activity 将处于恢复状态，而之前的顶端 Activity 将进入 STARTED 状态。
+
+    注意：在多窗口模式中，应用可能不会处于 RESUMED 状态，即使该应用对用户可见。当不处于顶端状态时，应用可能需要继续执行其操作。
+    例如，处于此状态的视频播放应用应继续显示其视频。出于此原因，我们建议播放视频的 Activity 不要通过暂停视频播放来响应 ON_PAUSE 生命周期事件。
+    相反，该 Activity 应通过开始播放来响应 ON_START，然后通过暂停播放来响应 ON_STOP。
+    如果您未使用生命周期软件包，而是直接处理生命周期事件，请在您的 onStop() 处理程序中暂停视频播放，然后在 onStart() 中继续播放。
+
+
+如处理配置变更中所述，当用户将应用置于多窗口模式下时，系统会通知 Activity 发生配置变更。当用户调整应用大小或将应用恢复到全屏模式时，也会发生此情况。
+该变更与系统通知应用设备已从纵向模式切换到横屏模式时的 Activity 生命周期影响基本相同，区别在于设备不仅仅是交换尺寸，而是会变更尺寸。
+如处理配置变更中所述，您的 Activity 可以自行处理配置变更，或允许系统销毁 Activity，并以新的尺寸重新创建该 Activity。
+如果用户调整窗口大小并在任意维度放大窗口尺寸，则系统将调整 Activity 的大小以匹配用户操作，同时根据需要发布配置变更。
+如果应用在新公开区域的绘制滞后，则系统将使用 windowBackground 属性或默认 windowBackgroundFallback 样式属性指定的颜色临时填充这些区域。
+
+
+# 针对多窗口模式配置应用
+
+如果您的应用面向 API 级别 24 或更高级别，则您可以对该应用的 Activity 是否以及如何支持多窗口显示进行配置。
+您可以在清单中设置属性，以控制大小和布局。根 Activity 的属性设置适用于其任务栈中的所有 Activity。
+例如，如果根 Activity 已将 android:resizeableActivity 设置为 true，则任务栈中的所有 Activity 均可调整大小。
+
+
+> 注意：如果您构建面向 API 级别 23 或更低级别且支持多个屏幕方向的应用，则当用户在多窗口模式中使用应用时，
+系统将强制调整应用大小。系统会显示对话框，提醒用户应用可能会发生异常。系统不会调整定向应用的大小；如果用户尝试在多窗口模式下打开定向应用，则应用将全屏显示。
+
+
+```
+android:resizeableActivity
+
+在清单的 <activity> 或 <application> 元素中设置此属性，以启用或停用多窗口显示：
+
+android:resizeableActivity=["true" | "false"]
+```
+
+
+如果将此属性设置为 true，则·Activity 能以分屏和自由形状模式启动。如果将此属性设置为 false，则 Activity 不支持多窗口模式。如果该值为 false，且用户尝试在多窗口模式下启动 Activity，则该 Activity 将全屏显示。
+
+如果您的应用面向 API 级别 24，但您未指定此属性的值，则其值默认设为 true。
+
+
+
+----
+# 在多窗口模式中运行应用
+
+从 Android 7.0 开始，系统会为应用提供支持其在多窗口模式中运行的功能。
+
+* 多窗口模式中被停用的功能
+
+  当设备处于多窗口模式时，系统会停用或忽略某些功能，因为对与其他 Activity 或应用共享设备屏幕的 Activity 而言，这些功能并没有任何意义。此类功能包括：
+
+     某些系统界面自定义选项将被禁用；例如，在非全屏模式中，应用无法隐藏状态栏。
+     系统将忽略对 android:screenOrientation 属性所做的更改。
+
+* 多窗口变更通知和查询
+
+  Activity 提供以下方法来支持多窗口显示。
+
+  isInMultiWindowMode()
+     调用该方法以确认 Activity 是否处于多窗口模式。
+  isInPictureInPictureMode()
+     调用该方法以确认 Activity 是否处于画中画模式。
+
+     注意：画中画模式是多窗口模式的特例。如果 myActivity.isInPictureInPictureMode() 返回 true，则 myActivity.isInMultiWindowMode() 也返回 true。
+  onMultiWindowModeChanged()
+     当 Activity 进入或退出多窗口模式时，系统将调用此方法。当 Activity 进入多窗口模式时，系统会向该方法传递 true 值，退出多窗口模式时则传递 false 值。
+  onPictureInPictureModeChanged()
+     当 Activity 进入或退出画中画模式时，系统将调用此方法。当 Activity 进入画中画模式时，系统会向该方法传递 true 值，退出画中画模式时则传递 false 值。
+
+  Fragment 类公开了以上许多方法的版本，例如 Fragment.onMultiWindowModeChanged()。
+
+* 进入画中画模式
+
+  如要将 Activity 置于画中画模式，请调用 Activity.enterPictureInPictureMode()。如果设备不支持画中画模式，则此方法无效。
+  如需了解详细信息，请参阅画中画文档。
+  在多窗口模式中启动新 Activity
+
+  启动新 Activity 时，用户可以提示系统如果可能，应将新 Activity 显示在当前 Activity 旁边。如要执行此操作，请使用 Intent 标记 FLAG_ACTIVITY_LAUNCH_ADJACENT。传递此标记将请求以下行为：
+
+     如果设备处于分屏模式，则系统会尝试创建新 Activity，使其位于启动该 Activity 的 Activity 旁边，以便两个 Activity 共享屏幕。系统并不一定能实现此操作，但如果可以，系统将使两个 Activity 处于相邻位置。
+     如果设备未处于分屏模式，则该标记无效。
+
+  如果设备处于自由形状模式，则在启动新 Activity 时，您可通过调用 ActivityOptions.setLaunchBounds() 来指定新 Activity 的尺寸和屏幕位置。如果设备未处于多窗口模式，则该方法无效。
+
+  注意：如果您在任务栈中启动 Activity，则该 Activity 将替换屏幕上的 Activity，并继承其所有的多窗口属性。如要在多窗口模式中以单独的窗口启动新 Activity，则您必须在新的任务栈中启动此 Activity。
+
+* 支持拖放
+
+  当两个 Activity 共享屏幕时，用户可在二者之间拖放数据。（在 Android 7.0 之前，用户只能在一个 Activity 内拖放数据）。
+  因此，如果您的应用目前不支持拖放功能，您可以为其添加此功能。
+
+  DragAndDropPermissions
+     令牌对象，负责向接收拖放数据的应用指定授予的权限。
+
+  View.startDragAndDrop()
+     等同于 View.startDrag()。如要启用跨 Activity 拖放，请传递 DRAG_FLAG_GLOBAL 标记。
+     如需对接收拖放数据的 Activity 授予 URI 权限，请根据情况传递 DRAG_FLAG_GLOBAL_URI_READ 或 DRAG_FLAG_GLOBAL_URI_WRITE 标记。
+
+  View.cancelDragAndDrop()
+     取消当前正在进行的拖动操作。只能由发起拖动操作的应用调用。
+
+  View.updateDragShadow()
+     替换当前正在进行的拖动操作的拖动阴影。只能由发起拖动操作的应用调用。
+
+  Activity.requestDragAndDropPermissions()
+     请求权限，从而获取通过 DragEvent 中所含 ClipData 传递的内容 URI。
+
+
+
+
+1:Android Window
+
+     https://www.freesion.com/article/552458706/
