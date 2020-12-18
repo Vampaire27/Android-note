@@ -693,3 +693,8 @@ FullUpdateGenerator::GenerateOperations()把每个partition，分成了多个chu
   Hash
 
   ![](image/20191217214350249.png)
+
+
+  Signature
+
+  ![](image/20191217214358119.png)

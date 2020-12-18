@@ -54,7 +54,8 @@ Error: Unable to access jarfile out/host/linux-x86/framework/signapk.jar
 
 
 
-10.app 签名问题。
+10.app 签名问题
+
 1、生成shared.priv.pem
 openssl pkcs8 -in platform.pk8 -inform DER -outform PEM -out shared.priv.pem -nocrypt
 
