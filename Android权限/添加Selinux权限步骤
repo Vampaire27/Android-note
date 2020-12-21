@@ -1,0 +1,276 @@
+# 前言
+ 简单笔记
+
+# 框架
+
+基于老罗的相关博客简单介绍下框架吧：
+
+https://blog.csdn.net/Luoshengyang
+
+![](image/20190306103607383.png)
+
+![](image/2019030610363831.png)
+
+![](image/20190306104524747.png)
+
+![](image/20190306104543119.png)
+
+# 内核空间
+
+![](image/20190306104615642.png)
+
+# 用户空间
+
+![](image/20190306104954241.png)
+
+# 流程
+
+```
+##########################################
+# 相关文件介绍
+##########################################
+
+
+    device/qcom/sepolicy / common/device.te   ：定义设备相关的权限
+
+    device/qcom/sepolicy / common/file.te     ：定义文件相关的权限
+    device/qcom/sepolicy / common/file_contexts ： 分类相应文件使用哪些权限，然后就会调用到同名的 xxx.te 文件
+
+    device/qcom/sepolicy / common/genfs_contexts： 定义文件系统权限？
+
+    device/qcom/sepolicy / common/service.te ： 定义 service 服务权限
+    device/qcom/sepolicy / common/service_contexts ： 分类相应服务使用哪些权限
+
+    device/qcom/sepolicy / msm8937/property.te ： 定义属性权限
+    device/qcom/sepolicy / msm8937/property_contexts ： 分类相应属性使用什么权限
+
+    ########################################
+    # 具体进程权限：
+    device/qcom/sepolicy / common/kernel.te ： 内核进程
+    device/qcom/sepolicy / common/system_app.te ：系统 app 权限
+    device/qcom/sepolicy / common/init.te ：init 进程权限
+    device/qcom/sepolicy / msm8937/init_shell.te ： shell 进程？
+    device/qcom/sepolicy / msm8937/platform_app.te ：平台 app 权限？
+    device/qcom/sepolicy / common/untrusted_app.te ： 非平台签名的 apk
+
+
+##########################################
+# 通用步骤：
+##########################################
+一、首先验证是否是 Selinux 权限相关问题
+    在 eng 版本中使用：
+        setenforce 0
+    临时关闭 selinux 后，再验证。(注：有时是权限问题，但也未必有效，这时可通过 log 确认)
+
+二、抓取开机 log, 以内核搜索出如下关键字：
+    E:\Kernel_Log\20180731-203625.kernel.txt (13 hits)
+        [   26.660378] type=1400 audit(4308.789:13): avc: denied { module_load } for pid=1 comm="init" path="/lib/modules/texfat.ko" dev="rootfs" ino=5423 scontext=u:r:init:s0 tcontext=u:object_r:rootfs:s0 tclass=system permissive=0
+        [   26.686817] type=1400 audit(4308.789:13): avc: denied { module_load } for pid=1 comm="init" path="/lib/modules/texfat.ko" dev="rootfs" ino=5423 scontext=u:r:init:s0 tcontext=u:object_r:rootfs:s0 tclass=system permissive=0
+        [   26.686831] type=1400 audit(4308.809:14): avc: denied { module_load } for pid=1 comm="init" path="/lib/modules/tntfs.ko" dev="rootfs" ino=46 scontext=u:r:init:s0 tcontext=u:object_r:rootfs:s0 tclass=system permissive=0
+        [   28.231490] type=1400 audit(4308.809:14): avc: denied { module_load } for pid=1 comm="init" path="/lib/modules/tntfs.ko" dev="rootfs" ino=46 scontext=u:r:init:s0 tcontext=u:object_r:rootfs:s0 tclass=system permissive=0
+
+    参考示例添加：
+        // [  342.204415] type=1400 audit(4504.179:161): avc: denied { search } for pid=5728 comm="unlockcheck" name="block" dev="tmpfs" ino=568 scontext=u:r:unlockcheck:s0 tcontext=u:object_r:block_device:s0 tclass=dir permissive=0
+        //          scontext=u:r:unlockcheck:s0                 # 操作主体 unlockcheck ， 可通过 ls -Z  ps -Z 查看
+        //          tcontext=u:object_r:block_device:s0         # 操作客体 block_device
+        //          tclass=dir permissive=0                     # 操作客体所属类别  dir ， 相关权限可通过执行相关权限目录酌情添加
+        // allow unlockcheck block_device:dir { search getattr read write};
+
+三、重新编译安卓即可，需要更新 boot.img 和 system.img
+
+##########################################
+# 给可执行文件添加权限：
+##########################################
+    给可执行程序添加权限：
+        src\device\qcom\sepolicy\common\file_contexts
+            # wangjun@wind-mobi.com 20180108 add unlock start
+            /vendor/bin/unlockcheck u:object_r:unlockcheck_exec:s0
+            # wangjun@wind-mobi.com 20180108 add unlock end
+
+
+        # 新增的权限文件
+        src\device\qcom\sepolicy\common\unlockcheck.te
+            # 以下几个是可执行程序必要的权限声明
+            type unlockcheck ,domain;
+            type unlockcheck_exec , file_type, vendor_file_type, exec_type;
+            init_daemon_domain(unlockcheck)
+
+            # 以下权限是通过 kernel log 一条条添加的，报哪条添加哪条
+            allow unlockcheck qdma_data_file:file create_file_perms;
+            allow unlockcheck qdma_data_file:dir create_dir_perms;
+            allow unlockcheck { proc sysfs }:file r_file_perms;
+            allow unlockcheck { proc sysfs }:dir r_dir_perms;
+            allow unlockcheck factory_data_file: file {read write open create getattr};
+            allow unlockcheck factory_data_file: dir {search write read add_name};
+            allow unlockcheck self:capability dac_override;
+            allow unlockcheck diag_device:chr_file {read write open ioctl};
+
+            // [  342.204415] type=1400 audit(4504.179:161): avc: denied { search } for pid=5728 comm="unlockcheck" name="block" dev="tmpfs" ino=568 scontext=u:r:unlockcheck:s0 tcontext=u:object_r:block_device:s0 tclass=dir permissive=0
+            //          scontext=u:r:unlockcheck:s0                 # 操作主体 unlockcheck ， 可通过 ls -Z  ps -Z 查看
+            //          tcontext=u:object_r:block_device:s0         # 操作客体 block_device
+            //          tclass=dir permissive=0                     # 操作客体所属类别  dir ， 相关权限可通过执行相关权限目录酌情添加
+            allow unlockcheck block_device:dir { search getattr read write};
+            allow unlockcheck proinfo_block_device:blk_file {open read write};
+
+
+    重新编译安卓即可，需要更新 boot.img 和 system.img
+
+
+##########################################
+# 给新挂载分区及文件添加权限：
+##########################################
+    # 定义文件权限
+        device/qcom/sepolicy / common/device.te
+            type xrom_block_device, dev_type;
+
+        device/qcom/sepolicy / common/file.te
+            type xrom_file, file_type;
+
+        device/qcom/sepolicy / common/file_contexts
+            /dev/block/platform/soc/7824900.sdhci/by-name/xrom                 u:object_r:xrom_block_device:s0
+            /xrom(/.*)?            u:object_r:xrom_file:s0
+
+
+    # 使用者添加使用权限：
+        device/qcom/sepolicy / common/fsck.te
+            allow fsck xrom_block_device:blk_file           { read open write ioctl };
+
+        device/qcom/sepolicy / common/init.te
+            # xrom
+            allow init xrom_file:dir { mounton };
+            allow init xrom_block_device:blk_file { write };
+
+##########################################
+# 给位于 dev 目录下的文件添加权限：
+##########################################
+    # 定义权限
+        device/qcom/sepolicy / common/device.te
+            type dvt_isdbt, dev_type;
+
+        device/qcom/sepolicy / common/file_contexts
+            /dev/isdbt				u:object_r:dvt_isdbt:s0
+
+    # 添加使用者权限
+        device/qcom/sepolicy / common/system_app.te
+            allow system_app dvt_isdbt:chr_file {read write ioctl open};
+
+
+
+##########################################
+# 新建的 proc 目录下文件添加权限：
+##########################################
+    # 分配权限
+        device/qcom/sepolicy / common/file.te
+            type proc_gestures_file, fs_type;
+            type proc_gestures_item_file, fs_type;
+
+        device/qcom/sepolicy / common/genfs_contexts  # 这个路径为 /proc/android_touch/
+            genfscon proc /android_touch/SMWP u:object_r:proc_gestures_file:s0
+            genfscon proc /android_touch/GESTURE u:object_r:proc_gestures_item_file:s0
+
+    # 使用权限
+        device/qcom/sepolicy / common/system_app.te
+            allow system_app proc_gestures_file:file rw_file_perms;
+            allow system_app proc_gestures_item_file:file rw_file_perms;
+
+        device/qcom/sepolicy / common/system_server.te
+            allow system_server proc_gestures_file:file rw_file_perms;
+            allow system_server proc_gestures_item_file:file rw_file_perms;
+
+
+
+##########################################
+# 新增文件系统，添加权限： texfat/tntfs
+##########################################
+    device/qcom/sepolicy / common/file_contexts
+        # Tuxera exFAT/NTFS
+        # Must be placed at the very end of the file, after all of the AOSP entries!
+        /system/bin/exfatck	--	u:object_r:fsck_exec:s0
+        /system/bin/ntfsck	--	u:object_r:fsck_exec:s0
+        /system/bin/exfatlabel  u:object_r:blkid_exec:s0
+        /system/bin/exfatvsn    u:object_r:blkid_exec:s0
+
+    device/qcom/sepolicy / common/genfs_contexts
+        # Tuxera exFAT/NTFS labeled with the 'vfat' label since it will be used in the same context.
+        genfscon texfat / u:object_r:vfat:s0
+        genfscon tntfs / u:object_r:vfat:s0
+
+    device/qcom/sepolicy / common/init.te
+        allow init system_file:system module_load;
+
+
+##########################################
+# 修改文件系统路径 添加权限： texfat/tntfs
+##########################################
+    device\qcom\sepolicy\common\init.te
+        allow init rootfs:system module_load;
+```
+
+# 问题总结
+
+## 一、权限问题
+
+如下遇到的权限问题，log中的TAG是 avc，如下是log:
+```
+  avc: denied { append } for pid=8317 comm=”RenderThread” name=”glsl_shader_log.txt” dev=”mmcblk0p35” ino=4077 scontext=u:r:system_app:s0 tcontext=u:object_r:system_data_file:s0 tclass=file permissive=0
+```
+如果发现是上面log，怎基本可以确定是权限问题，如果还想再进一步确认，可以通过执行
+adb shell setenforce 0将权限放开，如果放开后，你的问题已不出现，就进一步说明了是权限导致的改问题。
+
+## 二、分析
+
+1.缺少的权限：denied { append }
+2.哪个缺少权限（就是对应的哪个 te 文件）：scontext=u:r:system_app:s0
+3.对谁缺少权限（就是对哪个文件/目录等缺少操作的权限）：tcontext=u:object_r:system_data_file:s0
+4.上述的是具体类型（文件/目录）：tclass=file
+
+## 三、解决方法：
+
+赋予 system_app (系统app)对 文件（file)类型 system_data_file 有append的权限
+1.找到 system_app.te 文件
+2.文件中添加内容：
+allow system_app system_data_file:file { append }
+
+## 四、新增加一个目录，我们如何定义及添加权限，以下以增加data/faces目录，并添加相应的权限为例：
+
+要在这个目录下保存一些数据,需要做一些权限的处理。具体在device/qcom/sepolicy仓下,涉及下面四个文件
+
+1，device/qcom/sepolicy/private/file.te
+在该文件下做了类型定义
+type face_data_file, file_type, data_file_type, core_data_file_type;
+
+2，device/qcom/sepolicy/private/file_contexts
+
+改文件中定义了人脸相关字段
+ /data/faces(/.*)?        u:object_r:face_data_file:s0
+
+3，device/qcom/sepolicy/private/platform_app.te
+
+该文件下需要添加如下权限：
+allow platform_app face_data_file:file { create write open getattr read };
+allow platform_app face_data_file:dir { create read open getattr search write };
+
+4，device/qcom/sepolicy/private/system_app.te
+
+该文件下需要添加如下权限：
+allow system_app face_data_file:file { create write open getattr read  setattr unlink };
+allow system_app face_data_file:dir { create read open getattr search write  add_name  remove_name setattr unlink};
+通过以上操作，该目录下就可以保存一些数据了。
+
+
+## 五、添加完权限如何编译验证?
+
+android 8.0及以后，android根目录下执行 make selinux_policy，会输出到
+out/target/product/XXXX/system/etc/selinux 和 out/target/product/XXXX/vendor/etc/selinux
+push上述两个目录的所有文件到system/etc/selinux和vendor/etc/selinux目录 重启手机即可。
+
+
+
+##六 SELinux audit2allow命令使用
+
+
+首先将我们的报错avc日志拷出来做成一个avc.txt放在Ubuntu系统下面在终端中运行以下命令生成的avc.te文件就是我们的解决方法了。
+
+audit2allow –i avc.txt >avc.te
+
+运行audit2allow工具(external/selinux/prebuilts/bin/audit2allow)之后得到的avc.te文件
