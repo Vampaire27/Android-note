@@ -67,3 +67,57 @@ openssl pkcs12 -export -in platform.x509.pem -inkey shared.priv.pem -out shared.
 3、生成release.keystore
 
 keytool -importkeystore -deststorepass android -destkeypass android -destkeystore release.keystore -srckeystore shared.pk12 -srcstoretype PKCS12 -srcstorepass android -alias androidreleasekey
+
+
+
+版本定义
+
+  BUILD_FINGERPRINT := $(PRODUCT_BRAND)/$(TARGET_PRODUCT)/$(TARGET_DEVICE):$(PLATFORM_VERSION)/$(BUILD_ID)/$(BF_BUILD_NUMBER):$(TARGET_BUILD_VARIANT)/$(BUILD_VERSION_TAGS)
+
+[ro.build.fingerprint]: [Android/aosp_coral/coral:11/RP1A.200720.009/eng.huzhon.20201211.111407:userdebug/test-keys]
+
+
+Android/aosp_coral/coral:11/RP1A.200720.009/huzhongyang01141747:userdebug/test-keys
+
+ro.product.device
+
+[ro.product.device]: [coral]
+
+[ro.build.product]: [coral]
+
+ro.product.name=
+
+[ro.build.fingerprint]: [TCL/T782H_EEA/Boston:11/RKQ1.201004.002/8D23_1:userdebug/release-keys]
+ro.product.brand /ro.product.name/ro.build.product/:11/***/
+
+
+品牌名称: ro.product.brand  ==   baoneng
+产品名称: ro.product.name = pix4
+软件版本号: ro.build.version.incremental = BN012102
+
+
+         ro.product.version_src=1111
+         ro.product.version_des=2222
+-k build/make/target/product/security/testkey 
+./build/tools/releasetools/ota_from_target_files.py -p build/host/ -i /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-eng.huzhongyang_1.zip  /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-eng.huzhongyang2.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-eng.huzhongyang_1_2.zip
+
+
+
+ ./build/tools/releasetools/ota_from_target_files.py -p /home/huzhongyang/code/android11_init/out/host/linux-x86/ -i /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012101.zip  /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012103.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-BN012101-BN012103.zip
+
+
+
+
+
+
+
+ [   27.977853] update_engine_sideload I 07-13 08:22:19   581   581 [INFO:delta_performer.cc(397)] Applying 35 operations to partition "boot"
+ [   27.977899] update_engine_sideload I 07-13 08:22:19   581   581 [INFO:delta_performer.cc(657)] Starting to apply update payload operations
+ [   28.156269] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:delta_performer.cc(431)] Unable to open ECC source partition boot on slot A, file /dev/block/bootdevice/by-name/boot_a: Permission denied (13)
+ [   28.156312] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:delta_performer.cc(1158)] The hash of the source data on disk for this operation doesn't match the expected value. This could mean that the delta update payload was targeted for another version, or that the source partition was modified after it was installed, for example, by mounting a filesystem.
+ [   28.156339] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:delta_performer.cc(1163)] Expected:   sha256|hex = B16719CB7013121BCD55ABEDAAC9FBC617C0B5DEBB2EA2A6C7C3CB63F50C8A6D
+ [   28.156364] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:delta_performer.cc(1166)] Calculated: sha256|hex = 11A90BF1038B5CDA6B80F510AC33EC068405BD6EFD452C1F60B90BC6CD4AC955
+ [   28.156391] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:delta_performer.cc(1177)] Operation source (offset:size) in blocks: 8321:1
+ [   28.156422] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:delta_performer.cc(1498)] source_fd != nullptr failed.
+ [   28.156470] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:delta_performer.cc(297)] Failed to perform BROTLI_BSDIFF operation 17, which is the operation 17 in partition "boot"
+ [   28.156498] update_engine_sideload E 07-13 08:22:20   581   581 [ERROR:download_action.cc(336)] Error ErrorCode::kDownloadStateInitializationError (20) in DeltaPerformer's Write method when processing the received payload -- Terminating processing

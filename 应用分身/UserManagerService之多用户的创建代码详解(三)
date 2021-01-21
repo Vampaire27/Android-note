@@ -1,0 +1,412 @@
+上文提到创建用户的方法：
+
+核心代码是 createUserInternalUnchecked
+
+在此方法中要完成一个用户的创建。首先是通过flag区分需要创建用户的类型，然后不同类型在信息的使用上会有不同差别。 总的来说，
+
+创建时兼顾了各种类型的user，并且给新用户提供userId和UserInfo两个重要参数。
+
+需要注意的是，创建用户并不会使用户显示出来。要显示用户是通过多用户切换功能完成。
+
+我们平常一创建多用户就跳转到新用户的界面，那是由创建用户和切换用户共同完成。
+
+
+下面是createUserInternalUnchecked 完整源码和讲解。
+
+代码地址：
+
+http://androidxref.com/9.0.0_r3/xref/frameworks/base/services/core/java/com/android/server/pm/UserManagerService.java#2600
+
+```
+
+private UserInfo createUserInternalUnchecked(String name, int flags, int parentId,String[] disallowedPackages) {
+
+        //首先如同上一章所讲，传入参数为 用户的名字name ，  用户的类型/特性 flags ， 主用户的识别码 parentId， 和新创建用户时的禁用应用表。
+
+        //如果单纯创建一个新用户， 那么这4个参数，分别是： createUserInternalUnchecked（“自定义的名称”，  0，    USER.NULL ， null）
+
+        //接着进行第一个判断，手机是否有足够空间支持新用户的创建，如果没有足够空间，则终止创建，return null
+
+        DeviceStorageMonitorInternal dsm = LocalServices.getService(DeviceStorageMonitorInternal.class);
+
+        if (dsm.isMemoryLow()) {
+
+            Log.w(LOG_TAG, "Cannot add user. Not enough space on disk.");
+
+            return null;
+
+        }
+
+        //随后对用户的特性进行一下统计，方面后续涉及到的部分进行快速判断。这里没有统计所有特性，且特性可以自己在UserInfo类里面，自己手动添加一些。
+
+        //特性1：访客用户
+
+        final boolean isGuest = (flags & UserInfo.FLAG_GUEST) != 0;
+
+
+        //特性2：工作用户（工作用户一定是子用户）
+
+        final boolean isManagedProfile = (flags & UserInfo.FLAG_MANAGED_PROFILE) != 0;
+
+        //特性3：受限制
+
+        final boolean isRestricted = (flags & UserInfo.FLAG_RESTRICTED) != 0;
+
+        //特性4：演示用户
+
+        final boolean isDemo = (flags & UserInfo.FLAG_DEMO) != 0;
+
+       // 接来下是最关注的几个对象，其中userInfo和userId是在多用户过程中，非常频繁使用的。
+
+        final long ident = Binder.clearCallingIdentity();
+
+        UserInfo userInfo;
+
+        UserData userData;
+
+        final int userId;
+
+        try {
+
+            synchronized (mPackagesLock) {
+
+                UserData parent = null;
+
+               //确认传入的主用户参数是否存在，当主用户存在，则获取parent。后面创建子用户过程中，部分信息会依赖于parent
+
+                if (parentId != UserHandle.USER_NULL) {
+
+                    synchronized (mUsersLock) {
+
+                        parent = getUserDataLU(parentId);
+
+                    }
+
+                    if (parent == null) return null;
+
+                }
+
+               //确认工作用户能够被创建
+
+                if (isManagedProfile && !canAddMoreManagedProfiles(parentId, false)) {
+
+                    Log.e(LOG_TAG, "Cannot add more managed profiles for user " + parentId);
+
+                    return null;
+
+                }
+
+                //正常用户数量是否抵达上限
+
+                if (!isGuest && !isManagedProfile && !isDemo && isUserLimitReached()) {
+
+                    // If we're not adding a guest/demo user or a managed profile and the limit has
+
+                    // been reached, cannot add a user.
+
+                    return null;
+
+                }
+
+                //是否在已经存在访客用户时，还创建访客用户，禁止此情况。
+
+                if (isGuest && findCurrentGuestUser() != null) {
+
+                    return null;
+
+                }
+
+                // 受管控用户必须由系统用户管控
+
+                if (isRestricted && !UserManager.isSplitSystemUser()
+
+                        && (parentId != UserHandle.USER_SYSTEM)) {
+
+                    Log.w(LOG_TAG, "Cannot add restricted profile - parent user must be owner");
+
+                    return null;
+
+                }
+
+                //在split system user mode下创建受管控用户必须满足的条件
+
+                if (isRestricted && UserManager.isSplitSystemUser()) {
+
+                    if (parent == null) {
+
+                        Log.w(LOG_TAG, "Cannot add restricted profile - parent user must be "
+
+                                + "specified");
+
+                        return null;
+
+                    }
+
+                    if (!parent.info.canHaveProfile()) {
+
+                        Log.w(LOG_TAG, "Cannot add restricted profile - profiles cannot be "
+
+                                + "created for the specified parent user id " + parentId);
+
+                        return null;
+
+                    }
+
+                }
+
+                //在split system user mode下创建受用户必须满足的条件
+
+                if (UserManager.isSplitSystemUser()
+
+                        && !isGuest && !isManagedProfile && getPrimaryUser() == null) {
+
+                    flags |= UserInfo.FLAG_PRIMARY;
+
+                    synchronized (mUsersLock) {
+
+                        if (!mIsDeviceManaged) {
+
+                            flags |= UserInfo.FLAG_ADMIN;
+
+                        }
+
+                    }
+
+                }
+
+```
+
+
+//在进行前置条件排除之后，此处开始正式创建用户
+
+//核心参数1：获取可用的userId，这里涉及一个方法getNextAvailableId，该方法进一步调用scanNextAvailableIdLocked方法,下面是简化之后的代码
+```
+
+   int getNextAvailableId() {
+
+       int nextId = scanNextAvailableIdLocked();
+
+       return nextId;
+
+   }
+
+   static final int MIN_USER_ID = 10;
+
+   private int scanNextAvailableIdLocked() {
+
+       for (int i = MIN_USER_ID; i < MAX_USER_ID; i++) {
+
+           if (mUsers.indexOfKey(i) < 0 && !mRemovingUserIds.get(i)) {
+
+               return i;
+
+           }
+
+       }
+
+       return -1;
+
+   }
+
+```
+
+正常开机自动创建的系统用户的userId为0， 而后的userId完全靠创建顺序，从10开始，依次11,12,13增长。
+
+```
+
+  userId = getNextAvailableId();
+
+  //创建用户文件夹
+
+  Environment.getUserSystemDirectory(userId).mkdirs();
+
+  // 检查是否是ephemeralGuests模式，这种模式创建用户后，会立刻切换，而当我们用这个用户离开之后，这个用户就会立刻自动销毁。
+
+  boolean ephemeralGuests = Resources.getSystem()
+
+          .getBoolean(com.android.internal.R.bool.config_guestUserEphemeral);
+
+
+  synchronized (mUsersLock) {
+
+      // Add ephemeral flag to guests/users if required. Also inherit it from parent.
+
+      if ((isGuest && ephemeralGuests) || mForceEphemeralUsers
+
+              || (parent != null && parent.info.isEphemeral())) {
+
+          flags |= UserInfo.FLAG_EPHEMERAL;
+
+      }
+```
+
+//核心参数2，创建userInfo，注意该userInfo最终会返回调用createUser的app：
+```
+      userInfo = new UserInfo(userId, name, null, flags);
+
+      userInfo.serialNumber = mNextSerialNumber++;
+
+      long now = System.currentTimeMillis();
+
+      userInfo.creationTime = (now > EPOCH_PLUS_30_YEARS) ? now : 0;
+
+      userInfo.partial = true;
+
+      userInfo.lastLoggedInFingerprint = Build.FINGERPRINT;
+
+      if (isManagedProfile && parentId != UserHandle.USER_NULL) {
+
+          userInfo.profileBadge = getFreeProfileBadgeLU(parentId);
+
+      }
+```
+
+  //核心参数3，UserData,保持创建完成的用户数据
+```
+      userData = new UserData();
+
+      userData.info = userInfo;
+
+      mUsers.put(userId, userData);
+
+      }
+
+      //将用户数据写入本地文件
+
+      writeUserLP(userData);
+
+      writeUserListLP();
+
+      //如果本次创建的用户是子用户则需要将其对应的主用户信息也保存下来。
+
+      if (parent != null) {
+
+      if (isManagedProfile) {
+
+          if (parent.info.profileGroupId == UserInfo.NO_PROFILE_GROUP_ID) {
+
+              parent.info.profileGroupId = parent.info.id;
+
+              writeUserLP(parent);
+
+          }
+
+          userInfo.profileGroupId = parent.info.profileGroupId;
+
+      } else if (isRestricted) {
+
+          if (parent.info.restrictedProfileParentId == UserInfo.NO_PROFILE_GROUP_ID) {
+
+              parent.info.restrictedProfileParentId = parent.info.id;
+
+              writeUserLP(parent);
+
+          }
+
+          userInfo.restrictedProfileParentId = parent.info.restrictedProfileParentId;
+
+      }
+
+      }
+
+    }
+```
+
+//保存userkey，也就是存下用户的一些基本参数，用于快速查找。
+
+```
+   final StorageManager storage = mContext.getSystemService(StorageManager.class);
+
+   storage.createUserKey(userId, userInfo.serialNumber, userInfo.isEphemeral());
+
+   mUserDataPreparer.prepareUserData(userId, userInfo.serialNumber,
+
+  StorageManager.FLAG_STORAGE_DE | StorageManager.FLAG_STORAGE_CE);
+
+```
+
+
+//通知packageManager新用户被创建了，这样packageManager会对新的用户安装对应的应用信息，当然
+在disallowedPackages里面的就不会安装到新的用户中。
+
+
+```
+         mPm.createNewUser(userId, disallowedPackages);
+
+         userInfo.partial = false;
+
+         synchronized (mPackagesLock) {
+
+             writeUserLP(userData);
+
+         }
+
+     //创建成功之后，更新userId的序列，为下一个用户做准备
+
+         updateUserIds();
+
+     //而后进入用户的管控初始化，仅仅对于需要管控的内容进行管控
+
+         Bundle restrictions = new Bundle();
+
+    // 比如这里就是设置的访客现在，访客限制可以通过mGuestRestrictions查询，大致有禁止拨号，禁止短信等
+
+         if (isGuest) {
+
+             synchronized (mGuestRestrictions) {
+
+                 restrictions.putAll(mGuestRestrictions);
+
+             }
+
+         }
+
+         synchronized (mRestrictionsLock) {
+
+             mBaseUserRestrictions.append(userId, restrictions);
+
+         }
+
+         mPm.onNewUserCreated(userId);
+
+         Intent addedIntent = new Intent(Intent.ACTION_USER_ADDED);
+
+         addedIntent.putExtra(Intent.EXTRA_USER_HANDLE, userId);
+
+         mContext.sendBroadcastAsUser(addedIntent, UserHandle.ALL,
+
+                 android.Manifest.permission.MANAGE_USERS);
+
+         MetricsLogger.count(mContext, isGuest ? TRON_GUEST_CREATED
+
+                 : (isDemo ? TRON_DEMO_CREATED : TRON_USER_CREATED), 1);
+
+     } finally {
+
+         Binder.restoreCallingIdentity(ident);
+
+     }
+
+     //完成创建
+
+     return userInfo;
+
+ }
+
+```
+
+整个多用户的创建到此完成。回顾一下，最常见的创建方案是createUser，只需要传入用户的名称，以及0（默认的flag）。
+
+自己进行测试的时候，可以编写一个按钮，按一下就调用一个createUser，那么就可以发现，点几下就能在手机里面创建几个用户。
+
+
+当对于创建用户有一些想法的时候，就要利用flag了，flag在UserInfo这个类里面进行查询。一般建议这么使用：
+
+int flag = UserInfo.FLAG_INITIALIZED | UserInfo.FLAG_GUEST ；
+
+这样用或来组成目标flag， 以上的意思是创建不需经过开机向导的访客用户
+
+
+
+以上就能大致了解创建用户的流程和创建用户的方法，我们创建用户是为了使用该用户，而使用该用户是需要切换到该用户的，
+下一章讲述切换用户的流程。

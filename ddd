@@ -1,0 +1,400 @@
+
+07-08 00:37:45.923     1     1 I init    : Parsing file /system/etc/init/vold.rc...
+07-08 00:37:46.426     1     1 I init    : starting service 'vold'...
+07-08 00:37:46.463   625   625 I vold    : Vold 3.0 (the awakening) firing up
+07-08 00:37:46.463   625   625 D vold    : Detected support for: ext4 f2fs vfat
+07-08 00:37:46.466   625   625 W vold    : type=1400 audit(0.0:4): avc: denied { getattr } for path="/vendor/apex/com.android.vndk.current.on_vendor.apex" dev="overlay" ino=28103 scontext=u:r:vold:s0 tcontext=u:object_r:vendor_apex_file:s0 tclass=file permissive=0
+07-08 00:37:46.468   625   625 D vold    : Found unmanaged dm device named system_ext_b
+07-08 00:37:46.468   625   625 D vold    : Found unmanaged dm device named system_b
+07-08 00:37:46.468   625   625 D vold    : Found unmanaged dm device named vendor_b
+07-08 00:37:46.468   625   625 D vold    : Found unmanaged dm device named system_a
+07-08 00:37:46.468   625   625 D vold    : Found unmanaged dm device named product_b
+07-08 00:37:46.468   625   625 D vold    : Found unmanaged dm device named scratch
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop26: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop25: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop24: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop23: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop22: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop21: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop20: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop19: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop18: No such device or address
+07-08 00:37:46.468   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop17: No such device or address
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop16: No such device or address
+07-08 00:37:46.469   625   625 D vold    : Found unmanaged loop device at /dev/block/loop0 named apex:
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop8: No such device or address
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop14: No such device or address
+07-08 00:37:46.469   625   625 D vold    : Found unmanaged loop device at /dev/block/loop4 named apex:
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop9: No such device or address
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop11: No such device or address
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop6: No such device or address
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop5: Permission denied
+07-08 00:37:46.469   625   625 D vold    : Found unmanaged loop device at /dev/block/loop3 named apex:
+07-08 00:37:46.469   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop13: No such device or address
+07-08 00:37:46.470   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop12: No such device or address
+07-08 00:37:46.470   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop7: No such device or address
+07-08 00:37:46.470   625   625 D vold    : Found unmanaged loop device at /dev/block/loop2 named apex:
+07-08 00:37:46.470   625   625 D vold    : Found unmanaged loop device at /dev/block/loop1 named apex:
+07-08 00:37:46.470   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop10: No such device or address
+07-08 00:37:46.470   625   625 W vold    : Failed to LOOP_GET_STATUS64 /dev/block/loop15: No such device or address
+07-08 00:37:46.472   625   625 D vold    : VoldNativeService::start() completed OK
+07-08 00:37:46.526   649   649 D vdc     : Waited 0ms for vold
+07-08 00:37:46.539   654   654 D vdc     : Waited 0ms for vold
+07-08 00:37:46.539   625   625 D vold    : fscrypt_mount_metadata_encrypted: /data 0
+07-08 00:37:46.539   625   625 D vold    : metadata_key_dir/key: /metadata/vold/metadata_encryption/key
+07-08 00:37:46.541   625   625 I vold    : List of Keymaster HALs found:
+07-08 00:37:46.541   625   625 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+07-08 00:37:46.541   625   625 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+07-08 00:37:46.553   625   625 D vold    : Computing HMAC with params { (seed: 000000000000000000000000000000000, nonce: 9957c2358214e7f3ed42d72d879e58312844d5b2f4eb5d714a25045350eb), (seed: 9610356f2969f078e7c832c73df57afa1ae719d36a8f1597cd92da23473d58, nonce: 76fd8e3e5c537c422916bdca266630d9fc9e6d41905e6a3763392711d131db4) }
+07-08 00:37:46.553   625   625 D vold    : Computing HMAC for CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+07-08 00:37:46.568   625   625 D vold    : Computing HMAC for Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+07-08 00:37:46.572   625   625 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+07-08 00:37:46.573   625   625 D vold    : Key exists, using: /metadata/vold/metadata_encryption/key
+07-08 00:37:46.577   625   625 I vold    : List of Keymaster HALs found:
+07-08 00:37:46.577   625   625 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+07-08 00:37:46.577   625   625 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+07-08 00:37:46.577   625   625 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+07-08 00:37:46.605   625   625 D vold    : Mounting metadata-encrypted filesystem:/data
+07-08 00:37:46.607   625   625 I vold    : List of Keymaster HALs found:
+07-08 00:37:46.607   625   625 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+07-08 00:37:46.607   625   625 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+07-08 00:37:46.622   625   625 I vold    : [libfs_mgr]Running /system/bin/fsck.f2fs -a -c 10000 --debug-cache/dev/block/dm-6
+07-08 00:37:46.791   625   625 I vold    : [libfs_mgr]__mount(source=/dev/block/dm-6,target=/data,type=f2fs)=0: Success
+07-08 00:37:46.792   625   625 D vold    : Mounted /data
+07-08 00:37:46.792   625   628 D vold    : Disk at 253:6 changed
+07-08 00:37:46.831   715   715 D vdc     : Waited 0ms for vold
+07-08 00:37:47.426   789   789 D vdc     : Waited 0ms for vold
+01-14 16:47:49.590   625   625 I vold    : fscrypt_initialize_systemwide_keys
+01-14 16:47:49.591   625   625 D vold    : Key exists, using: /data/unencrypted/key
+01-14 16:47:49.593   625   625 I vold    : List of Keymaster HALs found:
+01-14 16:47:49.593   625   625 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+01-14 16:47:49.593   625   625 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:49.593   625   625 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:49.600   625   625 D vold    : Detected support for FS_IOC_ADD_ENCRYPTION_KEY
+01-14 16:47:49.600   625   625 D vold    : Installed fscrypt key with ref f596ca8aa9fe6cdd to /data
+01-14 16:47:49.600   625   625 D vold    : Added fscrypt-provisioning key for f596ca8aa9fe6cdd to session keyring
+01-14 16:47:49.602   625   625 I vold    : Wrote system DE key reference to:/data/unencrypted/ref
+01-14 16:47:49.602   625   625 D vold    : Installed fscrypt key with ref f5532f3f389d5c07 to /data
+01-14 16:47:49.602   625   625 D vold    : Added fscrypt-provisioning key for f5532f3f389d5c07 to session keyring
+01-14 16:47:49.602   625   625 I vold    : Wrote per boot key reference to:/data/unencrypted/per_boot_ref
+01-14 16:47:49.622   625   628 D vold    : Disk at 7:48 changed
+01-14 16:47:49.671   625   628 D vold    : Disk at 7:48 changed
+01-14 16:47:49.675   625   628 D vold    : Disk at 7:56 changed
+01-14 16:47:49.691   625   628 D vold    : Disk at 7:56 changed
+01-14 16:47:49.695   625   628 D vold    : Disk at 7:64 changed
+01-14 16:47:49.718   625   628 D vold    : Disk at 7:64 changed
+01-14 16:47:49.724   625   628 D vold    : Disk at 7:72 changed
+01-14 16:47:49.751   625   628 D vold    : Disk at 7:72 changed
+01-14 16:47:49.754   625   628 D vold    : Disk at 7:80 changed
+01-14 16:47:49.775   625   628 D vold    : Disk at 7:80 changed
+01-14 16:47:49.778   625   628 D vold    : Disk at 7:88 changed
+01-14 16:47:49.798   625   628 D vold    : Disk at 7:88 changed
+01-14 16:47:49.802   625   628 D vold    : Disk at 7:96 changed
+01-14 16:47:49.815   625   628 D vold    : Disk at 7:96 changed
+01-14 16:47:49.817   625   628 D vold    : Disk at 7:104 changed
+01-14 16:47:49.831   625   628 D vold    : Disk at 7:104 changed
+01-14 16:47:49.834   625   628 D vold    : Disk at 7:112 changed
+01-14 16:47:49.841   625   628 D vold    : Disk at 7:112 changed
+01-14 16:47:49.846   625   628 D vold    : Disk at 7:120 changed
+01-14 16:47:49.859   625   628 D vold    : Disk at 7:120 changed
+01-14 16:47:49.865   625   628 D vold    : Disk at 7:128 changed
+01-14 16:47:49.911   625   628 D vold    : Disk at 7:128 changed
+01-14 16:47:49.914   625   628 D vold    : Disk at 7:136 changed
+01-14 16:47:49.947   625   628 D vold    : Disk at 7:136 changed
+01-14 16:47:49.952   625   628 D vold    : Disk at 7:144 changed
+01-14 16:47:49.968   625   628 D vold    : Disk at 7:144 changed
+01-14 16:47:49.971   625   628 D vold    : Disk at 7:152 changed
+01-14 16:47:49.987   625   628 D vold    : Disk at 7:152 changed
+01-14 16:47:49.991   625   628 D vold    : Disk at 7:160 changed
+01-14 16:47:50.027   625   628 D vold    : Disk at 7:160 changed
+01-14 16:47:50.031   625   628 D vold    : Disk at 7:168 changed
+01-14 16:47:50.054   625   628 D vold    : Disk at 7:168 changed
+01-14 16:47:50.058   625   628 D vold    : Disk at 7:176 changed
+01-14 16:47:50.070   625   628 D vold    : Disk at 7:176 changed
+01-14 16:47:50.074   625   628 D vold    : Disk at 7:184 changed
+01-14 16:47:50.088   625   628 D vold    : Disk at 7:184 changed
+01-14 16:47:50.090   625   628 D vold    : Disk at 7:192 changed
+01-14 16:47:50.097   625   628 D vold    : Disk at 7:192 changed
+01-14 16:47:50.101   625   628 D vold    : Disk at 7:200 changed
+01-14 16:47:50.114   625   628 D vold    : Disk at 7:200 changed
+01-14 16:47:50.122   625   628 D vold    : Disk at 7:208 changed
+01-14 16:47:50.134   625   628 D vold    : Disk at 7:208 changed
+01-14 16:47:50.185   625   625 D vold    : fscrypt_init_user0
+01-14 16:47:50.185   625   625 D vold    : Preparing: /data/misc/vold/user_keys
+01-14 16:47:50.186   625   625 D vold    : Preparing: /data/misc/vold/user_keys/ce
+01-14 16:47:50.186   625   625 D vold    : Preparing: /data/misc/vold/user_keys/de
+01-14 16:47:50.187   625   625 D vold    : Skipping non-de-key .
+01-14 16:47:50.187   625   625 D vold    : Skipping non-de-key ..
+01-14 16:47:50.189   625   625 I vold    : List of Keymaster HALs found:
+01-14 16:47:50.189   625   625 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+01-14 16:47:50.189   625   625 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:50.189   625   625 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:50.236   625   625 D vold    : Installed fscrypt key with ref f94a93ec7f60b06c to /data
+01-14 16:47:50.236   625   625 D vold    : Added fscrypt-provisioning key for f94a93ec7f60b06c to session keyring
+01-14 16:47:50.236   625   625 D vold    :  hzy Installed de key for user 0
+01-14 16:47:50.264   625   625 I vold    : List of Keymaster HALs found:
+01-14 16:47:50.264   625   625 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+01-14 16:47:50.264   625   625 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:50.264   625   625 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:50.354   625   625 D vold    : Installed fscrypt key with ref 3cd385984ff8305f to /data
+01-14 16:47:50.354   625   625 D vold    : Added fscrypt-provisioning key for 3cd385984ff8305f to session keyring
+01-14 16:47:50.354   625   625 D vold    :  hzy Installed de key for user 9876
+01-14 16:47:50.354   625   625 D vold    : hzy fscrypt_prepare_user_storage for volume null, user 0, serial 0, flags 1
+01-14 16:47:50.354   625   625 D vold    : Preparing: /data/system/users/0
+01-14 16:47:50.355   625   625 D vold    : Preparing: /data/misc/profiles/cur/0
+01-14 16:47:50.355   625   625 D vold    : Preparing: /data/system_de/0
+01-14 16:47:50.356   625   625 D vold    : Preparing: /data/misc_de/0
+01-14 16:47:50.356   625   625 D vold    : Preparing: /data/vendor_de/0
+01-14 16:47:50.356   625   625 D vold    : Preparing: /data/user_de/0
+01-14 16:47:50.356   625   625 I vold    : Verified that /data/system_de/0 has the encryption policy f94a93ec7f60b06c v1 modes 127/4 flags 0x0
+01-14 16:47:50.356   625   625 I vold    : Verified that /data/misc_de/0 has the encryption policy f94a93ec7f60b06c v1 modes 127/4 flags 0x0
+01-14 16:47:50.356   625   625 I vold    : Verified that /data/vendor_de/0 has the encryption policy f94a93ec7f60b06c v1 modes 127/4 flags 0x0
+01-14 16:47:50.356   625   625 I vold    : Verified that /data/user_de/0 has the encryption policy f94a93ec7f60b06c v1 modes 127/4 flags 0x0
+01-14 16:47:50.356   625   625 D vold    : /system/bin/vold_prepare_subdirs
+01-14 16:47:50.356   625   625 D vold    :     prepare
+01-14 16:47:50.356   625   625 D vold    :
+01-14 16:47:50.356   625   625 D vold    :     0
+01-14 16:47:50.356   625   625 D vold    :     1
+01-14 16:47:50.365   824   824 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:vold_data_file:s0 on path: /data/misc_de/0/vold
+01-14 16:47:50.366   824   824 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:storaged_data_file:s0 on path: /data/misc_de/0/storaged
+01-14 16:47:50.366   824   824 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:rollback_data_file:s0 on path: /data/misc_de/0/rollback
+01-14 16:47:50.366   824   824 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:apex_rollback_data_file:s0 on path: /data/misc_de/0/apexrollback
+01-14 16:47:50.367   824   824 D vold_prepare_subdirs: Setting up mode 711 uid 0 gid 0 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata
+01-14 16:47:50.367   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.mediaprovider
+01-14 16:47:50.367   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_wifi_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.wifi
+01-14 16:47:50.368   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.media.swcodec
+01-14 16:47:50.368   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_permission_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.permission
+01-14 16:47:50.368   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.cellbroadcast
+01-14 16:47:50.369   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.resolv
+01-14 16:47:50.369   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.conscrypt
+01-14 16:47:50.369   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.media
+01-14 16:47:50.370   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.adbd
+01-14 16:47:50.370   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.neuralnetworks
+01-14 16:47:50.370   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.sdkext
+01-14 16:47:50.371   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.apex.cts.shim
+01-14 16:47:50.371   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.ipsec
+01-14 16:47:50.371   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.tethering
+01-14 16:47:50.372   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.extservices
+01-14 16:47:50.372   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.vndk.v30
+01-14 16:47:50.372   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.tzdata
+01-14 16:47:50.373   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.os.statsd
+01-14 16:47:50.373   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.i18n
+01-14 16:47:50.373   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.runtime
+01-14 16:47:50.373   824   824 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/0/apexdata/com.android.art
+01-14 16:47:50.374   824   824 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:fingerprint_vendor_data_file:s0 on path: /data/vendor_de/0/fpdata
+01-14 16:47:50.374   824   824 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:face_vendor_data_file:s0 on path: /data/vendor_de/0/facedata
+01-14 16:47:55.895  1483  1673 I StorageManagerService: Resetting vold...
+01-14 16:47:55.896  1483  1673 I StorageManagerService: Reset vold
+01-14 16:47:55.896   625   625 I vold    : onUserAdded: 0
+01-14 16:47:55.896   625   625 I vold    : onUserAdded: 9876
+01-14 16:47:55.927   625   625 D vold    : fscrypt_unlock_user_key 0 serial=0 token_present=0
+01-14 16:47:55.928   625   625 D vold    : Skipping non-key .
+01-14 16:47:55.928   625   625 D vold    : Skipping non-key ..
+01-14 16:47:55.928   625   625 D vold    : Trying user CE key /data/misc/vold/user_keys/ce/0/current
+01-14 16:47:55.934   625   625 I vold    : List of Keymaster HALs found:
+01-14 16:47:55.934   625   625 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+01-14 16:47:55.934   625   625 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:55.935   625   625 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:55.948   625   625 D vold    : Successfully retrieved key
+01-14 16:47:55.954   625   625 D vold    : Installed fscrypt key with ref b83f0b8cf2b97c61 to /data
+01-14 16:47:55.954   625   625 D vold    : Added fscrypt-provisioning key for b83f0b8cf2b97c61 to session keyring
+01-14 16:47:55.954   625   625 D vold    : Installed ce key for user 0
+01-14 16:47:55.955   625   625 D vold    : hzy fscrypt_prepare_user_storage for volume null, user 0, serial 0, flags 2
+01-14 16:47:55.955   625   625 D vold    : Preparing: /data/system_ce/0
+01-14 16:47:55.955   625   625 D vold    : Preparing: /data/misc_ce/0
+01-14 16:47:55.955   625   625 D vold    : Preparing: /data/vendor_ce/0
+01-14 16:47:55.955   625   625 D vold    : Preparing: /data/media/0
+01-14 16:47:55.956   625   625 D vold    : Preparing: /data/data
+01-14 16:47:55.956   625   625 I vold    : Verified that /data/system_ce/0 has the encryption policy b83f0b8cf2b97c61 v1 modes 127/4 flags 0x0
+01-14 16:47:55.956   625   625 I vold    : Verified that /data/misc_ce/0 has the encryption policy b83f0b8cf2b97c61 v1 modes 127/4 flags 0x0
+01-14 16:47:55.956   625   625 I vold    : Verified that /data/vendor_ce/0 has the encryption policy b83f0b8cf2b97c61 v1 modes 127/4 flags 0x0
+01-14 16:47:55.956   625   625 I vold    : Verified that /data/media/0 has the encryption policy b83f0b8cf2b97c61 v1 modes 127/4 flags 0x0
+01-14 16:47:55.957   625   625 I vold    : Verified that /data/data has the encryption policy b83f0b8cf2b97c61 v1 modes 127/4 flags 0x0
+01-14 16:47:55.957   625   625 D vold    : Starting restorecon of /data/system_ce/0
+01-14 16:47:55.961   625   625 D vold    : Finished restorecon of /data/system_ce/0
+01-14 16:47:55.961   625   625 D vold    : Starting restorecon of /data/vendor_ce/0
+01-14 16:47:55.973   625   628 D vold    : Disk at 7:216 changed
+01-14 16:47:55.981   625   625 D vold    : Finished restorecon of /data/vendor_ce/0
+01-14 16:47:55.981   625   625 D vold    : Starting restorecon of /data/misc_ce/0
+01-14 16:47:55.989   625   625 D vold    : Finished restorecon of /data/misc_ce/0
+01-14 16:47:55.989   625   625 D vold    : /system/bin/vold_prepare_subdirs
+01-14 16:47:55.989   625   625 D vold    :     prepare
+01-14 16:47:55.989   625   625 D vold    :
+01-14 16:47:55.989   625   625 D vold    :     0
+01-14 16:47:55.989   625   625 D vold    :     2
+01-14 16:47:56.009  2638  2638 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:vold_data_file:s0 on path: /data/misc_ce/0/vold
+01-14 16:47:56.011  2638  2638 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:storaged_data_file:s0 on path: /data/misc_ce/0/storaged
+01-14 16:47:56.013  2638  2638 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:rollback_data_file:s0 on path: /data/misc_ce/0/rollback
+01-14 16:47:56.015  2638  2638 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:apex_rollback_data_file:s0 on path: /data/misc_ce/0/apexrollback
+01-14 16:47:56.017  2638  2638 D vold_prepare_subdirs: Setting up mode 711 uid 0 gid 0 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata
+01-14 16:47:56.018  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.mediaprovider
+01-14 16:47:56.018  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_wifi_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.wifi
+01-14 16:47:56.019  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.media.swcodec
+01-14 16:47:56.019  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_permission_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.permission
+01-14 16:47:56.019  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.cellbroadcast
+01-14 16:47:56.020  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.resolv
+01-14 16:47:56.020  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.conscrypt
+01-14 16:47:56.021  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.media
+01-14 16:47:56.021  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.adbd
+01-14 16:47:56.021  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.neuralnetworks
+01-14 16:47:56.022  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.sdkext
+01-14 16:47:56.022  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.apex.cts.shim
+01-14 16:47:56.022  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.ipsec
+01-14 16:47:56.023  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.tethering
+01-14 16:47:56.023  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.extservices
+01-14 16:47:56.023  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.vndk.v30
+01-14 16:47:56.024  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.tzdata
+01-14 16:47:56.025  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.os.statsd
+01-14 16:47:56.028  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.i18n
+01-14 16:47:56.029  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.runtime
+01-14 16:47:56.030  2638  2638 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.art
+01-14 16:47:56.030  2638  2638 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/0/backup
+01-14 16:47:56.031  2638  2638 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/0/backup_stage
+01-14 16:47:56.032  2638  2638 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:face_vendor_data_file:s0 on path: /data/vendor_ce/0/facedata
+01-14 16:47:56.335   625   625 I vold    : onUserStarted: 0
+01-14 16:47:56.337   625   625 I vold    : emulated;0 hzy_vold  doMount  /storage/emulated
+01-14 16:47:56.337   625   625 I vold    : Executing sdcardfs
+01-14 16:47:56.339   625   625 D vold    : Waiting for sdcardfs to spin up...
+01-14 16:47:56.347  2773  2773 E sdcard  : hzy_vold  to sdcardfs_setup /data/media
+01-14 16:47:56.391   625   625 I vold    : Mounting emulated fuse volume
+01-14 16:47:56.396   625   625 I vold    :  hzy_vold  user_id  = 0
+01-14 16:47:56.396   625   625 I vold    :  hzy_vold  relative_upper_path  = emulated
+01-14 16:47:56.396   625   625 I vold    :  hzy_vold  fuse_path  = /mnt/user/0/emulated
+01-14 16:47:56.408   625   625 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/0/emulated
+01-14 16:47:57.334   625   825 D vold    : hzy fscrypt_prepare_user_storage for volume null, user 9876, serial 9877, flags 1
+01-14 16:47:57.334   625   825 D vold    : Preparing: /data/system/users/9876
+01-14 16:47:57.334   625   825 D vold    : Preparing: /data/misc/profiles/cur/9876
+01-14 16:47:57.335   625   825 D vold    : Preparing: /data/system_de/9876
+01-14 16:47:57.335   625   825 D vold    : Preparing: /data/misc_de/9876
+01-14 16:47:57.335   625   825 D vold    : Preparing: /data/vendor_de/9876
+01-14 16:47:57.335   625   825 D vold    : Preparing: /data/user_de/9876
+01-14 16:47:57.335   625   825 I vold    : Verified that /data/system_de/9876 has the encryption policy 3cd385984ff8305f v1 modes 127/4 flags 0x0
+01-14 16:47:57.335   625   825 I vold    : Verified that /data/misc_de/9876 has the encryption policy 3cd385984ff8305f v1 modes 127/4 flags 0x0
+01-14 16:47:57.335   625   825 I vold    : Verified that /data/vendor_de/9876 has the encryption policy 3cd385984ff8305f v1 modes 127/4 flags 0x0
+01-14 16:47:57.335   625   825 I vold    : Verified that /data/user_de/9876 has the encryption policy 3cd385984ff8305f v1 modes 127/4 flags 0x0
+01-14 16:47:57.335   625   825 D vold    : /system/bin/vold_prepare_subdirs
+01-14 16:47:57.335   625   825 D vold    :     prepare
+01-14 16:47:57.335   625   825 D vold    :
+01-14 16:47:57.335   625   825 D vold    :     9876
+01-14 16:47:57.335   625   825 D vold    :     1
+01-14 16:47:57.343  3188  3188 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:vold_data_file:s0 on path: /data/misc_de/9876/vold
+01-14 16:47:57.344  3188  3188 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:storaged_data_file:s0 on path: /data/misc_de/9876/storaged
+01-14 16:47:57.344  3188  3188 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:rollback_data_file:s0 on path: /data/misc_de/9876/rollback
+01-14 16:47:57.344  3188  3188 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:apex_rollback_data_file:s0 on path: /data/misc_de/9876/apexrollback
+01-14 16:47:57.345  3188  3188 D vold_prepare_subdirs: Setting up mode 711 uid 0 gid 0 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata
+01-14 16:47:57.345  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.mediaprovider
+01-14 16:47:57.345  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_wifi_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.wifi
+01-14 16:47:57.345  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.media.swcodec
+01-14 16:47:57.346  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_permission_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.permission
+01-14 16:47:57.346  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.cellbroadcast
+01-14 16:47:57.346  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.resolv
+01-14 16:47:57.346  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.conscrypt
+01-14 16:47:57.347  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.media
+01-14 16:47:57.347  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.adbd
+01-14 16:47:57.347  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.neuralnetworks
+01-14 16:47:57.348  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.sdkext
+01-14 16:47:57.348  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.apex.cts.shim
+01-14 16:47:57.348  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.ipsec
+01-14 16:47:57.348  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.tethering
+01-14 16:47:57.349  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.extservices
+01-14 16:47:57.349  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.vndk.v30
+01-14 16:47:57.349  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.tzdata
+01-14 16:47:57.350  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.os.statsd
+01-14 16:47:57.350  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.i18n
+01-14 16:47:57.350  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.runtime
+01-14 16:47:57.350  3188  3188 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.art
+01-14 16:47:57.351  3188  3188 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:fingerprint_vendor_data_file:s0 on path: /data/vendor_de/9876/fpdata
+01-14 16:47:57.351  3188  3188 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:face_vendor_data_file:s0 on path: /data/vendor_de/9876/facedata
+01-14 16:47:57.442   625   825 D vold    : fscrypt_unlock_user_key 9876 serial=9877 token_present=0
+01-14 16:47:57.445   625   825 D vold    : Skipping non-key .
+01-14 16:47:57.445   625   825 D vold    : Skipping non-key ..
+01-14 16:47:57.445   625   825 D vold    : Trying user CE key /data/misc/vold/user_keys/ce/9876/current
+01-14 16:47:57.455   625   825 I vold    : List of Keymaster HALs found:
+01-14 16:47:57.455   625   825 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+01-14 16:47:57.455   625   825 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:57.455   625   825 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-14 16:47:57.475   625   825 D vold    : Successfully retrieved key
+01-14 16:47:57.477   625   825 D vold    : Installed fscrypt key with ref 934132abd78df29f to /data
+01-14 16:47:57.478   625   825 D vold    : Added fscrypt-provisioning key for 934132abd78df29f to session keyring
+01-14 16:47:57.478   625   825 D vold    : Installed ce key for user 9876
+01-14 16:47:57.483   625   825 D vold    : hzy fscrypt_prepare_user_storage for volume null, user 9876, serial 9877, flags 2
+01-14 16:47:57.483   625   825 D vold    : Preparing: /data/system_ce/9876
+01-14 16:47:57.483   625   825 D vold    : Preparing: /data/misc_ce/9876
+01-14 16:47:57.483   625   825 D vold    : Preparing: /data/vendor_ce/9876
+01-14 16:47:57.483   625   825 D vold    : Preparing: /data/media/9876
+01-14 16:47:57.488   625   825 D vold    : Preparing: /data/user/9876
+01-14 16:47:57.488   625   825 I vold    : Verified that /data/system_ce/9876 has the encryption policy 934132abd78df29f v1 modes 127/4 flags 0x0
+01-14 16:47:57.488   625   825 I vold    : Verified that /data/misc_ce/9876 has the encryption policy 934132abd78df29f v1 modes 127/4 flags 0x0
+01-14 16:47:57.488   625   825 I vold    : Verified that /data/vendor_ce/9876 has the encryption policy 934132abd78df29f v1 modes 127/4 flags 0x0
+01-14 16:47:57.488   625   825 I vold    : Verified that /data/media/9876 has the encryption policy 934132abd78df29f v1 modes 127/4 flags 0x0
+01-14 16:47:57.488   625   825 I vold    : Verified that /data/user/9876 has the encryption policy 934132abd78df29f v1 modes 127/4 flags 0x0
+01-14 16:47:57.488   625   825 D vold    : Starting restorecon of /data/system_ce/9876
+01-14 16:47:57.493   625   825 D vold    : Finished restorecon of /data/system_ce/9876
+01-14 16:47:57.493   625   825 D vold    : Starting restorecon of /data/vendor_ce/9876
+01-14 16:47:57.494   625   825 D vold    : Finished restorecon of /data/vendor_ce/9876
+01-14 16:47:57.494   625   825 D vold    : Starting restorecon of /data/misc_ce/9876
+01-14 16:47:57.496   625   825 D vold    : Finished restorecon of /data/misc_ce/9876
+01-14 16:47:57.496   625   825 D vold    : /system/bin/vold_prepare_subdirs
+01-14 16:47:57.496   625   825 D vold    :     prepare
+01-14 16:47:57.496   625   825 D vold    :
+01-14 16:47:57.496   625   825 D vold    :     9876
+01-14 16:47:57.496   625   825 D vold    :     2
+01-14 16:47:57.523  3235  3235 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:vold_data_file:s0 on path: /data/misc_ce/9876/vold
+01-14 16:47:57.529  3235  3235 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:storaged_data_file:s0 on path: /data/misc_ce/9876/storaged
+01-14 16:47:57.532  3235  3235 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:rollback_data_file:s0 on path: /data/misc_ce/9876/rollback
+01-14 16:47:57.533  3235  3235 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:apex_rollback_data_file:s0 on path: /data/misc_ce/9876/apexrollback
+01-14 16:47:57.533  3235  3235 D vold_prepare_subdirs: Setting up mode 711 uid 0 gid 0 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata
+01-14 16:47:57.533  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.mediaprovider
+01-14 16:47:57.533  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_wifi_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.wifi
+01-14 16:47:57.534  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.media.swcodec
+01-14 16:47:57.534  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_permission_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.permission
+01-14 16:47:57.534  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.cellbroadcast
+01-14 16:47:57.535  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.resolv
+01-14 16:47:57.535  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.conscrypt
+01-14 16:47:57.535  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.media
+01-14 16:47:57.535  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.adbd
+01-14 16:47:57.536  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.neuralnetworks
+01-14 16:47:57.536  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.sdkext
+01-14 16:47:57.536  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.apex.cts.shim
+01-14 16:47:57.536  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.ipsec
+01-14 16:47:57.537  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.tethering
+01-14 16:47:57.537  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.extservices
+01-14 16:47:57.537  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.vndk.v30
+01-14 16:47:57.537  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.tzdata
+01-14 16:47:57.538  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.os.statsd
+01-14 16:47:57.538  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.i18n
+01-14 16:47:57.538  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.runtime
+01-14 16:47:57.539  3235  3235 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.art
+01-14 16:47:57.539  3235  3235 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/9876/backup
+01-14 16:47:57.539  3235  3235 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/9876/backup_stage
+01-14 16:47:57.540  3235  3235 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:face_vendor_data_file:s0 on path: /data/vendor_ce/9876/facedata
+01-14 16:47:57.760   625   625 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-14 16:47:57.761   625   625 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-14 16:47:57.761   625   625 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-14 16:47:57.762   625   625 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-14 16:47:57.762   625   625 I vold    : Bind mounting /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-14 16:47:57.763   625   625 I vold    : Bind mounted /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-14 16:47:57.763   625   625 I vold    : Configuring read_ahead of /mnt/user/0/emulated fuse filesystem to 256kb
+01-14 16:47:57.763   625   625 I vold    : Writing 256 to /sys/class/bdi/0:68/read_ahead_kb
+01-14 16:47:57.763   625   625 I vold    : Configuring max_ratio of /mnt/user/0/emulated fuse filesystem to 40
+01-14 16:47:57.763   625   625 I vold    : Writing 40 to /sys/class/bdi/0:68/max_ratio
+01-14 16:47:57.764   625   825 I vold    : onUserStarted: 9876
+01-14 16:47:57.870   625   825 I vold    : emulated;9876 hzy_vold  doMount  /storage/emulated
+01-14 16:47:57.870   625   825 I vold    : Mounting emulated fuse volume
+01-14 16:47:57.873   625   825 I vold    :  hzy_vold  user_id  = 9876
+01-14 16:47:57.873   625   825 I vold    :  hzy_vold  relative_upper_path  = emulated
+01-14 16:47:57.873   625   825 I vold    :  hzy_vold  fuse_path  = /mnt/user/9876/emulated
+01-14 16:47:57.882   625   825 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/9876/emulated
+01-14 16:47:58.939   625   825 I vold    : Bind mounting /mnt/runtime/default/emulated/9876/Android/data on /mnt/user/9876/emulated/9876/Android/data
+01-14 16:47:58.944   625   825 I vold    : Bind mounted /mnt/runtime/default/emulated/9876/Android/data on /mnt/user/9876/emulated/9876/Android/data
+01-14 16:47:58.944   625   825 I vold    : Bind mounting /mnt/runtime/default/emulated/9876/Android/obb on /mnt/user/9876/emulated/9876/Android/obb
+01-14 16:47:58.945   625   825 I vold    : Bind mounted /mnt/runtime/default/emulated/9876/Android/obb on /mnt/user/9876/emulated/9876/Android/obb
+01-14 16:47:58.945   625   825 I vold    : Bind mounting /mnt/runtime/write/emulated/9876/Android/obb on /mnt/installer/9876/emulated/9876/Android/obb
+01-14 16:47:58.947   625   825 I vold    : Bind mounted /mnt/runtime/write/emulated/9876/Android/obb on /mnt/installer/9876/emulated/9876/Android/obb
+01-14 16:47:58.947   625   825 I vold    : Configuring read_ahead of /mnt/user/9876/emulated fuse filesystem to 256kb
+01-14 16:47:58.948   625   825 I vold    : Writing 256 to /sys/class/bdi/0:101/read_ahead_kb
+01-14 16:47:58.948   625   825 I vold    : Configuring max_ratio of /mnt/user/9876/emulated fuse filesystem to 40
+01-14 16:47:58.948   625   825 I vold    : Writing 40 to /sys/class/bdi/0:101/max_ratio
+
+
+/build/tools/releasetools/ota_from_target_files.py -p build/host/ -k build/make/target/product/security/testkey -i /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-eng.huzhongyang_1.zip  /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-eng.huzhongyang2.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-huzhongyang_1-BN012103.zip

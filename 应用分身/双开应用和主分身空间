@@ -1,0 +1,1674 @@
+UserHandle.myUserId() == UserHandle.USER_OWNER
+
+可以用上述的语句来判断是否是主空间和分身空间;（注意，这里的UserHandler的API和变量都是系统的，所以这个就是用了系统的API去判断当前系统是否是主分空间。
+
+
+
+
+启动双开应用有两种形式：
+一.参数是userId，然后封装成UserHandler对象的形式
+
+ContextCompat.startActivityAsUser(this, intent, UserUtil.getUserHandle(UserUtil.USER_XSPACE));
+
+这条语句就是用来启动双开应用的，startActivityAsUser（context,intent,UserHandler user）;
+
+这里需要传入一个UserHandler对象，如果传入的是999,就是分身User对象（0是主空间），可以用来启动双开应用。
+
+
+存在的问题：
+/data/user/{userId}/{app.path} 	/data/data 	应用存储空间
+/storage/emulated/{userId} 	/sdcard 	共享内部存储空间
+/data/media/{userId} 	无 	用户媒体数据（例如，音乐和视频）
+/data/system/users/{userId} 	无 	每个用户的系统配置/状态
+
+只能由系统应用访问
+
+///TCL  APPP
+
+drwxrwx--x 14 system      system      53248 2020-01-17 09:26 .
+drwx--x--x  4 system      system       3488 2020-01-17 09:25 ..
+drwx------  4 u100_system u100_system  3488 2020-01-17 09:25 android
+drwx------  5 u100_system u100_system  3488 2020-01-17 09:25 com.android.keychain
+drwx------  6 u100_a139   u100_a139    3488 2020-01-17 09:25 com.android.printspooler
+drwx------  4 u100_a153   u100_a153    3488 2020-01-17 09:26 com.facebook.katana
+drwx------  4 u100_a105   u100_a105    3488 2020-01-17 09:25 com.facebook.services
+drwx------  4 u100_a226   u100_a226    3488 2020-01-17 09:25 com.google.android.ext.services
+drwx--x--x 15 u100_a173   u100_a173    3488 2020-01-17 09:25 com.google.android.gms
+drwx------  8 u100_a173   u100_a173    3488 2020-01-17 09:25 com.google.android.gsf
+drwx------  4 u100_a109   u100_a109    3488 2020-01-17 09:25 com.google.android.packageinstaller
+drwx------  4 u100_a230   u100_a230    3488 2020-01-17 09:25 com.google.android.permissioncontroller
+drwx------  8 u100_a225   u100_a225    3488 2020-01-17 09:25 com.google.android.providers.media.module
+drwx------  4 u100_a175   u100_a175    3488 2020-01-17 09:25 com.google.android.webview
+
+
+
+com.android.packageinstaller
+
+
+错误问题：
+```
+1=============================
+在只安装 mobileqq的情况下，出现如下错误。
+
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: FATAL EXCEPTION: main
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: Process: com.tencent.mobileqq, PID: 4462
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{com.tencent.mobileqq/com.tencent.mobileqq.activity.SplashActivity}: java.lang.NullPointerException: Attempt to invoke interface method 'android.os.Bundle android.content.IContentProvider.call(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, android.os.Bundle)' on a null object reference
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3449)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:223)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+
+
+
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: Caused by: java.lang.NullPointerException: Attempt to invoke interface method 'android.os.Bundle android.content.IContentProvider.call(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, android.os.Bundle)' on a null object reference
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.provider.Settings$NameValueCache.getStringForUser(Settings.java:2769)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.provider.Settings$Global.getStringForUser(Settings.java:13427)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.provider.Settings$Global.getString(Settings.java:13415)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.provider.Settings$Global.getInt(Settings.java:13620)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at com.android.internal.policy.PhoneWindow.<init>(PhoneWindow.java:348)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at com.android.internal.policy.PhoneWindow.<init>(PhoneWindow.java:357)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.Activity.attach(Activity.java:7903)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3401)
+12-28 16:35:09.166  4462  4462 E AndroidRuntime: 	... 11 more
+12-28 16:35:09.167  1427  4501 I DropBoxManagerService: add tag=data_app_crash isTagEnabled=true flags=0x2
+12-28 16:35:09.168  1427  3907 W ActivityTaskManager:   Force finishing activity com.tencent.mobileqq/.activity.SplashActivity
+12-28 16:35:09.171  1427  1503 D EventSequenceValidator: Transition from ACTIVITY_LAUNCHED to ACTIVITY_CANCELLED
+12-28 16:35:09.171  4462  4462 I Process : Sending signal. PID: 4462 SIG: 9
+12-28 16:35:09.176  1427  2079 I ActivityManager: Process com.tencent.mobileqq (pid 4462) has died: fg  TOP
+
+
+需要解决 9876 到0 的公用问题？
+
+
+2
+````````````````````
+
+12-28 17:26:52.849  1501  1918 I SystemServerTiming: PM.createNewUser
+12-28 17:26:52.849  1501  1918 W UserManagerService: begin 2 userTypeInstallablePackages  userId=9876 ,{
+com.android.cts.priv.ctsshim,
+com.android.providers.telephony,
+com.android.dynsystem,
+com.android.theme.icon.pebble,
+com.android.providers.calendar,
+com.android.providers.media,
+com.android.theme.icon.vessel,
+com.android.theme.color.cinnamon,
+ com.android.theme.icon_pack.rounded.systemui,
+ com.android.settings.overlay.g020j,
+ com.android.theme.icon.taperedrect,
+ com.android.documentsui,
+  com.android.externalstorage,
+  com.android.htmlviewer,
+   com.android.companiondevicemanager,
+    com.android.quicksearchbox,
+    com.android.mms.service,
+    com.android.providers.downloads,
+    com.android.messaging, com.android.theme.icon_pack.rounded.android, vendor.qti.hardware.cacert.server, com.qualcomm.qti.gpudrivers.msmnile.api30, com.qualcomm.qti.telephonyservice, com.android.theme.icon_pack.circular.themepicker, vendor.qti.iwlan, com.android.server.robotests, com.android.timezone.updater, com.android.providers.downloads.ui, com.android.pacprocessor, com.android.simappdialog, com.android.networkstack, com.android.internal.display.cutout.emulation.hole, com.android.modulemetadata, com.android.certinstaller, com.android.theme.color.black, com.android.carrierconfig, com.android.theme.color.green, com.android.theme.color.ocean, com.android.theme.color.space, android, com.android.contacts, com.android.camera2, com.android.theme.icon_pack.rounded.launcher, com.android.egg, com.android.mtp, com.android.nfc, com.android.ons, com.android.stk, com.android.launcher3, com.android.backupconfirm, com.android.settings.auto_generated_rro_vendor__, com.android.systemui.auto_generated_rro_vendor__, com.android.provision, org.codeaurora.ims, com.android.statementservice, com.android.settings.intelligence, com.android.calendar, com.qualcomm.qcrilmsgtunnel, com.android.providers.settings, com.android.sharedstoragebackup, com.android.printspooler, com.android.theme.icon_pack.filled.settings, com.android.dreams.basic, com.android.webview, com.android.se, com.android.inputdevices, com.android.recovery_l10n, com.android.bips, com.android.theme.icon_pack.circular.settings, com.android.musicfx, com.android.cellbroadcastreceiver, com.android.theme.icon.teardrop, android.ext.shared, com.android.onetimeinitializer, com.android.server.telecom, com.android.cellbroadcastservice, com.android.theme.icon_pack.rounded.themepicker, com.android.keychain, com.android.service.ims, com.android.printservice.recommendation, com.android.dialer, com.android.gallery3d, com.android.theme.icon_pack.filled.systemui, android.ext.services, com.android.wifi.resources, com.android.calllogbackup, com.android.safetyregulatoryinfo, com.android.localtransport, com.android.packageinstaller, com.android.carrierdefaultapp, com.android.theme.font.notoserifsource, com.android.theme.icon_pack.filled.android, com.android.proxyhandler, com.android.internal.display.cutout.emulation.waterfall, com.android.theme.icon_pack.circular.systemui, com.android.inputmethod.latin, org.chromium.webview_shell, com.android.managedprovisioning, com.android.networkstack.tethering, com.android.soundpicker, com.android.dreams.phototable, com.google.pixel.coral.gpuprofiling.vulkanlayer, com.android.providers.partnerbookmarks, com.android.service.ims.presence, com.android.wallpaper.livepicker, com.android.cellbroadcastreceiver.module, com.android.phone.auto_generated_rro_vendor__, com.android.apps.tag, com.android.wifi.resources.pixel, com.android.theme.icon.squircle, com.android.storagemanager, com.android.bookmarkprovider, com.android.settings, com.qualcomm.qti.cne, com.android.theme.icon_pack.filled.launcher, com.android.networkstack.permissionconfig, com.android.cts.ctsshim, com.android.nfc.auto_generated_rro_vendor__, com.example.android.systemupdatersample, com.android.theme.icon_pack.circular.launcher, com.android.vpndialogs, com.android.music, com.android.phone, com.android.shell, com.android.theme.icon_pack.filled.themepicker, com.android.providers.blockednumber, com.android.providers.userdictionary, com.android.providers.media.modu
+12-28 17:26:52.849  1501  1918 W UserManagerService: disallowedPackages  userId=9876 ,null
+
+
+12-28 17:26:52.849  1501  1918 W UserManagerService: end  userTypeInstallablePackages  userId=9876 ,
+{com.android.cts.priv.ctsshim,
+com.android.providers.telephony,
+com.android.dynsystem,
+com.android.theme.icon.pebble,
+com.android.providers.calendar,
+com.android.providers.media,
+com.android.theme.icon.vessel,
+com.android.theme.color.cinnamon,
+com.android.theme.icon_pack.rounded.systemui,
+com.android.settings.overlay.g020j,
+com.android.theme.icon.taperedrect,
+com.android.documentsui,
+com.android.externalstorage,
+com.android.htmlviewer,
+com.android.companiondevicemanager,
+com.android.quicksearchbox,
+com.android.mms.service,
+com.android.providers.downloads,
+com.android.messaging,
+com.android.theme.icon_pack.rounded.android,
+vendor.qti.hardware.cacert.server,
+com.qualcomm.qti.gpudrivers.msmnile.api30,
+com.qualcomm.qti.telephonyservice,
+com.android.theme.icon_pack.circular.themepicker,
+vendor.qti.iwlan,
+com.android.server.robotests,
+com.android.timezone.updater,
+com.android.providers.downloads.ui,
+com.android.pacprocessor,
+com.android.simappdialog,
+com.android.networkstack,
+com.android.internal.display.cutout.emulation.hole,
+com.android.modulemetadata,
+com.android.certinstaller,
+com.android.theme.color.black,
+com.android.carrierconfig,
+com.android.theme.color.green,
+com.android.theme.color.ocean,
+com.android.theme.color.space,
+android,
+com.android.contacts,
+com.android.camera2,
+com.android.theme.icon_pack.rounded.launcher,
+com.android.egg,
+com.android.mtp,
+com.android.nfc,
+com.android.ons,
+com.android.stk,
+com.android.launcher3,
+com.android.backupconfirm,
+com.android.settings.auto_generated_rro_vendor__,
+com.android.systemui.auto_generated_rro_vendor__,
+com.android.provision,
+org.codeaurora.ims,
+com.android.statementservice,
+com.android.settings.intelligence,
+com.android.calendar,
+com.qualcomm.qcrilmsgtunnel,
+com.android.providers.settings,
+com.android.sharedstoragebackup,
+com.android.printspooler,
+com.android.theme.icon_pack.filled.settings,
+com.android.dreams.basic,
+com.android.webview,
+com.android.se,
+com.android.inputdevices,
+com.android.recovery_l10n,
+com.android.bips,
+com.android.theme.icon_pack.circular.settings,
+com.android.musicfx,
+com.android.cellbroadcastreceiver,
+com.android.theme.icon.teardrop,
+android.ext.shared,
+com.android.onetimeinitializer,
+com.android.server.telecom,
+com.android.cellbroadcastservice,
+com.android.theme.icon_pack.rounded.themepicker,
+com.android.keychain,
+com.android.service.ims,
+com.android.printservice.recommendation,
+com.android.dialer,
+com.android.gallery3d,
+com.android.theme.icon_pack.filled.systemui,
+android.ext.services, com.android.wifi.resources,
+com.android.calllogbackup,
+com.android.safetyregulatoryinfo,
+com.tencent.mobileqq,
+com.android.localtransport,
+com.android.packageinstaller,
+ com.android.carrierdefaultapp,
+ com.android.theme.font.notoserifsource,
+  com.android.theme.icon_pack.filled.android,
+  com.android.proxyhandler,
+   com.android.internal.display.cutout.emulation.waterfall,
+    com.android.theme.icon_pack.circular.systemui,
+     com.android.inputmethod.latin,
+      org.chromium.webview_shell,
+      com.android.managedprovisioning,
+      com.android.networkstack.tethering,
+      com.android.soundpicker,
+       com.android.dreams.phototable,
+       com.google.pixel.coral.gpuprofiling.vulkanlayer,
+        com.android.providers.partnerbookmarks,
+         com.android.service.ims.presence,
+          com.android.wallpaper.livepicker,
+          com.android.cellbroadcastreceiver.module,
+          com.android.phone.auto_generated_rro_vendor__,
+           com.android.apps.tag,
+            com.android.wifi.resources.pixel,
+             com.android.theme.icon.squircle,
+              com.android.storagemanager,
+               com.android.bookmarkprovider,
+               com.android.settings,
+                com.qualcomm.qti.cne,
+                com.android.theme.icon_pack.filled.launcher,
+                 com.android.networkstack.permissionconfig,
+                  com.android.cts.ctsshim,
+                   com.android.nfc.auto_generated_rro_vendor__,
+                    com.example.android.systemupdatersample,
+                    com.android.theme.icon_pack.circular.launcher,
+                     com.android.vpndialogs,
+                      com.android.music,
+                       com.android.phone,
+                        com.android.shell,
+                         com.android.theme.icon_pack.filled.themepicker,
+                          com.android.providers.blockednumber,
+                           com.android.providers.userdictionary,
+                            com.android.p
+12-28 17:26:52.849  1501  1918 W UserManagerService: disallowedPackages  userId=9876 ,null
+
+
+
+3: 对于切换用户安装app 比较多，无法 确定那些app 必须安装，
+  1：famework 所以采用黑名单的形式，来减少app的安装
+  2：luncher 采用白名单的方式来选择那些app需要呈现。
+
+
+
+  4:在子账户下面卸载com.android.provider.meida
+
+  12-30 13:38:09.517  8956  8956 V StateManager: startState class com.android.gallery3d.app.AlbumSetPage
+12-30 13:38:09.521  8956  8956 W DataManager: exception in creating media object: /local/all
+12-30 13:38:09.521  8956  8956 W DataManager: java.lang.SecurityException: Failed to find provider media for user 9876; expected to find a valid ContentProvider for this authority
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:2373)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Parcel.createException(Parcel.java:2357)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Parcel.readException(Parcel.java:2340)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Parcel.readException(Parcel.java:2282)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.content.IContentService$Stub$Proxy.registerContentObserver(IContentService.java:1229)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.content.ContentResolver.registerContentObserver(ContentResolver.java:2627)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.content.ContentResolver.registerContentObserver(ContentResolver.java:2615)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.registerChangeNotifier(DataManager.java:308)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.ChangeNotifier.<init>(ChangeNotifier.java:39)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.LocalAlbumSet.<init>(LocalAlbumSet.java:66)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.LocalSource.createMediaObject(LocalSource.java:89)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:178)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:191)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSet(DataManager.java:199)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSetsFromString(DataManager.java:207)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.ComboSource.createMediaObject(ComboSource.java:47)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:178)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:191)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSet(DataManager.java:199)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.initializeData(AlbumSetPage.java:478)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.onCreate(AlbumSetPage.java:323)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.StateManager.startState(StateManager.java:73)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.startDefaultPage(GalleryActivity.java:107)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.initializeByIntent(GalleryActivity.java:98)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.onCreate(GalleryActivity.java:73)
+
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.Activity.performCreate(Activity.java:8000)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.Activity.performCreate(Activity.java:7984)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1309)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3422)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Looper.loop(Looper.java:223)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 13:38:09.521  8956  8956 W DataManager: Caused by: android.os.RemoteException: Remote stack trace:
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.server.content.ContentService.registerContentObserver(ContentService.java:355)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.content.IContentService$Stub.onTransact(IContentService.java:482)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Binder.execTransactInternal(Binder.java:1154)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Binder.execTransact(Binder.java:1123)
+12-30 13:38:09.521  8956  8956 W DataManager:
+12-30 13:38:09.521  8956  8956 W DataManager: exception in creating media object: /combo/{/local/all,/picasa/all}
+12-30 13:38:09.521  8956  8956 W DataManager: java.lang.NullPointerException: Attempt to invoke virtual method 'void com.android.gallery3d.data.MediaSet.addContentListener(com.android.gallery3d.data.ContentListener)' on a null object reference
+
+
+
+
+
+12-30 13:38:09.521  8956  8956 W DataManager: exception in creating media object: /combo/{/local/all,/picasa/all}
+12-30 13:38:09.521  8956  8956 W DataManager: java.lang.NullPointerException: Attempt to invoke virtual method 'void com.android.gallery3d.data.MediaSet.addContentListener(com.android.gallery3d.data.ContentListener)' on a null object reference
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.ComboAlbumSet.<init>(ComboAlbumSet.java:36)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.ComboSource.createMediaObject(ComboSource.java:47)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:178)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:191)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSet(DataManager.java:199)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.initializeData(AlbumSetPage.java:478)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.onCreate(AlbumSetPage.java:323)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.StateManager.startState(StateManager.java:73)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.startDefaultPage(GalleryActivity.java:107)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.initializeByIntent(GalleryActivity.java:98)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.onCreate(GalleryActivity.java:73)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.Activity.performCreate(Activity.java:8000)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.Activity.performCreate(Activity.java:7984)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1309)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3422)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.os.Looper.loop(Looper.java:223)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 13:38:09.521  8956  8956 W DataManager: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 13:38:09.522  8956  8956 D AndroidRuntime: Shutting down VM
+
+
+
+2-30 13:38:09.522  8956  8956 E AndroidRuntime: FATAL EXCEPTION: main
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: Process: com.android.gallery3d, PID: 8956
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{com.android.gallery3d/com.android.gallery3d.app.GalleryActivity}: java.lang.NullPointerException
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3449)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:223)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: Caused by: java.lang.NullPointerException
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.common.Utils.checkNotNull(Utils.java:65)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetDataLoader.<init>(AlbumSetDataLoader.java:78)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetPage.initializeData(AlbumSetPage.java:480)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetPage.onCreate(AlbumSetPage.java:323)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.app.StateManager.startState(StateManager.java:73)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.startDefaultPage(GalleryActivity.java:107)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.initializeByIntent(GalleryActivity.java:98)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.onCreate(GalleryActivity.java:73)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:8000)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:7984)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1309)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3422)
+12-30 13:38:09.522  8956  8956 E AndroidRuntime: 	... 11 more
+
+
+
+12-30 15:16:11.183  4768  4768 W DataManager: Caused by: android.os.RemoteException: Remote stack trace:
+12-30 15:16:11.183  4768  4768 W DataManager: 	at com.android.server.pm.permission.PermissionManagerService.enforceCrossUserPermission(PermissionManagerService.java:4410)
+12-30 15:16:11.183  4768  4768 W DataManager: 	at com.android.server.pm.permission.PermissionManagerService.access$1800(PermissionManagerService.java:178)
+12-30 15:16:11.183  4768  4768 W DataManager: 	at com.android.server.pm.permission.PermissionManagerService$PermissionManagerServiceInternalImpl.enforceCrossUserPermission(PermissionManagerService.java:4717)
+12-30 15:16:11.183  4768  4768 W DataManager: 	at com.android.server.pm.PackageManagerService.resolveContentProviderInternal(PackageManagerService.java:8911)
+12-30 15:16:11.183  4768  4768 W DataManager: 	at com.android.server.pm.PackageManagerService.resolveContentProvider(PackageManagerService.java:8892)
+12-30 15:16:11.183  4768  4768 W DataManager:
+12-30 15:16:11.183  4768  4768 W DataManager: exception in creating media object: /combo/{/local/all,/picasa/all}
+
+
+
+
+5
+
+12-30 15:55:23.333  1481  2184 W ActivityManager: Permission Denial: checkContentProviderPermissionLocked media asks to run as user 0 but is calling from uid u9876a95; this requires android.permission.INTERACT_ACROSS_USERS_FULL or android.permission.INTERACT_ACROSS_USERS
+12-30 15:55:23.334  4356  4356 W DataManager: exception in creating media object: /local/all
+12-30 15:55:23.334  4356  4356 W DataManager: java.lang.SecurityException: Permission Denial: checkContentProviderPermissionLocked media asks to run as user 0 but is calling from uid u9876a95; this requires android.permission.INTERACT_ACROSS_USERS_FULL or android.permission.INTERACT_ACROSS_USERS
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:2373)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Parcel.createException(Parcel.java:2357)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Parcel.readException(Parcel.java:2340)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Parcel.readException(Parcel.java:2282)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.content.IContentService$Stub$Proxy.registerContentObserver(IContentService.java:1229)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.content.ContentResolver.registerContentObserver(ContentResolver.java:2629)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.content.ContentResolver.registerContentObserver(ContentResolver.java:2615)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.registerChangeNotifier(DataManager.java:308)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.ChangeNotifier.<init>(ChangeNotifier.java:39)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.LocalAlbumSet.<init>(LocalAlbumSet.java:66)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.LocalSource.createMediaObject(LocalSource.java:89)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:178)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:191)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSet(DataManager.java:199)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSetsFromString(DataManager.java:207)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.ComboSource.createMediaObject(ComboSource.java:47)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:178)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:191)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSet(DataManager.java:199)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.initializeData(AlbumSetPage.java:478)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.onCreate(AlbumSetPage.java:323)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.StateManager.startState(StateManager.java:73)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.startDefaultPage(GalleryActivity.java:107)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.initializeByIntent(GalleryActivity.java:98)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.onCreate(GalleryActivity.java:73)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.Activity.performCreate(Activity.java:8000)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.Activity.performCreate(Activity.java:7984)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1309)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3422)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Looper.loop(Looper.java:223)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 15:55:23.334  4356  4356 W DataManager: Caused by: android.os.RemoteException: Remote stack trace:
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.server.am.UserController.handleIncomingUser(UserController.java:1937)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.server.am.ActivityManagerService.checkContentProviderPermissionLocked(ActivityManagerService.java:6848)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.server.am.ActivityManagerService.checkContentProviderAccess(ActivityManagerService.java:6824)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.server.am.ActivityManagerService$LocalService.checkContentProviderAccess(ActivityManagerService.java:18941)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.server.content.ContentService.registerContentObserver(ContentService.java:359)
+12-30 15:55:23.334  4356  4356 W DataManager:
+12-30 15:55:23.334  4356  4356 W DataManager: exception in creating media object: /combo/{/local/all,/picasa/all}
+12-30 15:55:23.334  4356  4356 W DataManager: java.lang.NullPointerException: Attempt to invoke virtual method 'void com.android.gallery3d.data.MediaSet.addContentListener(com.android.gallery3d.data.ContentListener)' on a null object reference
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.ComboAlbumSet.<init>(ComboAlbumSet.java:36)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.ComboSource.createMediaObject(ComboSource.java:47)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:178)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaObject(DataManager.java:191)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.data.DataManager.getMediaSet(DataManager.java:199)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.initializeData(AlbumSetPage.java:478)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.AlbumSetPage.onCreate(AlbumSetPage.java:323)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.StateManager.startState(StateManager.java:73)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.startDefaultPage(GalleryActivity.java:107)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.initializeByIntent(GalleryActivity.java:98)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.gallery3d.app.GalleryActivity.onCreate(GalleryActivity.java:73)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.Activity.performCreate(Activity.java:8000)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.Activity.performCreate(Activity.java:7984)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1309)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3422)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.os.Looper.loop(Looper.java:223)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 15:55:23.334  4356  4356 W DataManager: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 15:55:23.335  4356  4356 D AndroidRuntime: Shutting down VM
+
+
+
+--------- beginning of crash
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: FATAL EXCEPTION: main
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: Process: com.android.gallery3d, PID: 4356
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{com.android.gallery3d/com.android.gallery3d.app.GalleryActivity}: java.lang.NullPointerException
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3449)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:223)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: Caused by: java.lang.NullPointerException
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.common.Utils.checkNotNull(Utils.java:65)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetDataLoader.<init>(AlbumSetDataLoader.java:78)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetPage.initializeData(AlbumSetPage.java:480)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetPage.onCreate(AlbumSetPage.java:323)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.StateManager.startState(StateManager.java:73)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.startDefaultPage(GalleryActivity.java:107)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.initializeByIntent(GalleryActivity.java:98)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.onCreate(GalleryActivity.java:73)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:8000)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:7984)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1309)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3422)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	... 11 more
+12-30 15:55:23.336  1481  2184 W PackageManager: enforceCrossUserPermission callingUid 9876
+12-30 15:55:23.336  1481  2184 W PackageManager: enforceCrossUserPermission userId 9876
+12-30 15:55:23.336  1481  2184 W PackageManager: enforceCrossUserPermission 9876 skip the CrossPermission
+
+6
+---
+
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: FATAL EXCEPTION: main
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: Process: com.android.gallery3d, PID: 4356
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{com.android.gallery3d/com.android.gallery3d.app.GalleryActivity}: java.lang.NullPointerException
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3449)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:3601)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:85)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeCallbacks(TransactionExecutor.java:135)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:95)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:223)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: Caused by: java.lang.NullPointerException
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.common.Utils.checkNotNull(Utils.java:65)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetDataLoader.<init>(AlbumSetDataLoader.java:78)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetPage.initializeData(AlbumSetPage.java:480)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.AlbumSetPage.onCreate(AlbumSetPage.java:323)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.StateManager.startState(StateManager.java:73)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.startDefaultPage(GalleryActivity.java:107)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.initializeByIntent(GalleryActivity.java:98)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.onCreate(GalleryActivity.java:73)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:8000)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:7984)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1309)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3422)
+12-30 15:55:23.335  4356  4356 E AndroidRuntime: 	... 11 more
+
+
+
+7
+
+------- beginning of crash
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: FATAL EXCEPTION: main
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: Process: com.android.gallery3d, PID: 5313
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: java.lang.RuntimeException: Unable to pause activity {com.android.gallery3d/com.android.gallery3d.app.GalleryActivity}: java.lang.NullPointerException: Attempt to invoke virtual method 'boolean android.content.ContentProviderClient.release()' on a null object reference
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.ActivityThread.performPauseActivityIfNeeded(ActivityThread.java:4745)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.ActivityThread.performPauseActivity(ActivityThread.java:4696)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.ActivityThread.handlePauseActivity(ActivityThread.java:4647)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.servertransaction.PauseActivityItem.execute(PauseActivityItem.java:46)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeLifecycleState(TransactionExecutor.java:176)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:97)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2066)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:223)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:7656)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: Caused by: java.lang.NullPointerException: Attempt to invoke virtual method 'boolean android.content.ContentProviderClient.release()' on a null object reference
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at com.android.gallery3d.data.LocalSource.pause(LocalSource.java:272)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at com.android.gallery3d.data.DataManager.pause(DataManager.java:326)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at com.android.gallery3d.app.AbstractGalleryActivity.onPause(AbstractGalleryActivity.java:225)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at com.android.gallery3d.app.GalleryActivity.onPause(GalleryActivity.java:242)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.Activity.performPause(Activity.java:8174)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.Instrumentation.callActivityOnPause(Instrumentation.java:1510)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	at android.app.ActivityThread.performPauseActivityIfNeeded(ActivityThread.java:4735)
+12-30 16:37:23.953  5313  5313 E AndroidRuntime: 	... 12 more
+
+
+
+
+8:
+
+------ beginning of crash
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: FATAL EXCEPTION: main
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: Process: com.android.externalstorage, PID: 3987
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: java.lang.RuntimeException: Unable to start receiver com.android.externalstorage.MountReceiver: java.lang.NullPointerException: Attempt to invoke virtual method 'void com.android.externalstorage.ExternalStorageProvider.updateVolumes()' on a null object reference
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at android.app.ActivityThread.handleReceiver(ActivityThread.java:4041)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at android.app.ActivityThread.access$1400(ActivityThread.java:237)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1924)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:223)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:7661)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: Caused by: java.lang.NullPointerException: Attempt to invoke virtual method 'void com.android.externalstorage.ExternalStorageProvider.updateVolumes()' on a null object reference
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at com.android.externalstorage.MountReceiver.onReceive(MountReceiver.java:30)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	at android.app.ActivityThread.handleReceiver(ActivityThread.java:4032)
+12-30 17:59:36.359  3987  3987 E AndroidRuntime: 	... 8 more
+
+
+
+
+pm uninstall --user 9876 com.android.externalstorage
+
+
+9
+
+18:18:29.370  6891  7097 W Worker  : Exception in running a job
+12-30 18:18:29.370  6891  7097 W Worker  : java.lang.SecurityException: Permission Denial: reading com.android.providers.media.MediaProvider uri content://media/external/file from pid=6891, uid=987610095 requires null, or grantUriPermission()
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.os.Parcel.createExceptionOrNull(Parcel.java:2373)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.os.Parcel.createException(Parcel.java:2357)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.os.Parcel.readException(Parcel.java:2340)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.database.DatabaseUtils.readExceptionFromParcel(DatabaseUtils.java:190)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.database.DatabaseUtils.readExceptionFromParcel(DatabaseUtils.java:142)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.content.ContentProviderProxy.query(ContentProviderNative.java:472)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.content.ContentResolver.query(ContentResolver.java:1183)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.content.ContentResolver.query(ContentResolver.java:1115)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at android.content.ContentResolver.query(ContentResolver.java:1071)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at com.android.gallery3d.data.BucketHelper.loadBucketEntriesFromFilesTable(BucketHelper.java:135)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at com.android.gallery3d.data.BucketHelper.loadBucketEntries(BucketHelper.java:77)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at com.android.gallery3d.data.LocalAlbumSet$AlbumsLoader.run(LocalAlbumSet.java:108)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at com.android.gallery3d.data.LocalAlbumSet$AlbumsLoader.run(LocalAlbumSet.java:101)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at com.android.gallery3d.util.ThreadPool$Worker.run(ThreadPool.java:133)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at java.lang.Thread.run(Thread.java:923)
+12-30 18:18:29.370  6891  7097 W Worker  : 	at com.android.gallery3d.util.PriorityThreadFactory$1.run(PriorityThreadFactory.java:44)
+
+
+
+
+10
+
+
+12-31 09:32:37.872  1485  1865 W ActivityManager: handleIncomingUser callingUserId 0
+12-31 09:32:37.872  1485  1865 W ActivityManager: Unable to start service Intent { cmp=com.android.providers.media.module/com.android.providers.media.fuse.ExternalStorageServiceImpl } U=9876: not found
+12-31 09:32:37.873  1485  1865 E StorageManagerService: Failed to mount volume VolumeInfo{emulated;9876}:
+12-31 09:32:37.873  1485  1865 E StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+12-31 09:32:37.873  1485  1865 E StorageManagerService:     mountUserId=9876 state=CHECKING
+12-31 09:32:37.873  1485  1865 E StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+12-31 09:32:37.873  1485  1865 E StorageManagerService:     path=/storage/emulated internalPath=/data/media
+12-31 09:32:37.873  1485  1865 E StorageManagerService:
+12-31 09:32:37.873  1485  1865 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.startSession(StorageUserConnection.java:104)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.onVolumeMount(StorageSessionController.java:102)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.StorageManagerService$8.onVolumeChecking(StorageManagerService.java:2251)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.IVoldMountCallback$Stub.onTransact(IVoldMountCallback.java:87)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.Binder.execTransact(Binder.java:1123)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.BinderProxy.transactNative(Native Method)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.BinderProxy.transact(BinderProxy.java:540)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.IVold$Stub$Proxy.mount(IVold.java:1790)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.StorageManagerService.mount(StorageManagerService.java:2243)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.StorageManagerService.access$1800(StorageManagerService.java:210)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:773)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+12-31 09:32:37.873  1485  1865 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+
+为每个用户创建一个  Creating connection f
+12-31 10:04:00.076  1479  1670 I StorageSessionController: On volume mount VolumeInfo{emulated;9876}:
+12-31 10:04:00.076  1479  1670 I StorageSessionController:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+12-31 10:04:00.076  1479  1670 I StorageSessionController:     mountUserId=9876 state=CHECKING
+12-31 10:04:00.076  1479  1670 I StorageSessionController:     fsType=null fsUuid=null fsLabel=null
+12-31 10:04:00.076  1479  1670 I StorageSessionController:     path=/storage/emulated internalPath=/data/media
+12-31 10:04:00.076  1479  1670 I StorageSessionController: Creating connection for user: 9876
+12-31 10:04:00.076  1479  1670 I StorageUserConnection:  userId virtual as 9876
+12-31 10:04:00.076  1479  1670 I StorageSessionController: Creating and starting session with id: emulated;9876
+12-31 10:04:00.076  1479  1670 I StorageUserConnection: Binding to the ExternalStorageService for user 9876
+
+
+
+11
+
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: FATAL EXCEPTION: Thread-3
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: Process: com.android.providers.calendar, PID: 4250
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: java.lang.NullPointerException: Attempt to invoke virtual method 'void android.content.ContentValues.writeToParcel(android.os.Parcel, int)' on a null object reference
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at android.content.ContentProviderProxy.update(ContentProviderNative.java:644)
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at android.content.ContentResolver.update(ContentResolver.java:2356)
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at android.content.ContentResolver.update(ContentResolver.java:2318)
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at com.android.providers.calendar.CalendarReceiver.removeScheduledAlarms(CalendarReceiver.java:89)
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at com.android.providers.calendar.CalendarReceiver.lambda$onReceive$0(CalendarReceiver.java:71)
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at com.android.providers.calendar.CalendarReceiver.lambda$onReceive$0$CalendarReceiver(Unknown Source:0)
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at com.android.providers.calendar.-$$Lambda$CalendarReceiver$Pp0zNCVSzTTCtDRpFYDTqwXJywk.run(Unknown Source:8)
+12-31 10:04:03.129  4250  4280 E AndroidRuntime: 	at java.lang.Thread.run(Thread.java:923)
+need disable ?
+com.android.providers.blockednumber
+com.android.providers.calendar
+com.android.providers.contacts
+com.android.providers.downloads
+com.android.providers.downloads.ui
+com.android.providers.partnerbookmarks
+com.android.providers.settings
+com.android.providers.telephony
+com.android.providers.userdictionary
+
+
+
+
+====huwei 分身安装情况
+Users:
+  UserInfo{0:小龙:13} serialNo=0
+    State: RUNNING_UNLOCKED
+    Created: <unknown>
+    Last logged in: +1d4h32m56s712ms ago
+    Last logged in fingerprint: HUAWEI/VOG-AL00/HWVOG:10/HUAWEIVOG-AL00/10.1.0.162C00:user/release-keys
+    Last logged in fingerprintEx: HUAWEI/VOG-AL00/HWVOG:10/HUAWEIVOG-AL00/10.1.0.169C00:user/release-keys
+    Start time: +1d4h33m23s264ms ago
+    Unlock time: +1d4h32m56s790ms ago
+    Has profile owner: false
+    Restrictions:
+      none
+    Device policy global restrictions:
+      null
+    Device policy local restrictions:
+      null
+    Effective restrictions:
+      none
+  UserInfo{128:分身应用:4000010} serialNo=131
+    State: RUNNING_UNLOCKED
+    Created: +6s966ms ago
+    Last logged in: +1s807ms ago
+    Last logged in fingerprint: HUAWEI/VOG-AL00/HWVOG:10/HUAWEIVOG-AL00/10.1.0.162C00:user/release-keys
+    Last logged in fingerprintEx: HUAWEI/VOG-AL00/HWVOG:10/HUAWEIVOG-AL00/10.1.0.169C00:user/release-keys
+    Start time: +3s95ms ago
+    Unlock time: +1s847ms ago
+    Has profile owner: false
+    Restrictions:
+      none
+    Device policy global restrictions:
+      null
+    Device policy local restrictions:
+      null
+    Effective restrictions:
+      none
+
+  Device owner id:-10000
+
+  Guest restrictions:
+    no_sms
+    no_install_unknown_sources
+    no_config_wifi
+    no_outgoing_calls
+
+  Device managed: false
+  Started users state: {0=3, 128=3}
+
+  Max users: 4
+  Supports switchable users: true
+  All guests ephemeral: false
+===
+  安装app
+  package:com.huawei.featurelayer.featureframework
+  package:com.huawei.iaware
+  package:com.huawei.bluetooth
+  package:com.android.externalstorage
+  package:com.android.vending
+  package:androidhwext
+  package:com.tencent.mm
+  package:com.android.frameworkhwext.honor
+  package:android
+  package:com.android.mtp
+  package:com.huawei.android.internal.app
+  package:com.android.providers.settings
+  package:com.android.printspooler
+  package:com.android.frameworkres.overlay
+  package:com.huawei.systemmanager
+  package:com.google.android.webview
+  package:com.google.android.gms
+  package:com.google.android.gsf
+  package:com.tencent.mobileqq
+  package:com.android.packageinstaller
+  package:com.huawei.android.wfdft
+  package:com.android.settings
+  package:com.huawei.android.pushagent
+  package:com.android.vpndialogs
+  package:com.android.location.fused
+  package:com.android.bluetoothmidiservice
+  package:com.android.permissioncontroller
+  package:com.android.bluetooth
+
+
+
+
+==================
+
+if ((flags & UserInfo.FLAG_CUSTOM_PROFILE) != 0) {
+         //userTypeInstallablePackages.clear();
+         mPm.createNewUser(userId, userTypeInstallablePackages, disallowedPackages);
+     }else{
+         mPm.createNewUser(userId, userTypeInstallablePackages, disallowedPackages);
+     }
+
+
+
+     ///TCL  APPP
+
+     drwxrwx--x 14 system      system      53248 2020-01-17 09:26 .
+     drwx--x--x  4 system      system       3488 2020-01-17 09:25 ..
+     drwx------  4 u100_system u100_system  3488 2020-01-17 09:25 android
+     drwx------  5 u100_system u100_system  3488 2020-01-17 09:25 com.android.keychain
+     drwx------  6 u100_a139   u100_a139    3488 2020-01-17 09:25 com.android.printspooler
+     drwx------  4 u100_a153   u100_a153    3488 2020-01-17 09:26 com.facebook.katana
+     drwx------  4 u100_a105   u100_a105    3488 2020-01-17 09:25 com.facebook.services
+     drwx------  4 u100_a226   u100_a226    3488 2020-01-17 09:25 com.google.android.ext.services
+     drwx--x--x 15 u100_a173   u100_a173    3488 2020-01-17 09:25 com.google.android.gms
+     drwx------  8 u100_a173   u100_a173    3488 2020-01-17 09:25 com.google.android.gsf
+     drwx------  4 u100_a109   u100_a109    3488 2020-01-17 09:25 com.google.android.packageinstaller
+     drwx------  4 u100_a230   u100_a230    3488 2020-01-17 09:25 com.google.android.permissioncontroller
+     drwx------  8 u100_a225   u100_a225    3488 2020-01-17 09:25 com.google.android.providers.media.module
+     drwx------  4 u100_a175   u100_a175    3488 2020-01-17 09:25 com.google.android.webview
+
+
+
+=====
+
+01-11 08:30:12.813  8732  8772 W DecodeUtils: java.io.FileNotFoundException: /storage/emulated/0/DCIM/Camera/IMG_20210108_135110.jpg: open failed: EPERM (Operation not permitted)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:492)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:160)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:115)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at android.graphics.BitmapRegionDecoder.newInstance(BitmapRegionDecoder.java:151)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at com.android.gallery3d.data.DecodeUtils.createBitmapRegionDecoder(DecodeUtils.java:219)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at com.android.gallery3d.data.LocalImage$LocalLargeImageRequest.run(LocalImage.java:233)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at com.android.gallery3d.data.LocalImage$LocalLargeImageRequest.run(LocalImage.java:223)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at com.android.gallery3d.app.PhotoDataAdapter$FullImageJob.run(PhotoDataAdapter.java:733)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at com.android.gallery3d.app.PhotoDataAdapter$FullImageJob.run(PhotoDataAdapter.java:721)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at com.android.gallery3d.util.ThreadPool$Worker.run(ThreadPool.java:133)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at java.lang.Thread.run(Thread.java:923)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at com.android.gallery3d.util.PriorityThreadFactory$1.run(PriorityThreadFactory.java:44)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: Caused by: android.system.ErrnoException: open failed: EPERM (Operation not permitted)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at libcore.io.Linux.open(Native Method)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at libcore.io.BlockGuardOs.open(BlockGuardOs.java:254)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at android.app.ActivityThread$AndroidOs.open(ActivityThread.java:7561)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:478)
+01-11 08:30:12.813  8732  8772 W DecodeUtils: 	... 13 more
+
+
+
+
+01-11 09:07:41.214  6024  6690 I GLRootView: layout content pane 1440x2774 (compensation 0)
+01-11 09:07:41.214  6024  6690 D PhotoView: compensation = 0, CameraRelativeFrame = Rect(0, 0 - 0, 0), mCameraRect = Rect(0, 0 - 0, 0)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: java.io.FileNotFoundException: /storage/emulated/0/DCIM/Camera/IMG_20210111_090541.jpg: open failed: EPERM (Operation not permitted)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:492)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:160)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:115)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at android.graphics.BitmapRegionDecoder.newInstance(BitmapRegionDecoder.java:151)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.data.DecodeUtils.createBitmapRegionDecoder(DecodeUtils.java:219)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.data.LocalImage$LocalLargeImageRequest.run(LocalImage.java:233)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.data.LocalImage$LocalLargeImageRequest.run(LocalImage.java:223)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.app.PhotoDataAdapter$FullImageJob.run(PhotoDataAdapter.java:733)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.app.PhotoDataAdapter$FullImageJob.run(PhotoDataAdapter.java:721)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.util.ThreadPool$Worker.run(ThreadPool.java:133)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.lang.Thread.run(Thread.java:923)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.util.PriorityThreadFactory$1.run(PriorityThreadFactory.java:44)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: Caused by: android.system.ErrnoException: open failed: EPERM (Operation not permitted)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.Linux.open(Native Method)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.BlockGuardOs.open(BlockGuardOs.java:254)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at android.app.ActivityThread$AndroidOs.open(ActivityThread.java:7561)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:478)1
+
+
+1:StrogeManager .Media ContentProvider
+
+
+
+huzhongyang@huzhongyang-HP-EliteDesk-800-G5-TWR:~/code/debug$ adb logcat |grep -E "StorageManager|vold"
+
+07-05 18:58:20.915     1     1 I init    : Parsing file /system/etc/init/vold.rc...
+07-05 18:58:21.382     1     1 I init    : starting service 'vold'...
+07-05 18:58:21.473   654   654 D vdc     : Waited 0ms for vold
+07-05 18:58:21.482   657   657 D vdc     : Waited 0ms for vold
+07-05 18:58:21.629   697   697 D vdc     : Waited 0ms for vold
+07-05 18:58:22.534   861   861 D vdc     : Waited 0ms for vold
+01-12 11:08:29.160  1475  1656 I chatty  : uid=1000(system) StorageManagerS expire 5 lines
+01-12 11:08:30.885  1475  1500 I ActivityManagerTiming: OnBootPhase_1000_com.android.server.StorageManagerService$Lifecycle
+01-12 11:08:30.885  1475  1500 D StorageManagerService: FUSE flags. Settings: true. Default: true
+01-12 11:08:30.885  1475  1500 D ActivityManagerTiming: OnBootPhase_1000_com.android.server.StorageManagerService$Lifecycle took to complete: 0ms
+01-12 11:08:30.886  1475  1656 D StorageManagerService: Thinking about init, mBootCompleted=true, mDaemonConnected=true
+01-12 11:08:30.886  1475  1656 D StorageManagerService: Thinking about reset, mBootCompleted=true, mDaemonConnected=true
+01-12 11:08:30.886  1475  1656 I StorageManagerService: Resetting vold...
+01-12 11:08:30.886  1475  1656 I StorageManagerService: Reset vold
+01-12 11:08:30.886   621   621 I vold    : onUserAdded: 0
+01-12 11:08:30.886   621   621 I vold    : onUserAdded: 9876
+01-12 11:08:30.920  1475  1500 D StorageManagerService: unlockUserKey: 0 isFileEncryptedNativeOrEmulated: true hasToken: false hasSecret: false
+01-12 11:08:30.920   621   621 D vold    : fscrypt_unlock_user_key 0 serial=0 token_present=0
+01-12 11:08:30.920   621   621 D vold    : Skipping non-key .
+01-12 11:08:30.920   621   621 D vold    : Skipping non-key ..
+01-12 11:08:30.920   621   621 D vold    : Trying user CE key /data/misc/vold/user_keys/ce/0/current
+01-12 11:08:30.925   621   621 I vold    : List of Keymaster HALs found:
+01-12 11:08:30.925   621   621 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+01-12 11:08:30.925   621   621 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-12 11:08:30.925   621   621 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-12 11:08:30.932   621   631 D vold    : Disk at 7:216 changed
+01-12 11:08:30.936   621   621 D vold    : Successfully retrieved key
+01-12 11:08:30.940   621   621 D vold    : Installed fscrypt key with ref 2d06d2dd941336cb to /data
+01-12 11:08:30.940   621   621 D vold    : Added fscrypt-provisioning key for 2d06d2dd941336cb to session keyring
+01-12 11:08:30.940   621   621 D vold    : Installed ce key for user 0
+01-12 11:08:30.941   621   621 D vold    : hzy fscrypt_prepare_user_storage for volume null, user 0, serial 0, flags 2
+01-12 11:08:30.941   621   621 D vold    : Preparing: /data/system_ce/0
+01-12 11:08:30.941   621   621 D vold    : Preparing: /data/misc_ce/0
+01-12 11:08:30.941   621   621 D vold    : Preparing: /data/vendor_ce/0
+01-12 11:08:30.941   621   621 D vold    : Preparing: /data/media/0
+01-12 11:08:30.942   621   621 D vold    : Preparing: /data/data
+01-12 11:08:30.942   621   621 I vold    : Verified that /data/system_ce/0 has the encryption policy 2d06d2dd941336cb v1 modes 127/4 flags 0x0
+01-12 11:08:30.942   621   621 I vold    : Verified that /data/misc_ce/0 has the encryption policy 2d06d2dd941336cb v1 modes 127/4 flags 0x0
+01-12 11:08:30.942   621   621 I vold    : Verified that /data/vendor_ce/0 has the encryption policy 2d06d2dd941336cb v1 modes 127/4 flags 0x0
+01-12 11:08:30.942   621   621 I vold    : Verified that /data/media/0 has the encryption policy 2d06d2dd941336cb v1 modes 127/4 flags 0x0
+01-12 11:08:30.942   621   621 I vold    : Verified that /data/data has the encryption policy 2d06d2dd941336cb v1 modes 127/4 flags 0x0
+01-12 11:08:30.942   621   621 D vold    : Starting restorecon of /data/system_ce/0
+01-12 11:08:30.947   621   621 D vold    : Finished restorecon of /data/system_ce/0
+01-12 11:08:30.947   621   621 D vold    : Starting restorecon of /data/vendor_ce/0
+01-12 11:08:30.961   621   621 D vold    : Finished restorecon of /data/vendor_ce/0
+01-12 11:08:30.961   621   621 D vold    : Starting restorecon of /data/misc_ce/0
+01-12 11:08:30.968   621   621 D vold    : Finished restorecon of /data/misc_ce/0
+01-12 11:08:30.968   621   621 D vold    : /system/bin/vold_prepare_subdirs
+01-12 11:08:30.968   621   621 D vold    :     prepare
+01-12 11:08:30.968   621   621 D vold    :
+01-12 11:08:30.968   621   621 D vold    :     0
+01-12 11:08:30.968   621   621 D vold    :     2
+01-12 11:08:31.003  2640  2640 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:vold_data_file:s0 on path: /data/misc_ce/0/vold
+01-12 11:08:31.004  2640  2640 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:storaged_data_file:s0 on path: /data/misc_ce/0/storaged
+01-12 11:08:31.005  2640  2640 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:rollback_data_file:s0 on path: /data/misc_ce/0/rollback
+01-12 11:08:31.006  2640  2640 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:apex_rollback_data_file:s0 on path: /data/misc_ce/0/apexrollback
+01-12 11:08:31.007  2640  2640 D vold_prepare_subdirs: Setting up mode 711 uid 0 gid 0 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata
+01-12 11:08:31.008  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.mediaprovider
+01-12 11:08:31.012  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_permission_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.permission
+01-12 11:08:31.014  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.sdkext
+01-12 11:08:31.015  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.ipsec
+01-12 11:08:31.016  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.conscrypt
+01-12 11:08:31.017  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.apex.cts.shim
+01-12 11:08:31.018  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.tethering
+01-12 11:08:31.019  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.media.swcodec
+01-12 11:08:31.020  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.neuralnetworks
+01-12 11:08:31.021  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.cellbroadcast
+01-12 11:08:31.021  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_wifi_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.wifi
+01-12 11:08:31.025  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.resolv
+01-12 11:08:31.027  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.adbd
+01-12 11:08:31.028  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.media
+01-12 11:08:31.030  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.extservices
+01-12 11:08:31.031  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.vndk.v30
+01-12 11:08:31.033  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.os.statsd
+01-12 11:08:31.035  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.art
+01-12 11:08:31.037  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.runtime
+01-12 11:08:31.039  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.i18n
+01-12 11:08:31.040  2640  2640 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/0/apexdata/com.android.tzdata
+01-12 11:08:31.042  2640  2640 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/0/backup
+01-12 11:08:31.044  2640  2640 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/0/backup_stage
+01-12 11:08:31.046  2640  2640 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:face_vendor_data_file:s0 on path: /data/vendor_ce/0/facedata
+01-12 11:08:31.253  1475  1512 I SystemServerTimingAsync: ssm.onUnlockingUser-0_com.android.server.StorageManagerService$Lifecycle
+01-12 11:08:31.253  1475  1512 D StorageManagerService: onUnlockUser 0
+01-12 11:08:31.273   621   621 I vold    : onUserStarted: 0
+01-12 11:08:31.277  1475  1916 V StorageManagerService: Found primary storage at VolumeInfo{emulated;0}:
+01-12 11:08:31.277  1475  1916 V StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=0 mountUserId=0
+01-12 11:08:31.277  1475  1916 V StorageManagerService:     state=UNMOUNTED
+01-12 11:08:31.277  1475  1916 V StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:31.277  1475  1916 V StorageManagerService:     path=null internalPath=null
+01-12 11:08:31.277  1475  1656 I StorageManagerService: Mounting volume VolumeInfo{emulated;0}:
+01-12 11:08:31.277  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:31.277  1475  1656 I StorageManagerService:     mountUserId=0 state=UNMOUNTED
+01-12 11:08:31.277  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:31.277  1475  1656 I StorageManagerService:     path=null internalPath=null
+
+
+01-12 11:08:31.277   621   621 I vold    : Executing sdcardfs
+01-12 11:08:31.277   621   621 D vold    : Waiting for sdcardfs to spin up...
+01-12 11:08:31.282  1475  1512 D SystemServerTimingAsync: ssm.onUnlockingUser-0_com.android.server.StorageManagerService$Lifecycle took to complete: 29ms
+01-12 11:08:31.329   621   621 I vold    : Mounting emulated fuse volume
+01-12 11:08:31.331  1475  1913 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:31.333  1475  1512 I SystemServerTimingAsync: ssm.onUnlockedUser-0_com.android.server.StorageManagerService$Lifecycle
+01-12 11:08:31.333  1475  1512 D SystemServerTimingAsync: ssm.onUnlockedUser-0_com.android.server.StorageManagerService$Lifecycle took to complete: 0ms
+01-12 11:08:31.342   621   621 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/0/emulated
+01-12 11:08:31.343  1475  1656 E StorageManagerService: hzy2 fd =java.io.FileDescriptor@bd38c5cpath=/storage/emulated,vol.internalPath /data/media
+01-12 11:08:31.519  1475  1916 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:31.861  1475  1936 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:31.867  1475  1916 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:31.867  1475  1916 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:31.871  1475  1916 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.100  1475  1789 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.101  1475  1789 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.252   621   670 D vold    : hzy fscrypt_prepare_user_storage for volume null, user 9876, serial 9879, flags 1
+01-12 11:08:32.252   621   670 D vold    : Preparing: /data/system/users/9876
+01-12 11:08:32.252   621   670 D vold    : Preparing: /data/misc/profiles/cur/9876
+01-12 11:08:32.252   621   670 D vold    : Preparing: /data/system_de/9876
+01-12 11:08:32.252   621   670 D vold    : Preparing: /data/misc_de/9876
+01-12 11:08:32.252   621   670 D vold    : Preparing: /data/vendor_de/9876
+01-12 11:08:32.252   621   670 D vold    : Preparing: /data/user_de/9876
+01-12 11:08:32.252   621   670 I vold    : Verified that /data/system_de/9876 has the encryption policy d2f46e674ccf0fbb v1 modes 127/4 flags 0x0
+01-12 11:08:32.252   621   670 I vold    : Verified that /data/misc_de/9876 has the encryption policy d2f46e674ccf0fbb v1 modes 127/4 flags 0x0
+01-12 11:08:32.252   621   670 I vold    : Verified that /data/vendor_de/9876 has the encryption policy d2f46e674ccf0fbb v1 modes 127/4 flags 0x0
+01-12 11:08:32.252   621   670 I vold    : Verified that /data/user_de/9876 has the encryption policy d2f46e674ccf0fbb v1 modes 127/4 flags 0x0
+01-12 11:08:32.252   621   670 D vold    : /system/bin/vold_prepare_subdirs
+01-12 11:08:32.252   621   670 D vold    :     prepare
+01-12 11:08:32.252   621   670 D vold    :
+01-12 11:08:32.252   621   670 D vold    :     9876
+01-12 11:08:32.252   621   670 D vold    :     1
+01-12 11:08:32.260  3153  3153 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:vold_data_file:s0 on path: /data/misc_de/9876/vold
+01-12 11:08:32.261  3153  3153 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:storaged_data_file:s0 on path: /data/misc_de/9876/storaged
+01-12 11:08:32.262  3153  3153 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:rollback_data_file:s0 on path: /data/misc_de/9876/rollback
+01-12 11:08:32.262  3153  3153 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:apex_rollback_data_file:s0 on path: /data/misc_de/9876/apexrollback
+01-12 11:08:32.262  3153  3153 D vold_prepare_subdirs: Setting up mode 711 uid 0 gid 0 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata
+01-12 11:08:32.262  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.mediaprovider
+01-12 11:08:32.263  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_permission_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.permission
+01-12 11:08:32.263  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.sdkext
+01-12 11:08:32.263  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.ipsec
+01-12 11:08:32.263  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.conscrypt
+01-12 11:08:32.264  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.apex.cts.shim
+01-12 11:08:32.264  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.tethering
+01-12 11:08:32.264  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.media.swcodec
+01-12 11:08:32.265  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.neuralnetworks
+01-12 11:08:32.265  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.cellbroadcast
+01-12 11:08:32.265  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_wifi_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.wifi
+01-12 11:08:32.265  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.resolv
+01-12 11:08:32.266  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.adbd
+01-12 11:08:32.266  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.media
+01-12 11:08:32.266  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.extservices
+01-12 11:08:32.267  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.vndk.v30
+01-12 11:08:32.267  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.os.statsd
+01-12 11:08:32.267  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.art
+01-12 11:08:32.267  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.runtime
+01-12 11:08:32.268  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.i18n
+01-12 11:08:32.268  3153  3153 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_de/9876/apexdata/com.android.tzdata
+01-12 11:08:32.268  3153  3153 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:fingerprint_vendor_data_file:s0 on path: /data/vendor_de/9876/fpdata
+01-12 11:08:32.268  3153  3153 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:face_vendor_data_file:s0 on path: /data/vendor_de/9876/facedata
+01-12 11:08:32.292  1475  1512 D StorageManagerService: unlockUserKey: 9876 isFileEncryptedNativeOrEmulated: true hasToken: false hasSecret: false
+01-12 11:08:32.292   621   670 D vold    : fscrypt_unlock_user_key 9876 serial=9879 token_present=0
+01-12 11:08:32.293   621   670 D vold    : Skipping non-key .
+01-12 11:08:32.293   621   670 D vold    : Skipping non-key ..
+01-12 11:08:32.293   621   670 D vold    : Trying user CE key /data/misc/vold/user_keys/ce/9876/current
+01-12 11:08:32.299   621   670 I vold    : List of Keymaster HALs found:
+01-12 11:08:32.299   621   670 I vold    : Keymaster HAL #1: CitadelKeymaster from Google SecurityLevel: STRONGBOX HAL: android.hardware.keymaster@4.1::IKeymasterDevice/strongbox
+01-12 11:08:32.299   621   670 I vold    : Keymaster HAL #2: Keymaster HAL: 4 from QTI SecurityLevel: TRUSTED_ENVIRONMENT HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-12 11:08:32.299   621   670 I vold    : Using Keymaster HAL: 4 from QTI for encryption.  Security level: TRUSTED_ENVIRONMENT, HAL: android.hardware.keymaster@4.1::IKeymasterDevice/default
+01-12 11:08:32.310   621   670 D vold    : Successfully retrieved key
+01-12 11:08:32.315   621   670 D vold    : Installed fscrypt key with ref 69840e2dfb88f5fb to /data
+01-12 11:08:32.315   621   670 D vold    : Added fscrypt-provisioning key for 69840e2dfb88f5fb to session keyring
+01-12 11:08:32.315   621   670 D vold    : Installed ce key for user 9876
+01-12 11:08:32.317   621   670 D vold    : hzy fscrypt_prepare_user_storage for volume null, user 9876, serial 9879, flags 2
+01-12 11:08:32.317   621   670 D vold    : Preparing: /data/system_ce/9876
+01-12 11:08:32.317   621   670 D vold    : Preparing: /data/misc_ce/9876
+01-12 11:08:32.317   621   670 D vold    : Preparing: /data/vendor_ce/9876
+01-12 11:08:32.317   621   670 D vold    : Preparing: /data/media/9876
+01-12 11:08:32.318   621   670 D vold    : Preparing: /data/user/9876
+01-12 11:08:32.318   621   670 I vold    : Verified that /data/system_ce/9876 has the encryption policy 69840e2dfb88f5fb v1 modes 127/4 flags 0x0
+01-12 11:08:32.318   621   670 I vold    : Verified that /data/misc_ce/9876 has the encryption policy 69840e2dfb88f5fb v1 modes 127/4 flags 0x0
+01-12 11:08:32.318   621   670 I vold    : Verified that /data/vendor_ce/9876 has the encryption policy 69840e2dfb88f5fb v1 modes 127/4 flags 0x0
+01-12 11:08:32.318   621   670 I vold    : Verified that /data/media/9876 has the encryption policy 69840e2dfb88f5fb v1 modes 127/4 flags 0x0
+01-12 11:08:32.318   621   670 I vold    : Verified that /data/user/9876 has the encryption policy 69840e2dfb88f5fb v1 modes 127/4 flags 0x0
+01-12 11:08:32.318   621   670 D vold    : Starting restorecon of /data/system_ce/9876
+01-12 11:08:32.319  1475  1512 I SystemServerTimingAsync: ssm.onStartUser-9876_com.android.server.StorageManagerService$Lifecycle
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.cts.priv.ctsshim does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.internal.display.cutout.emulation.corner does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.internal.display.cutout.emulation.double does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.providers.telephony does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.dynsystem does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.theme.icon.pebble does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.providers.calendar does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.providers.media does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.internal.systemui.navbar.gestural_wide_back does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.wallpapercropper does not have legacy storage
+01-12 11:08:32.321   621   670 D vold    : Finished restorecon of /data/system_ce/9876
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.theme.icon.vessel does not have legacy storage
+01-12 11:08:32.321   621   670 D vold    : Starting restorecon of /data/vendor_ce/9876
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.theme.color.cinnamon does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.rounded.systemui does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.settings.overlay.g020j does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.theme.icon.taperedrect does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.documentsui does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.externalstorage does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.htmlviewer does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.companiondevicemanager does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.quicksearchbox does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.mms.service does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.providers.downloads does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.messaging does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.rounded.android does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package vendor.qti.hardware.cacert.server does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.qualcomm.qti.gpudrivers.msmnile.api30 does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.qualcomm.qti.telephonyservice does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.circular.themepicker does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package vendor.qti.iwlan does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.server.robotests does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.timezone.updater does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.providers.downloads.ui does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.pacprocessor does not have legacy storage
+01-12 11:08:32.321  1475  1512 V StorageManagerService: Package com.android.simappdialog does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.networkstack does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.internal.display.cutout.emulation.hole does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.internal.display.cutout.emulation.tall does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.modulemetadata does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.certinstaller does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.theme.color.black does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.carrierconfig does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.theme.color.green does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.theme.color.ocean does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.theme.color.space does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.internal.systemui.navbar.threebutton does not have legacy storage
+01-12 11:08:32.322   621   670 D vold    : Finished restorecon of /data/vendor_ce/9876
+01-12 11:08:32.322   621   670 D vold    : Starting restorecon of /data/misc_ce/9876
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package android does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.contacts does not have legacy storage
+01-12 11:08:32.322  1475  1512 V StorageManagerService: Package com.android.camera2 does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.rounded.launcher does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.egg does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.mtp does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.nfc does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.ons does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.stk does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.launcher3 does not have legacy storage
+01-12 11:08:32.323   621   670 D vold    : Finished restorecon of /data/misc_ce/9876
+01-12 11:08:32.323   621   670 D vold    : /system/bin/vold_prepare_subdirs
+01-12 11:08:32.323   621   670 D vold    :     prepare
+01-12 11:08:32.323   621   670 D vold    :
+01-12 11:08:32.323   621   670 D vold    :     9876
+01-12 11:08:32.323   621   670 D vold    :     2
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.backupconfirm does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.settings.auto_generated_rro_vendor__ does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.systemui.auto_generated_rro_vendor__ does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.provision does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package org.codeaurora.ims does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.statementservice does not have legacy storage
+01-12 11:08:32.323  1475  1512 V StorageManagerService: Package com.android.settings.intelligence does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.calendar does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.internal.systemui.navbar.gestural_extra_wide_back does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.qualcomm.qcrilmsgtunnel does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.providers.settings does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.sharedstoragebackup does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.printspooler does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.filled.settings does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.dreams.basic does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.webview does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.se does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.inputdevices does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.recovery_l10n does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.bips does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.circular.settings does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.musicfx does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.cellbroadcastreceiver does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.theme.icon.teardrop does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package android.ext.shared does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.onetimeinitializer does not have legacy storage
+01-12 11:08:32.324  1475  1512 V StorageManagerService: Package com.android.server.telecom does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.cellbroadcastservice does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.rounded.themepicker does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.keychain does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.service.ims does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.printservice.recommendation does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.dialer does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.gallery3d has legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.filled.systemui does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package android.ext.services does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.wifi.resources does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.calllogbackup does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.safetyregulatoryinfo does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.tencent.mobileqq has legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.localtransport does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.packageinstaller does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.carrierdefaultapp does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.theme.font.notoserifsource does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.filled.android does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.proxyhandler does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.internal.display.cutout.emulation.waterfall does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.circular.systemui does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.inputmethod.latin has legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package org.chromium.webview_shell does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.managedprovisioning does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.networkstack.tethering does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.soundpicker does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.dreams.phototable does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.google.pixel.coral.gpuprofiling.vulkanlayer does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.providers.partnerbookmarks does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.service.ims.presence does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.wallpaper.livepicker does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.cellbroadcastreceiver.module does not have legacy storage
+01-12 11:08:32.325  1475  1512 V StorageManagerService: Package com.android.phone.auto_generated_rro_vendor__ does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.apps.tag does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.wifi.resources.pixel does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.theme.icon.squircle does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.storagemanager does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.bookmarkprovider does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.settings does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.qualcomm.qti.cne does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.filled.launcher does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.networkstack.permissionconfig does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.cts.ctsshim does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.nfc.auto_generated_rro_vendor__ does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.example.android.systemupdatersample does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.circular.launcher does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.vpndialogs does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.music does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.phone does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.shell does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.filled.themepicker does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.wallpaperbackup does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.providers.blockednumber does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.providers.userdictionary does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.providers.media.module does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.emergency does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.hotspot2.osulogin does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.internal.systemui.navbar.gestural does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.location.fused does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.theme.color.orchid does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.deskclock does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.systemui does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.theme.color.purple does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.bluetoothmidiservice does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.permissioncontroller does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.traceur does not have legacy storage
+01-12 11:08:32.326  1475  1512 V StorageManagerService: Package com.android.bluetooth does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.qualcomm.timeservice does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.wallpaperpicker does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.providers.contacts does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.captiveportallogin does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.theme.icon.roundedrect does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.server.backup.robotests does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.internal.systemui.navbar.gestural_narrow_back does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.rounded.settings does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package android.auto_generated_rro_vendor__ does not have legacy storage
+01-12 11:08:32.327  1475  1512 V StorageManagerService: Package com.android.theme.icon_pack.circular.android does not have legacy storage
+01-12 11:08:32.327  1475  1512 D SystemServerTimingAsync: ssm.onStartUser-9876_com.android.server.StorageManagerService$Lifecycle took to complete: 8ms
+01-12 11:08:32.330  3172  3172 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:vold_data_file:s0 on path: /data/misc_ce/9876/vold
+01-12 11:08:32.331  3172  3172 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:storaged_data_file:s0 on path: /data/misc_ce/9876/storaged
+01-12 11:08:32.331  3172  3172 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:rollback_data_file:s0 on path: /data/misc_ce/9876/rollback
+01-12 11:08:32.332  3172  3172 D vold_prepare_subdirs: Setting up mode 700 uid 0 gid 0 context u:object_r:apex_rollback_data_file:s0 on path: /data/misc_ce/9876/apexrollback
+01-12 11:08:32.332  3172  3172 D vold_prepare_subdirs: Setting up mode 711 uid 0 gid 0 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata
+01-12 11:08:32.332  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.mediaprovider
+01-12 11:08:32.333  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_permission_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.permission
+01-12 11:08:32.333  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.sdkext
+01-12 11:08:32.333  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.ipsec
+01-12 11:08:32.333  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.conscrypt
+01-12 11:08:32.334  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.apex.cts.shim
+01-12 11:08:32.334  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.tethering
+01-12 11:08:32.334  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.media.swcodec
+01-12 11:08:32.335  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.neuralnetworks
+01-12 11:08:32.335  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.cellbroadcast
+01-12 11:08:32.335  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_wifi_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.wifi
+01-12 11:08:32.336  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.resolv
+01-12 11:08:32.336  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.adbd
+01-12 11:08:32.336  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.media
+01-12 11:08:32.337  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.extservices
+01-12 11:08:32.337  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.vndk.v30
+01-12 11:08:32.337  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.os.statsd
+01-12 11:08:32.338  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.art
+01-12 11:08:32.338  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.runtime
+01-12 11:08:32.338  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.i18n
+01-12 11:08:32.338  3172  3172 D vold_prepare_subdirs: Setting up mode 771 uid 0 gid 1000 context u:object_r:apex_module_data_file:s0 on path: /data/misc_ce/9876/apexdata/com.android.tzdata
+01-12 11:08:32.339  3172  3172 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/9876/backup
+01-12 11:08:32.339  3172  3172 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:backup_data_file:s0 on path: /data/system_ce/9876/backup_stage
+01-12 11:08:32.339  3172  3172 D vold_prepare_subdirs: Setting up mode 700 uid 1000 gid 1000 context u:object_r:face_vendor_data_file:s0 on path: /data/vendor_ce/9876/facedata
+01-12 11:08:32.438  1475  1512 I SystemServerTimingAsync: ssm.onUnlockingUser-9876_com.android.server.StorageManagerService$Lifecycle
+01-12 11:08:32.438  1475  1512 D StorageManagerService: onUnlockUser 9876
+01-12 11:08:32.674   621   621 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-12 11:08:32.676   621   621 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-12 11:08:32.676   621   621 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-12 11:08:32.678   621   621 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-12 11:08:32.678   621   621 I vold    : Bind mounting /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-12 11:08:32.678   621   621 I vold    : Bind mounted /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-12 11:08:32.679   621   621 I vold    : Configuring read_ahead of /mnt/user/0/emulated fuse filesystem to 256kb
+01-12 11:08:32.679   621   621 I vold    : Writing 256 to /sys/class/bdi/0:68/read_ahead_kb
+01-12 11:08:32.679   621   621 I vold    : Configuring max_ratio of /mnt/user/0/emulated fuse filesystem to 40
+01-12 11:08:32.679   621   621 I vold    : Writing 40 to /sys/class/bdi/0:68/max_ratio
+01-12 11:08:32.679   621   670 I vold    : onUserStarted: 9876
+01-12 11:08:32.679  1475  1656 I StorageManagerService: Mounted volume VolumeInfo{emulated;0}:
+01-12 11:08:32.679  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:32.679  1475  1656 I StorageManagerService:     mountUserId=0 state=CHECKING
+01-12 11:08:32.679  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:32.679  1475  1656 I StorageManagerService:     path=/storage/emulated internalPath=/data/media
+01-12 11:08:32.680  1475  1512 W SystemServiceManager: Service com.android.server.StorageManagerService$Lifecycle took 243 ms in onUnlockingUser-9876
+01-12 11:08:32.680  1475  1512 D SystemServerTimingAsync: ssm.onUnlockingUser-9876_com.android.server.StorageManagerService$Lifecycle took to complete: 243ms
+01-12 11:08:32.682  1475  1788 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.689  1475  1789 V StorageManagerService: Found primary storage at VolumeInfo{emulated;9876}:
+01-12 11:08:32.689  1475  1789 V StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=0 mountUserId=9876
+01-12 11:08:32.689  1475  1789 V StorageManagerService:     state=UNMOUNTED
+01-12 11:08:32.689  1475  1789 V StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:32.689  1475  1789 V StorageManagerService:     path=null internalPath=null
+01-12 11:08:32.709  1475  1512 I SystemServerTimingAsync: ssm.onUnlockedUser-9876_com.android.server.StorageManagerService$Lifecycle
+01-12 11:08:32.709  1475  1512 D SystemServerTimingAsync: ssm.onUnlockedUser-9876_com.android.server.StorageManagerService$Lifecycle took to complete: 0ms
+01-12 11:08:32.715  1475  1916 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.737  1475  1475 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.737  1475  1475 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.741  1475  2798 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.743  1475  1475 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.746  1475  1475 W StorageManagerService: Reporting emulated;0 unmounted due to system locked
+01-12 11:08:32.769  1475  2798 W StorageManagerService: Reporting emulated;9876 unmounted due to system locked
+01-12 11:08:32.771  1475  1916 W StorageManagerService: Reporting emulated;9876 unmounted due to system locked
+01-12 11:08:32.808  1475  1656 I StorageManagerService: Mounting volume VolumeInfo{emulated;9876}:
+01-12 11:08:32.808  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:32.808  1475  1656 I StorageManagerService:     mountUserId=9876 state=UNMOUNTED
+01-12 11:08:32.808  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:32.808  1475  1656 I StorageManagerService:     path=null internalPath=null
+01-12 11:08:32.808   621   670 I vold    : Mounting emulated fuse volume
+01-12 11:08:32.815   621   670 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/9876/emulated
+
+
+
+
+
+01-12 11:08:32.815  1475  1656 E StorageManagerService: hzy2 fd =java.io.FileDescriptor@5fc4340path=/storage/emulated,vol.internalPath /data/media
+01-12 11:08:32.816  1475  1656 E StorageManagerService: Failed to mount volume VolumeInfo{emulated;9876}:
+01-12 11:08:32.816  1475  1656 E StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:32.816  1475  1656 E StorageManagerService:     mountUserId=9876 state=CHECKING
+01-12 11:08:32.816  1475  1656 E StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:32.816  1475  1656 E StorageManagerService:     path=/storage/emulated internalPath=/data/media
+01-12 11:08:32.816  1475  1656 E StorageManagerService:
+01-12 11:08:32.816  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$
+.bind(StorageUserConnection.java:456)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.startSession(StorageUserConnection.java:104)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.onVolumeMount(StorageSessionController.java:103)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$8.onVolumeChecking(StorageManagerService.java:2252)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.IVoldMountCallback$Stub.onTransact(IVoldMountCallback.java:87)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.Binder.execTransact(Binder.java:1123)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.BinderProxy.transactNative(Native Method)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.BinderProxy.transact(BinderProxy.java:540)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.IVold$Stub$Proxy.mount(IVold.java:1790)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.mount(StorageManagerService.java:2243)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$1800(StorageManagerService.java:210)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:773)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:32.816  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:32.816  1475  1656 I StorageManagerService: Scheduling reset in 10s
+
+
+01-12 11:08:32.816   621   670 I vold    : fuse_unmounter scope_guard running
+01-12 11:08:32.816   621   670 I vold    : Unmounting pass_through_path /mnt/pass_through/9876/emulated
+01-12 11:08:32.816   621   670 I vold    : Unmounting fuse path /mnt/user/9876/emulated
+01-12 11:08:32.819   621   670 I vold    : sdcardfs_unmounter scope_guard running
+
+01-12 11:08:32.820  1475  1656 E StorageManagerService: android.os.ServiceSpecificException:  (code -5)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:2387)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.Parcel.createException(Parcel.java:2357)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.Parcel.readException(Parcel.java:2340)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.Parcel.readException(Parcel.java:2282)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.IVold$Stub$Proxy.mount(IVold.java:1795)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.mount(StorageManagerService.java:2243)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$1800(StorageManagerService.java:210)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:773)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:32.820  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:08:32.822  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:32.822  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:32.825  1475  1656 D StorageManagerService: Volume emulated;0 broadcasting mounted to UserHandle{0}
+01-12 11:08:32.826  1475  1656 D StorageManagerService: Volume emulated;0 broadcasting mounted to UserHandle{0}
+01-12 11:08:32.830  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:08:32.830  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:32.830  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:08:32.835  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:32.835  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:32.852  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}
+01-12 11:08:32.857  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}
+01-12 11:08:42.826  1475  1656 D StorageManagerService: Thinking about reset, mBootCompleted=true, mDaemonConnected=true
+01-12 11:08:42.828   621   670 I vold    : Killing all processes referencing /storage/emulated/0
+01-12 11:08:43.254   621   670 W vold    : Found symlink /proc/2962/fd/59 referencing /storage/emulated/0/Android/data/com.tencent.mobileqq/files/tencent/msflogs/com/tencent/mobileqq/com.tencent.mobileqq.21.01.12.11.log
+01-12 11:08:43.304   621   670 W vold    : Sending Interrupt to 2962
+01-12 11:08:48.572   621   670 W vold    : Found symlink /proc/3905/fd/59 referencing /storage/emulated/0/Android/data/com.tencent.mobileqq/files/tencent/msflogs/com/tencent/mobileqq/com.tencent.mobileqq.21.01.12.11.log
+01-12 11:08:48.572   621   670 W vold    : Sending Terminated to 3905
+01-12 11:08:53.841   621   670 I vold    : Unmounting /mnt/installer/0/emulated/0/Android/obb
+01-12 11:08:53.841   621   670 I vold    : Unmounting /mnt/user/0/emulated/0/Android/data
+01-12 11:08:53.841   621   670 I vold    : Unmounted /mnt/user/0/emulated/0/Android/data
+01-12 11:08:53.841   621   670 I vold    : Unmounting /mnt/user/0/emulated/0/Android/obb
+01-12 11:08:53.841   621   670 I vold    : Unmounted /mnt/user/0/emulated/0/Android/obb
+01-12 11:08:53.841   621   670 I vold    : Unmounting pass_through_path /mnt/pass_through/0/emulated
+01-12 11:08:53.841   621   670 I vold    : Unmounting fuse path /mnt/user/0/emulated
+01-12 11:08:53.849  1475  1656 I StorageManagerService: Resetting vold...
+01-12 11:08:53.849  1475  1656 I StorageManagerService: Reset vold
+01-12 11:08:53.849   621   621 I vold    : onUserAdded: 0
+01-12 11:08:53.849   621   621 I vold    : onUserAdded: 9876
+01-12 11:08:53.849   621   621 I vold    : onUserStarted: 0
+01-12 11:08:53.850  1475  1788 V StorageManagerService: Found primary storage at VolumeInfo{emulated;0}:
+01-12 11:08:53.850  1475  1788 V StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=0 mountUserId=0
+01-12 11:08:53.850  1475  1788 V StorageManagerService:     state=UNMOUNTED
+01-12 11:08:53.850  1475  1788 V StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:53.850  1475  1788 V StorageManagerService:     path=null internalPath=null
+01-12 11:08:53.850   621   670 I vold    : onUserStarted: 9876
+01-12 11:08:53.850  1475  3615 V StorageManagerService: Found primary storage at VolumeInfo{emulated;9876}:
+01-12 11:08:53.850  1475  3615 V StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=0 mountUserId=9876
+01-12 11:08:53.850  1475  3615 V StorageManagerService:     state=UNMOUNTED
+01-12 11:08:53.850  1475  3615 V StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:53.850  1475  3615 V StorageManagerService:     path=null internalPath=null
+01-12 11:08:53.851  1475  1656 I StorageManagerService: Mounting volume VolumeInfo{emulated;0}:
+01-12 11:08:53.851  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:53.851  1475  1656 I StorageManagerService:     mountUserId=0 state=UNMOUNTED
+01-12 11:08:53.851  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:53.851  1475  1656 I StorageManagerService:     path=null internalPath=null
+01-12 11:08:53.851   621   621 I vold    : Executing sdcardfs
+01-12 11:08:53.851   621   621 D vold    : Waiting for sdcardfs to spin up...
+01-12 11:08:53.903   621   621 I vold    : Mounting emulated fuse volume
+01-12 11:08:53.923   621   621 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/0/emulated
+01-12 11:08:53.925  1475  1656 E StorageManagerService: hzy2 fd =java.io.FileDescriptor@db7c6cpath=/storage/emulated,vol.internalPath /data/media
+01-12 11:08:54.941   621   621 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-12 11:08:54.949   621   621 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-12 11:08:54.949   621   621 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-12 11:08:54.950   621   621 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-12 11:08:54.950   621   621 I vold    : Bind mounting /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-12 11:08:54.951   621   621 I vold    : Bind mounted /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-12 11:08:54.951   621   621 I vold    : Configuring read_ahead of /mnt/user/0/emulated fuse filesystem to 256kb
+01-12 11:08:54.953   621   621 I vold    : Writing 256 to /sys/class/bdi/0:68/read_ahead_kb
+01-12 11:08:54.953   621   621 I vold    : Configuring max_ratio of /mnt/user/0/emulated fuse filesystem to 40
+01-12 11:08:54.953   621   621 I vold    : Writing 40 to /sys/class/bdi/0:68/max_ratio
+01-12 11:08:54.954  1475  1656 I StorageManagerService: Mounted volume VolumeInfo{emulated;0}:
+01-12 11:08:54.954  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:54.954  1475  1656 I StorageManagerService:     mountUserId=0 state=MOUNTED
+01-12 11:08:54.954  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:54.954  1475  1656 I StorageManagerService:     path=/storage/emulated internalPath=/data/media
+01-12 11:08:54.961  1475  1656 I StorageManagerService: Mounting volume VolumeInfo{emulated;9876}:
+01-12 11:08:54.961  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:54.961  1475  1656 I StorageManagerService:     mountUserId=9876 state=UNMOUNTED
+01-12 11:08:54.961  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:54.961  1475  1656 I StorageManagerService:     path=null internalPath=null
+01-12 11:08:54.961   621   621 I vold    : Mounting emulated fuse volume
+01-12 11:08:54.966   621   621 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/9876/emulated
+01-12 11:08:54.968  1475  1656 E StorageManagerService: hzy2 fd =java.io.FileDescriptor@c4252edpath=/storage/emulated,vol.internalPath /data/media
+01-12 11:08:54.969  1475  1656 E StorageManagerService: Failed to mount volume VolumeInfo{emulated;9876}:
+01-12 11:08:54.969  1475  1656 E StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:08:54.969  1475  1656 E StorageManagerService:     mountUserId=9876 state=CHECKING
+01-12 11:08:54.969  1475  1656 E StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:08:54.969  1475  1656 E StorageManagerService:     path=/storage/emulated internalPath=/data/media
+01-12 11:08:54.969  1475  1656 E StorageManagerService:
+01-12 11:08:54.969  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.startSession(StorageUserConnection.java:104)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.onVolumeMount(StorageSessionController.java:103)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$8.onVolumeChecking(StorageManagerService.java:2252)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.IVoldMountCallback$Stub.onTransact(IVoldMountCallback.java:87)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.Binder.execTransact(Binder.java:1123)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.BinderProxy.transactNative(Native Method)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.BinderProxy.transact(BinderProxy.java:540)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.IVold$Stub$Proxy.mount(IVold.java:1790)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.mount(StorageManagerService.java:2243)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$1800(StorageManagerService.java:210)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:773)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:54.969  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:54.970  1475  1656 I StorageManagerService: Scheduling reset in 10s
+01-12 11:08:54.970   621   621 I vold    : fuse_unmounter scope_guard running
+01-12 11:08:54.970   621   621 I vold    : Unmounting pass_through_path /mnt/pass_through/9876/emulated
+01-12 11:08:54.970   621   621 I vold    : Unmounting fuse path /mnt/user/9876/emulated
+01-12 11:08:54.972   621   621 I vold    : sdcardfs_unmounter scope_guard running
+01-12 11:08:54.973  1475  1656 E StorageManagerService: android.os.ServiceSpecificException:  (code -5)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:2387)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.Parcel.createException(Parcel.java:2357)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.Parcel.readException(Parcel.java:2340)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.Parcel.readException(Parcel.java:2282)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.IVold$Stub$Proxy.mount(IVold.java:1795)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.mount(StorageManagerService.java:2243)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$1800(StorageManagerService.java:210)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:773)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:54.973  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:08:54.974  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:54.974  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:08:54.991  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:54.991  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:08:54.993  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:08:54.993  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:08:54.995  1475  1656 D StorageManagerService: Volume emulated;0 broadcasting mounted to UserHandle{0}
+01-12 11:08:54.996  1475  1656 D StorageManagerService: Volume emulated;0 broadcasting mounted to UserHandle{0}
+01-12 11:08:54.996  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}
+01-12 11:08:54.997  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}
+01-12 11:09:04.983  1475  1656 D StorageManagerService: Thinking about reset, mBootCompleted=true, mDaemonConnected=true
+01-12 11:09:04.985   621   621 I vold    : Killing all processes referencing /storage/emulated/0
+01-12 11:09:05.583   621   621 W vold    : Found symlink /proc/3946/fd/59 referencing /storage/emulated/0/Android/data/com.tencent.mobileqq/files/tencent/msflogs/com/tencent/mobileqq/com.tencent.mobileqq.21.01.12.11.log
+01-12 11:09:05.583   621   621 W vold    : Sending Interrupt to 3946
+01-12 11:09:10.839   621   621 I vold    : Unmounting /mnt/installer/0/emulated/0/Android/obb
+01-12 11:09:10.839   621   621 I vold    : Unmounting /mnt/user/0/emulated/0/Android/data
+01-12 11:09:10.839   621   621 I vold    : Unmounted /mnt/user/0/emulated/0/Android/data
+01-12 11:09:10.839   621   621 I vold    : Unmounting /mnt/user/0/emulated/0/Android/obb
+01-12 11:09:10.839   621   621 I vold    : Unmounted /mnt/user/0/emulated/0/Android/obb
+01-12 11:09:10.839   621   621 I vold    : Unmounting pass_through_path /mnt/pass_through/0/emulated
+01-12 11:09:10.839   621   621 I vold    : Unmounting fuse path /mnt/user/0/emulated
+01-12 11:09:10.844  1475  1656 I StorageManagerService: Resetting vold...
+01-12 11:09:10.845  1475  1656 I StorageManagerService: Reset vold
+01-12 11:09:10.845   621   632 I vold    : onUserAdded: 0
+01-12 11:09:10.845   621   632 I vold    : onUserAdded: 9876
+01-12 11:09:10.845   621   632 I vold    : onUserStarted: 0
+01-12 11:09:10.845  1475  2037 V StorageManagerService: Found primary storage at VolumeInfo{emulated;0}:
+01-12 11:09:10.845  1475  2037 V StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=0 mountUserId=0
+01-12 11:09:10.845  1475  2037 V StorageManagerService:     state=UNMOUNTED
+01-12 11:09:10.845  1475  2037 V StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:09:10.845  1475  2037 V StorageManagerService:     path=null internalPath=null
+01-12 11:09:10.845   621   632 I vold    : onUserStarted: 9876
+01-12 11:09:10.846  1475  2795 V StorageManagerService: Found primary storage at VolumeInfo{emulated;9876}:
+01-12 11:09:10.846  1475  2795 V StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=0 mountUserId=9876
+01-12 11:09:10.846  1475  2795 V StorageManagerService:     state=UNMOUNTED
+01-12 11:09:10.846  1475  2795 V StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:09:10.846  1475  2795 V StorageManagerService:     path=null internalPath=null
+01-12 11:09:10.846  1475  1656 I StorageManagerService: Mounting volume VolumeInfo{emulated;0}:
+01-12 11:09:10.846  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:09:10.846  1475  1656 I StorageManagerService:     mountUserId=0 state=UNMOUNTED
+01-12 11:09:10.846  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:09:10.846  1475  1656 I StorageManagerService:     path=null internalPath=null
+01-12 11:09:10.846   621   632 I vold    : Executing sdcardfs
+01-12 11:09:10.847   621   632 D vold    : Waiting for sdcardfs to spin up...
+01-12 11:09:10.898   621   632 I vold    : Mounting emulated fuse volume
+01-12 11:09:10.917   621   632 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/0/emulated
+01-12 11:09:10.919  1475  1656 E StorageManagerService: hzy2 fd =java.io.FileDescriptor@6c36ea9path=/storage/emulated,vol.internalPath /data/media
+01-12 11:09:11.929   621   632 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-12 11:09:11.933   621   632 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/data on /mnt/user/0/emulated/0/Android/data
+01-12 11:09:11.933   621   632 I vold    : Bind mounting /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-12 11:09:11.934   621   632 I vold    : Bind mounted /mnt/runtime/default/emulated/0/Android/obb on /mnt/user/0/emulated/0/Android/obb
+01-12 11:09:11.934   621   632 I vold    : Bind mounting /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-12 11:09:11.935   621   632 I vold    : Bind mounted /mnt/runtime/write/emulated/0/Android/obb on /mnt/installer/0/emulated/0/Android/obb
+01-12 11:09:11.935   621   632 I vold    : Configuring read_ahead of /mnt/user/0/emulated fuse filesystem to 256kb
+01-12 11:09:11.936   621   632 I vold    : Writing 256 to /sys/class/bdi/0:68/read_ahead_kb
+01-12 11:09:11.936   621   632 I vold    : Configuring max_ratio of /mnt/user/0/emulated fuse filesystem to 40
+01-12 11:09:11.937   621   632 I vold    : Writing 40 to /sys/class/bdi/0:68/max_ratio
+01-12 11:09:11.937  1475  1656 I StorageManagerService: Mounted volume VolumeInfo{emulated;0}:
+01-12 11:09:11.937  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:09:11.937  1475  1656 I StorageManagerService:     mountUserId=0 state=MOUNTED
+01-12 11:09:11.937  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:09:11.937  1475  1656 I StorageManagerService:     path=/storage/emulated internalPath=/data/media
+01-12 11:09:11.946  1475  1656 I StorageManagerService: Mounting volume VolumeInfo{emulated;9876}:
+01-12 11:09:11.946  1475  1656 I StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:09:11.946  1475  1656 I StorageManagerService:     mountUserId=9876 state=UNMOUNTED
+01-12 11:09:11.946  1475  1656 I StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:09:11.946  1475  1656 I StorageManagerService:     path=null internalPath=null
+01-12 11:09:11.947   621   632 I vold    : Mounting emulated fuse volume
+01-12 11:09:11.957   621   632 I vold    : Bind mounting /mnt/runtime/full/emulated to /mnt/pass_through/9876/emulated
+01-12 11:09:11.958  1475  1656 E StorageManagerService: hzy2 fd =java.io.FileDescriptor@2cd3306path=/storage/emulated,vol.internalPath /data/media
+01-12 11:09:11.960  1475  1656 E StorageManagerService: Failed to mount volume VolumeInfo{emulated;9876}:
+01-12 11:09:11.960  1475  1656 E StorageManagerService:     type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE
+01-12 11:09:11.960  1475  1656 E StorageManagerService:     mountUserId=9876 state=CHECKING
+01-12 11:09:11.960  1475  1656 E StorageManagerService:     fsType=null fsUuid=null fsLabel=null
+01-12 11:09:11.960  1475  1656 E StorageManagerService:     path=/storage/emulated internalPath=/data/media
+01-12 11:09:11.960  1475  1656 E StorageManagerService:
+01-12 11:09:11.960  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.startSession(StorageUserConnection.java:104)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.onVolumeMount(StorageSessionController.java:103)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$8.onVolumeChecking(StorageManagerService.java:2252)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.IVoldMountCallback$Stub.onTransact(IVoldMountCallback.java:87)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.Binder.execTransact(Binder.java:1123)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.BinderProxy.transactNative(Native Method)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.BinderProxy.transact(BinderProxy.java:540)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.IVold$Stub$Proxy.mount(IVold.java:1790)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.mount(StorageManagerService.java:2243)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$1800(StorageManagerService.java:210)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:773)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:09:11.960  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:09:11.960  1475  1656 I StorageManagerService: Scheduling reset in 10s
+01-12 11:09:11.960   621   632 I vold    : fuse_unmounter scope_guard running
+01-12 11:09:11.960   621   632 I vold    : Unmounting pass_through_path /mnt/pass_through/9876/emulated
+01-12 11:09:11.966   621   632 I vold    : Unmounting fuse path /mnt/user/9876/emulated
+01-12 11:09:11.972   621   632 I vold    : sdcardfs_unmounter scope_guard running
+01-12 11:09:11.972  1475  1656 E StorageManagerService: android.os.ServiceSpecificException:  (code -5)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:2387)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.Parcel.createException(Parcel.java:2357)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.Parcel.readException(Parcel.java:2340)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.Parcel.readException(Parcel.java:2282)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.IVold$Stub$Proxy.mount(IVold.java:1795)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.mount(StorageManagerService.java:2243)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$1800(StorageManagerService.java:210)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:773)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:09:11.972  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:09:11.974  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:09:11.974  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:09:11.998  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:09:11.998  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: Failed to notify volume state changed to the Storage Service
+01-12 11:09:12.002  1475  1656 E StorageManagerService: com.android.server.storage.StorageSessionController$ExternalStorageServiceException: Failed to bind to the ExternalStorageService for user 9876
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection$ActiveConnection.bind(StorageUserConnection.java:456)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.prepareRemote(StorageUserConnection.java:208)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageUserConnection.notifyVolumeStateChanged(StorageUserConnection.java:124)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at com.android.server.storage.StorageSessionController.notifyVolumeStateChanged(StorageSessionController.java:131)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.onVolumeStateChangedAsync(StorageManagerService.java:1646)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService.access$2400(StorageManagerService.java:210)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at com.android.server.StorageManagerService$StorageManagerServiceHandler.handleMessage(StorageManagerService.java:831)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at android.os.Looper.loop(Looper.java:223)
+01-12 11:09:12.002  1475  1656 E StorageManagerService: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+01-12 11:09:12.004  1475  1656 D StorageManagerService: Volume emulated;0 broadcasting mounted to UserHandle{0}
+01-12 11:09:12.005  1475  1656 D StorageManagerService: Volume emulated;0 broadcasting mounted to UserHandle{0}
+01-12 11:09:12.006  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}
+01-12 11:09:12.007  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}

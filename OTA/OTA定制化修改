@@ -1,0 +1,9 @@
+
+
+out/target/product/coral/obj/PACKAGING/target_files_intermediates/aosp_coral-target_files-BN012101.zip
+
+
+./build/tools/releasetools/ota_from_target_files.py -k build/make/target/product/security/testkey -p /home/huzhongyang/code/android11_init/out/host/linux-x86/ -i /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012101.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012102.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-BN012101-BN012102.zip
+
+
+./build/tools/releasetools/ota_from_target_files.py -k build/make/target/product/security/testkey -p build/host/ -i /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012101.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012102.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-BN012101-BN012102.zip

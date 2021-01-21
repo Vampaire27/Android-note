@@ -1,0 +1,571 @@
+
+```
+ 01-11 09:07:41.214  6024  6690 I GLRootView: layout content pane 1440x2774 (compensation 0)
+01-11 09:07:41.214  6024  6690 D PhotoView: compensation = 0, CameraRelativeFrame = Rect(0, 0 - 0, 0), mCameraRect = Rect(0, 0 - 0, 0)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: java.io.FileNotFoundException: /storage/emulated/0/DCIM/Camera/IMG_20210111_090541.jpg: open failed: EPERM (Operation not permitted)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:492)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:160)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:115)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at android.graphics.BitmapRegionDecoder.newInstance(BitmapRegionDecoder.java:151)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.data.DecodeUtils.createBitmapRegionDecoder(DecodeUtils.java:219)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.data.LocalImage$LocalLargeImageRequest.run(LocalImage.java:233)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.data.LocalImage$LocalLargeImageRequest.run(LocalImage.java:223)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.app.PhotoDataAdapter$FullImageJob.run(PhotoDataAdapter.java:733)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.app.PhotoDataAdapter$FullImageJob.run(PhotoDataAdapter.java:721)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.util.ThreadPool$Worker.run(ThreadPool.java:133)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at java.lang.Thread.run(Thread.java:923)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at com.android.gallery3d.util.PriorityThreadFactory$1.run(PriorityThreadFactory.java:44)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: Caused by: android.system.ErrnoException: open failed: EPERM (Operation not permitted)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.Linux.open(Native Method)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.BlockGuardOs.open(BlockGuardOs.java:254)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at android.app.ActivityThread$AndroidOs.open(ActivityThread.java:7561)
+01-11 09:07:41.214  6024  6720 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:478)
+
+```
+
+系统调用，中断，异常是3种Linux用户空间切换到内核空间的方法
+今天以open系统调用为例，分析从用户空间层到内核空间层的完整流程
+我以安卓8.1源代码为例，对应的Linux内核版本是4.15.0
+
+谷歌专门为android定制了C库叫做bionic库给安卓系统层的c/c++代码调用,open()函数定义在下面：
+
+bionic/libc/bionic/open.cpp
+```
+int open(const char* pathname, int flags, …) {
+mode_t mode = 0;
+
+if ((flags & O_CREAT) != 0) {
+va_list args;
+va_start(args, flags);
+mode = static_cast<mode_t>(va_arg(args, int));
+va_end(args);
+}
+
+return __openat(AT_FDCWD, pathname, force_O_LARGEFILE(flags), mode);
+}
+```
+
+bionic/libc/arch-arm/syscalls/__openat.S
+```
+#include <private/bionic_asm.h>
+
+ENTRY(__openat)
+mov ip, r7
+.cfi_register r7, ip
+ldr r7, =__NR_openat
+swi #0
+mov r7, ip
+.cfi_restore r7
+cmn r0, #(MAX_ERRNO + 1)
+bxls lr
+neg r0, r0
+b __set_errno_internal
+END(__openat)
+```
+
+对上面的代码进行分析
+__NR_openat是对应的open系统调用号
+r7寄存器保存系统调用号，这样子内核代码可以从这里获取系统调用号，然后调用不同的实现函数
+ENTRY和END为宏定义，后面包含对应的符号地址，因此头文件对应的定义编译为C的符号
+依靠swi指令用户空间切换到内核空间
+发生swi后进入系统中断向量然后执行vector_swi,源代码分析如下（CONFIG_AEABI）:
+
+//内核入口
+kernel/arch/arm/kernel/entry-common.S
+```
+.align 5
+ENTRY(vector_swi)
+#ifdef CONFIG_CPU_V7M
+v7m_exception_entry
+#else
+sub sp, sp, #S_FRAME_SIZE
+stmia sp, {r0 - r12} @ Calling r0 - r12
+ARM( add r8, sp, #S_PC )
+ARM( stmdb r8, {sp, lr}^ ) @ Calling sp, lr
+THUMB( mov r8, sp )
+THUMB( store_user_sp_lr r8, r10, S_SP ) @ calling sp, lr
+mrs r8, spsr @ called from non-FIQ mode, so ok.
+str lr, [sp, #S_PC] @ Save calling PC
+str r8, [sp, #S_PSR] @ Save CPSR
+str r0, [sp, #S_OLD_R0] @ Save OLD_R0
+
+#endif
+zero_fp
+alignment_trap r10, ip, __cr_alignment
+enable_irq
+ct_user_exit
+get_thread_info tsk
+```
+
+
+```
+#if defined(CONFIG_OABI_COMPAT)
+
+/*
+* If we have CONFIG_OABI_COMPAT then we need to look at the swi
+* value to determine if it is an EABI or an old ABI call.
+*/
+
+#ifdef CONFIG_ARM_THUMB
+tst r8, #PSR_T_BIT
+movne r10, #0 @ no thumb OABI emulation
+USER( ldreq r10, [lr, #-4] ) @ get SWI instruction
+#else
+USER( ldr r10, [lr, #-4] ) @ get SWI instruction
+/*r10中存放的就是引起软中断的那条指令的机器码
+发生软中断的时候，系统自动将PC-4存放到了lr寄存器，由于是三级流水，
+并且是ARM状态，还需要减4才能得到发生软中断的那条指令的机器码所在的地址
+*/
+#endif
+ARM_BE8(rev r10, r10) @ little endian instruction
+
+#elif defined(CONFIG_AEABI)
+
+/*
+* Pure EABI user space always put syscall number into scno (r7).
+*/
+
+
+#elif defined(CONFIG_ARM_THUMB)
+/* Legacy ABI only, possibly thumb mode. */
+tst r8, #PSR_T_BIT @ this is SPSR from save_user_regs
+addne scno, r7, #__NR_SYSCALL_BASE @ put OS number in
+USER( ldreq scno, [lr, #-4] )
+
+#else
+/* Legacy ABI only. */
+USER( ldr scno, [lr, #-4] ) @ get SWI instruction
+#endif
+
+uaccess_disable tbl
+
+**adr tbl, sys_call_table     @ load syscall table pointer**
+
+
+/此时tbl(r8)中存放的就是sys_call_table的起始地址/
+
+#if defined(CONFIG_OABI_COMPAT)
+/*
+* If the swi argument is zero, this is an EABI call and we do nothing.
+*
+* If this is an old ABI call, get the syscall number into scno and
+* get the old ABI syscall table address.
+*/
+bics r10, r10, #0xff000000
+eorne scno, r10, #__NR_OABI_SYSCALL_BASE
+ldrne tbl, =sys_oabi_call_table
+#elif !defined(CONFIG_AEABI)
+bic scno, scno, #0xff000000 @ mask off SWI op-code
+eor scno, scno, #__NR_SYSCALL_BASE @ check OS number
+#endif
+
+local_restart:
+ldr r10, [tsk, #TI_FLAGS] @ check for syscall tracing
+stmdb sp!, {r4, r5} @ push fifth and sixth args
+
+tst r10, #_TIF_SYSCALL_WORK     @ are we tracing syscalls?
+bne __sys_trace
+
+invoke_syscall tbl, scno, r10, ret_fast_syscall
+
+add r1, sp, #S_OFF
+
+```
+```
+2: cmp scno, #(__ARM_NR_BASE - __NR_SYSCALL_BASE)
+eor r0, scno, #__NR_SYSCALL_BASE @ put OS number back
+bcs arm_syscall
+mov why, #0 @ no longer a real syscall
+b sys_ni_syscall @ not private func
+=
+#if defined(CONFIG_OABI_COMPAT) || !defined(CONFIG_AEABI)
+/*
+* We failed to handle a fault trying to access the page
+* containing the swi instruction, but we’re not really in a
+* position to return -EFAULT. Instead, return back to the
+* instruction and re-enter the user fault handling path trying
+* to page it in. This will likely result in sending SEGV to the
+* current task.
+*/
+9001:
+sub lr, lr, #4
+str lr, [sp, #S_PC]
+b ret_fast_syscall
+#endif
+ENDPROC(vector_swi)
+```
+kernel/arch/arm/kernel/entry-header.S
+
+```
+scno .req r7 @ syscall number
+tbl .req r8 @ syscall table pointer
+why .req r8 @ Linux syscall (!= 0)
+tsk .req r9 @ current thread_info
+.req 是伪汇编，以 scno .req r7 为例，表示scno是寄存器r7的别名。
+
+get_thread_info tsk
+其中，tsk是寄存器r9的别名，get_thread_info是一个宏定义，如下：
+1: .macro get_thread_info, rd
+2: mov \rd, sp, lsr #13
+3: mov \rd, \rd, lsl #13
+4: .endm
+即：将sp进行8KB对齐后的值赋给寄存器r9，什么意思？
+这个就涉及到Linux的内核栈了。Linux为每个进程都分配了一个8KB的内核栈，在内核栈的尾端存放有关于这个进程的struct therad_info结构：
+```
+```
+1: struct thread_info {
+2: unsigned long flags; /* low level flags /
+3: int preempt_count; / 0 => preemptable, <0 => bug /
+4: mm_segment_t addr_limit; / address limit */
+5: struct task_struct task; / main task structure */
+6: struct exec_domain exec_domain; / execution domain /
+7: __u32 cpu; / cpu /
+8: __u32 cpu_domain; / cpu domain /
+9: struct cpu_context_save cpu_context; / cpu context /
+10: __u32 syscall; / syscall number /
+11: __u8 used_cp[16]; / thread used copro /
+12: unsigned long tp_value;
+13: struct crunch_state crunchstate;
+14: union fp_state fpstate attribute((aligned(8)));
+15: union vfp_state vfpstate;
+16: #ifdef CONFIG_ARM_THUMBEE
+17: unsigned long thumbee_state; / ThumbEE Handler Base register */
+18: #endif
+19: struct restart_block restart_block;
+20: };
+```
+
+通过上面的操作，寄存器r9中就是这个进程的thread_info结构的起始地址。
+在linux内核中进程以及线程（多线程也是通过一组轻量级进程实现的）都是通过task_struct结构体来描述的，我们称它为进程描述符。而thread_info则是一个与进程描述符相关的小数据结构，它同进程的内核态栈stack存放在一个单独为进程分配的内存区域。由于这个内存区域同时保存了thread_info和stack，所以使用了联合体来定义，相关数据结构如下：
+thread_union联合体定义：
+union thread_union {
+struct thread_info thread_info;
+unsigned long stack[THREAD_SIZE/sizeof(long)];
+};
+这样设计的好处就是，得到stack，thread_info或task_struct任意一个数据结构的地址，就可以很快得到另外两个数据的地址。
+
+kernel/arch/arm/kernel/entry-common.S
+```
+ENTRY(sys_call_table)
+#include “calls.S”
+#undef ABI
+#undef OBSOLETE
+
+/*============================================================================
+
+Special system call wrappers
+*/
+@ r0 = syscall number
+@ r8 = syscall table
+sys_syscall:
+bic scno, r0, #__NR_OABI_SYSCALL_BASE
+cmp scno, #__NR_syscall - __NR_SYSCALL_BASE
+cmpne scno, #NR_syscalls @ check range
+#ifdef CONFIG_CPU_SPECTRE
+movhs scno, #0
+csdb
+#endif
+stmloia sp, {r5, r6} @ shuffle args
+movlo r0, r1
+movlo r1, r2
+movlo r2, r3
+movlo r3, r4
+ldrlo pc, [tbl, scno, lsl #2]
+b sys_ni_syscall
+ENDPROC(sys_syscall)
+
+kernel/arch/arm/kernel/calls.S
+/* 0 / CALL(sys_restart_syscall)
+CALL(sys_exit)
+CALL(sys_fork)
+CALL(sys_read)
+CALL(sys_write)
+/ 5 / CALL(sys_open)
+…
+/ 320 */ CALL(sys_get_mempolicy)
+CALL(sys_set_mempolicy)
+CALL(sys_openat)
+
+```
+对应__openat()的是sys_openat()
+去内核源代码里搜索sys_openat的定义如下：
+kernel/include/linux/syscalls.h
+//asmlinkage是gcc标签，代表函数读取的参数来自于栈中，而非寄存器。
+asmlinkage long sys_openat(int dfd, const char __user *filename, int flags,
+umode_t mode);
+
+内核源代码里搜索__openat的实现如下：
+
+kernel/fs/open.c
+```
+SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
+umode_t, mode)
+{
+if (force_o_largefile())
+flags |= O_LARGEFILE;
+
+return do_sys_open(dfd, filename, flags, mode);
+
+}
+
+```
+
+## 内核实现
+
+
+```
+SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
+{
+	//对于64位系统会添加O_LARGEFILE选项，以便能打开大文件
+	if (force_o_largefile())
+		flags |= O_LARGEFILE;
+	//第一个参数为AT_FDCWD，表示文件名是以当前路径作为起始目录的路径
+	return do_sys_open(AT_FDCWD, filename, flags, mode);
+}
+
+long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+{
+	struct open_flags op;
+	//根据入参构建文件打开标志，比如追加，不存在时创建等标志
+	int lookup = build_open_flags(flags, mode, &op);
+	//构建filename结构体，将用户给的文件名拷贝至内核，
+	struct filename *tmp = getname(filename);
+	int fd = PTR_ERR(tmp);
+
+	if (!IS_ERR(tmp)) {
+		//获取一个未使用的文件描述符
+		fd = get_unused_fd_flags(flags);
+		if (fd >= 0) {
+			//重头戏，打开文件的真正操作在这
+			struct file *f = do_filp_open(dfd, tmp, &op, lookup);
+			if (IS_ERR(f)) {
+				//打开文件出现错误，回收文件描述符
+				put_unused_fd(fd);
+				fd = PTR_ERR(f);
+			} else {
+				//产生notity事件，用于文件监控
+				fsnotify_open(f);
+				//将file结构体放入以fd为索引下标的数组中，让file和fd相关联
+				fd_install(fd, f);
+			}
+		}
+		putname(tmp);
+	}
+	return fd;//返回可用的文件描述符
+}
+
+```
+
+可见，open系统调用在代码结构上显得和简洁直观，获取文件描述符fd->构建file结构体并和需要打开的文件关联->关联fd和file结构->返回文件描述符fd。这一流程的重点在于构建file结构体并和需要打开的文件关联，因为这涉及了文件系统相关操作，正因如此，我们才要来细细分析。
+
+```
+struct file *do_filp_open(int dfd, struct filename *pathname,
+		const struct open_flags *op, int flags)
+{
+	struct nameidata nd;
+	struct file *filp;
+	//主角是path_openat，三种情况不同的是flags的值
+	//内核为了提高效率，会首先在RCU模式（rcu-walk）下进行文件打开操作
+	//如果在此方式下打开失败，则进入普通模式（ref-walk）
+	//第三次调用比较少用，目前只有在nfs文件系统才有可能会被使用
+	filp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_RCU);
+	if (unlikely(filp == ERR_PTR(-ECHILD)))
+		filp = path_openat(dfd, pathname, &nd, op, flags);
+	if (unlikely(filp == ERR_PTR(-ESTALE)))
+		filp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_REVAL);
+	return filp;
+}
+
+```
+
+进入path_openat()之前，我们先来看看struct nameidata这个结构体，它用于保存本次查找的结果，因此在逐级查找目录项的过程中不断变化，是一个中间量。不过定义的nd这个变量最终目的就是保存用户所要打开文件的最后一个目录项的信息。
+
+```
+struct nameidata {
+	struct path	path; //当前目录项
+	struct qstr	last; //当前目录项的名称及散列值
+	struct path	root; //根目录
+	struct inode	*inode; //当前目录项对应的inode，取值来自于path.dentry.d_inode
+	unsigned int	flags;
+	unsigned	seq;
+	int		last_type; //当前目录项的类型
+	unsigned	depth; //符号链接当前的嵌套深度，最大为MAX_NESTED_LINKS(8)
+	char *saved_names[MAX_NESTED_LINKS + 1]; //符号链接每个嵌套层级的名称
+	RH_KABI_EXTEND(unsigned  m_seq)
+};
+```
+
+其中目录项的类型有以下几种，
+
+```
+LAST_NORM：最后一个分量是普通文件名
+LAST_ROOT：最后一个分量是“/”
+LAST_DOT：最后一个分量是“.”
+LAST_DOTDOT：最后一个分量是“..”
+LAST_BIND：最后一个分量是符号链接
+
+```
+
+
+了解了struct nameidata，那我们回过头来看path_openat函数。
+
+```
+static struct file *path_openat(int dfd, struct filename *pathname,
+		struct nameidata *nd, const struct open_flags *op, int flags)
+{
+	struct file *base = NULL;
+	struct file *file;
+	struct path path;
+	int opened = 0;
+	int error;
+	//从缓存中获取一个file结构体
+	file = get_empty_filp();
+	if (IS_ERR(file))
+		return file;
+
+	file->f_flags = op->open_flag;//获取open时的选项
+	//初始化起始路径，即nd->path，LOOKUP_PARENT表示先查找最终目标文件的父目录
+	error = path_init(dfd, pathname->name, flags | LOOKUP_PARENT, nd, &base);
+	if (unlikely(error))
+		goto out;
+	//total_link_count用于记录符号链接的深度，每追踪一次符号链接，该值就加一
+	//目前系统最大允许追踪40层符号链接
+	current->total_link_count = 0;
+	//开始遍历目录
+	error = link_path_walk(pathname->name, nd);
+	......
+	return file;
+}
+
+```
+在逐级查找目录项之前，首先得确定起始目录，根据用户传入的参数，文件路径可能是绝对路径，也可能是相对路径，因此需要先通过path_init函数处理，说白了也就是设置nd->path的值。
+
+```
+static int path_init(int dfd, const char *name, unsigned int flags,
+		     struct nameidata *nd, struct file **fp)
+{
+	int retval = 0;
+
+	nd->last_type = LAST_ROOT; /* if there are only slashes... */
+	nd->flags = flags | LOOKUP_JUMPED;
+	nd->depth = 0;//跟踪符号链接的递归深度
+	//如果flags设置了LOOKUP_ROOT标志，则表示该函数被open_by_handle_at或sysctl函数调用
+	//该函数将指定一个路径作为根，此处暂不分析
+	if (flags & LOOKUP_ROOT) {
+		...
+	}
+
+	nd->root.mnt = NULL;
+
+	nd->m_seq = read_seqbegin(&mount_lock);
+	if (*name=='/') {
+		//文件名以/开头，说明是绝对路径，不关注dfd的值
+		if (flags & LOOKUP_RCU) {
+			rcu_read_lock();
+			set_root_rcu(nd);//设置nd->root为根文件系统
+		} else {
+			set_root(nd);
+			path_get(&nd->root);
+		}
+		nd->path = nd->root;//设置起始遍历路径nd->path为根文件系统
+	} else if (dfd == AT_FDCWD) {
+		//dfd为AT_FDCWD，那么这个相对路径是以当前路径pwd作为起始的
+		if (flags & LOOKUP_RCU) {//rcu-walk遍历
+			struct fs_struct *fs = current->fs;
+			unsigned seq;
+
+			rcu_read_lock();
+
+			do {
+				seq = read_seqcount_begin(&fs->seq);
+				nd->path = fs->pwd; //设置起始遍历路径为进程运行的当前路径
+				nd->seq = __read_seqcount_begin(&nd->path.dentry->d_seq);
+			} while (read_seqcount_retry(&fs->seq, seq));
+		} else {
+			get_fs_pwd(current->fs, &nd->path);//获取当前路径
+		}
+	} else {
+		//dfd不是AT_FDCWD，那么这个相对路径是用户设置的
+		//需要通过dfd获取具体相对路径信息
+		struct fd f = fdget_raw(dfd);
+		struct dentry *dentry;
+
+		if (!f.file)
+			return -EBADF;
+
+		dentry = f.file->f_path.dentry;
+
+		if (*name) {
+			if (!d_can_lookup(dentry)) {
+				fdput(f);
+				return -ENOTDIR;
+			}
+		}
+
+		nd->path = f.file->f_path;//获取到路径
+		if (flags & LOOKUP_RCU) {
+			if (f.flags & FDPUT_FPUT)
+				*fp = f.file;
+			nd->seq = __read_seqcount_begin(&nd->path.dentry->d_seq);
+			rcu_read_lock();
+		} else {
+			path_get(&nd->path);
+			fdput(f);
+		}
+	}
+	//当前目录项对应的inode
+	nd->inode = nd->path.dentry->d_inode;
+	return 0;
+}
+
+```
+设置好遍历的起始目录后，就可以开始真正的遍历目录了，我们再继续分析。
+
+
+
+Linux下, 文件的主要操作是通过文件描述符(int类型)来进行的, 使用文件描述符使得上层应用无需知道操作系统内部的文件描述结构, 屏蔽掉实现的细节, 因此操作系统内部可以自由改变文件相关的结构而不会对上层应用产生影响. 而获取该描述符正是通过open调用.
+
+内核里文件描述符相关的拓补结构通过图形可能更好理解一点(图是我自己画的, 希望能形象表达出背后的内容):
+
+
+![](image/20161220133254098.png)
+
+通过open调用, 在进程内部将文件表的某个槽位(slot)和file文件对象关联起来. 其中fd的整型值正是槽位的位置, 内核后续的读写操作中, 首先将fd的值作为索引找到对应的file对象, 然后做进一步的操作. 在file对象内部, 包含了文件当前的操作位置, 以及操作的函数表.
+
+从上面的结构我们大概可以猜想到open调用要做的几件事情:
+1. 分配槽位, 即fd对应的索引位置
+2. 分配file对象
+3. 给file中的操作函数表赋值. 由于不同的文件系统的读写实现不同, 因此这一步应该是跟具体文件系统相关的.
+
+值得一提的是下面几个特殊的fd值, 相信大家都遇到过:
+
+    0 - stdin, 标准输入
+    1 - stdout, 标准输出
+    2 - stderr, 标准错误
+
+
+![](image/20161220143703932.png)
+
+结合序列图的调用序号, 来看一看open调用主要做的几件事情.
+
+step 3: get_unused_fd_flags(), 获取空闲的fd槽位
+
+step 6: get_empty_filp(), 分配file对象
+
+step 7: link_path_walk(), 解析文件路径
+
+step 9: lookup_fast(), 从cache中查找dentry(目录项对象)
+
+step 13: lookup(), cache中找不到的情况下, 调用文件所在文件系统的lookup函数获取
+
+step 15: do_dentry_open(), 这里把file对象和具体文件系统的inode关联起来, 并把file中的操作函数表指向inode提供的操作表
+
+step 16: open(), 调用文件系统提供的open函数, 完成一些文件系统相关的初始化, 有些文件系统的open函数可能为空, 即不做相关操作
+
+step 17: fd_install(), 把fd和file对象关联起来
+
+最后, 就完成了open的任务, 应用层在获取到fd后, 就可以做后续的操作了. 很显然, 后面的操作都是通过file对象中的函数表来完成的, 这样, 就完成了vfs层和具体的文件系统的连接.

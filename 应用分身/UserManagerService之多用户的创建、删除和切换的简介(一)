@@ -1,0 +1,98 @@
+
+半年以前2018年11月，我从终端系统应用开发（Launcher）换到了终端framework的开发，在学习新知识的过程中，不愿意对写不成熟的知识来无人子弟，因此，有半年未更新。现在重新开始讲讲关于framework的知识。
+
+
+
+多用户的核心是UserManagerService，顾名思义整个用户是由它来管理，以userManagerService为核心，围绕着，UserManager、UserController、UserInfo几个关键类。
+
+
+
+userManagerService的源码地址：
+
+ http://androidxref.com/9.0.0_r3/xref/frameworks/base/services/core/java/com/android/server/pm/UserManagerService.java
+
+
+
+  关于多用户一共有3大基本操作，创建、切换和删除。
+
+---
+# 1.创建用户的方法：
+
+```
+
+UserManager mUserManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+
+UserInfo  newUserInfo = mUserManager.createUser(“用户名”, 0);
+
+```
+
+
+首先通过framework的UserManager调用createUser方法，而UserManager如同所有的manager一样是中转到service来进行实际操作。
+
+
+
+service中创建用户源码如下，其返回值是一个UserInfo类，用于存储创建出的用户的信息
+
+```
+
+public UserInfo createUser(String name, int flags) {
+
+checkManageOrCreateUsersPermission(flags);
+
+return createUserInternal(name, flags, UserHandle.USER_NULL);
+
+}
+```
+
+传入值有两个，第一个是name表示该用户的名称，flags则是表示该用户的类型，flags定义的代码在UserInfo这个类里面。
+
+创建的用户，常用有四类：1普通用户 2访客用户 3工作用户 4其他：比如各手机自定义用户 如 隐私空间 克隆模式等等
+
+普通用户和访客用户，直接通过设置或状态栏就可以创建。
+
+工作用户是基于google开发的AFW（android for work）
+
+其他用户，则由各个程序员自行决定怎么创建
+
+
+## 2：删除用户的方法
+
+
+```
+UserManager mUserManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+
+UserInfonewUserInfo = mUserManager.removeuser(userId);
+
+ ```
+
+
+删除比创建用户传入的参数少，创建需要定义flag，而删除则只需指定删除的用户编号就可以。
+
+用户编号 userId，默认从0开始，然后是10,11,12依次类推。
+
+从10开始是因为在userManagerService定义了（MIN_USER_ID = 10）多用户以10开始。
+
+
+一般获取编号，主要是在createUser的时候，返回的UserInfo里面就存有UserId，把这个UserId保存好就可以轻易删掉目标用户，
+
+其次是通过ActicityManagerService的getCurrentUser获取当前Id。
+
+
+# 3.切换用户的方法：
+
+```
+ActivityManager.getService().switchUser(userId);
+```
+
+传入参数userId，则可以向ActicivityManagerService申请切换。该逻辑的实质是在UserController里面通过startUser方法启动目标用户，来完成切换。
+
+
+获取userId的方法有很多，之前提到了createUser的时候自己保存，以及通过ActivityManagerService获取，此外，
+
+framework会主动把用户信息存在/data/system/users/userlist.xml 这个xml文件处，保证在重启手机之后，还能够查到之前创建过的用户。
+
+但是，最普遍适用的还是通过UserManagerService通过getUsers或者getUserids来获取全部的用户信息，然后自己加以筛选和判断。
+
+ ---
+
+以上就是关于 多用户的基本用法，供以第三方应用开发的时候查阅。

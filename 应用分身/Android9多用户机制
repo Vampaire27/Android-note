@@ -1,0 +1,952 @@
+因为负责公司的应用多开模块，因此，对模块设计的技术进行相关的总结和备忘
+## 应用分身机制
+
+各个厂商的应用分身机制，大都采用原生的分身机制，实现细节上有稍微区别
+
+OV,使用的是原生的多用户机制，跟创建一个用户的用户是一样的;这个用户空间，通过adb命令可以进入；
+并且，这个空间创建的时候，会默认安装所有的系统应用；此方案的优点是被分身的应用，依赖的其他应用，在分身空间都存在，系统改动较小；缺点是，创建的分身空间占用资源较大，因为，分身空间和主空间的进程是同时运行的
+
+xiami，也是使用的原生的多用户机制，但使用的是ProfileUser，是一个主从用户机制；并且，在创建分身用户空间的时候，并不会安装所有的系统应用到分身空间(在系统层进行了代码控制)；该方案有点是，创建的分身空间占用资源较少(安装的应用少), 缺点是，需要再系统层进行大量的代码适配。
+
+各个厂商的分身方案，不外乎这两种；
+## 1. 多用户类型
+
+Android中创建多用户有两种方式：
+
+```
+UserManager#createProfileForUser(String name, int flags, @UserIdInt int userHandle)
+
+UserManager#createUser(String name, int flags)
+
+```
+
+我们先从profile的调用机制来分析，来分析多用户的原理
+
+## 2. profile user机制创建流程
+
+```
+UserInfo mManagedProfileOrUserInfo;
+Log.d(UserLog.TAG, "isHasExist:" + isHasExist);
+mManagedProfileOrUserInfo = mUserManager.createProfileForUser("multi_user_lite",
+           UserInfo.FLAG_MANAGED_PROFILE,
+           Process.myUserHandle().getIdentifier());
+
+```
+
+### 2.1 createUserInternalUnchecked
+
+该方法时我们要分析的主要方法，Android创建多用的主要逻辑，都在该方法中
+
+![](image/6338004-f78a2c31d8e09c22.png)
+
+检查是否超出系统创建ManagedProfile数目的上限(上限为1，为常量)(canAddMoreManagedProfiles)
+
+如果创建的是非guest，非ManagedProfile ,非Demo 用户，检查是否超出系统创建User数目上线
+
+```
+adb shell pm get-max-users//config_multiuserMaximumUsers
+```
+
+ManagedProfile user不受该参数控制
+
+如果创建的是Guest用户，则判image断系统是否已经存在Guest用户，如果存在，则不能创建
+
+根据系统中已经存在的userid，生成本次将要创建的user的id(getNextAvailableId)(1.1.2.1 )
+
+创建/data/system/users/userid
+
+```
+Environment.getUserSystemDirectory(userId).mkdirs()
+```
+
+创建UserInfo，并使用UserInfo实例化UserData对象，并将UserData保存到mUsers中去;
+此时的UserInfo处于partial状态
+
+将创建的UserData数据，写入到文件/data/system/userid.xml中去(使用XmlSerializer工具类)，格式如下
+
+```
+full_k61v1_64_bsp:/data/system/users # cat 10.xml
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<user id="10" serialNumber="10" flags="48" created="1551338624859" lastLoggedIn="1551338627706"
+    lastLoggedInFingerprint="alps//full_k61v1_64_bsp:9/PPR1.180610.011/1550903740:userdebug/dev-keys"
+    profileGroupId="0" profileBadge="0">
+    <name>multi_user_lite</name>
+    <restrictions />
+</user>
+
+```
+
+![](image/6338004-1c462a26884bbd8f.png)
+
+根据新创建的用户，更新/data/system/users/userlist.xml，更新后的文件内容为
+
+```
+2|full_k61v1_64_bsp:/data/system/users #cat userlist.xml
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<users nextSerialNumber="11" version="7">
+    <guestRestrictions>
+        <restrictions no_sms="true" no_install_unknown_sources="true" no_config_wifi="true" no_outgoing_calls="true" />
+    </guestRestrictions>
+    <deviceOwnerUserId id="-10000" />
+    <user id="0" />
+    <user id="10" />
+</users>
+
+```
+
+
+如果创新的是ManagerProfile，则将主用户和被创建用户的userinfo的profileGroupId置为0
+```
+if (parent != null) {
+        if (isManagedProfile) {
+            if (parent.info.profileGroupId == UserInfo.NO_PROFILE_GROUP_ID) {
+                parent.info.profileGroupId = parent.info.id;//profileGroupId置为0
+                writeUserLP(parent);
+            }
+            userInfo.profileGroupId = parent.info.profileGroupId;//profileGroupId置为0
+        } else if (isRestricted) {
+            if (parent.info.restrictedProfileParentId == UserInfo.NO_PROFILE_GROUP_ID) {
+                parent.info.restrictedProfileParentId = parent.info.id;
+                writeUserLP(parent);
+            }![](image/6338004-1c462a26884bbd8f.png)
+            userInfo.restrictedProfileParentId = parent.info.restrictedProfileParentId;
+        }
+    }
+
+
+```
+
+通过存储管理器，创建用户对应的key数据
+```
+storage.createUserKey(userId, userInfo.serialNumber, userInfo.isEphemeral());
+
+```
+
+新用户数据存储区域创建和数据写入
+
+```
+//创建目录，分别是/data/user_de/userid/,/data/system_de/userid/;/data/user/userid/,/data/system_ce/userid/
+
+   mUserDataPreparer.prepareUserData(userId, userInfo.serialNumber,
+           StorageManager.FLAG_STORAGE_DE | StorageManager.FLAG_STORAGE_CE);
+
+```
+
+//创建目录，分别是/data/user_de/userid/,/data/system_de/userid/;/data/user/userid/,/data/system_ce/userid/
+
+```
+Volumes:
+  VolumeInfo{emulated;0}:
+    type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE mountUserId=0 state=MOUNTED
+    fsType=null fsUuid=null fsLabel=null
+    path=/storage/emulated internalPath=/data/media
+  VolumeInfo{emulated;9876}:
+    type=EMULATED diskId=null partGuid= mountFlags=PRIMARY|VISIBLE mountUserId=9876 state=MOUNTED
+    fsType=null fsUuid=null fsLabel=null
+    path=/storage/emulated internalPath=/data/media
+
+```
+
+真正的创建新用户
+
+```
+mPm.createNewUser(userId, disallowedPackages);
+
+```
+
+更新备份文件中的user信息
+上组步骤会对userData数据进行改变，因此这里是更新
+```
+/data/system/userid.xml和/data/system/userlist.xml
+```
+
+发送创建成功广播
+
+以下对总体流程的某些核心逻辑，进行详细解读
+
+
+![](image/6338004-1c462a26884bbd8f.png)
+
+2.1.1.1 遍历可写内存
+```
+mUserDataPreparer.prepareUserData(userId, userInfo.serialNumber,
+    StorageManager.FLAG_STORAGE_DE | StorageManager.FLAG_STORAGE_CE);
+```
+
+调用mUserDataPreparer辅助类的prepareUserData
+```
+void prepareUserData(int userId, int userSerial, int flags) {
+    synchronized (mInstallLock) {
+        final StorageManager storage = mContext.getSystemService(StorageManager.class);
+        for (VolumeInfo vol : storage.getWritablePrivateVolumes()) {
+            final String volumeUuid = vol.getFsUuid();
+            prepareUserDataLI(volumeUuid, userId, userSerial, flags, true);
+        }
+    }
+}
+
+```
+枚举所有的内部可写存储，，VolumeInfo的数据内容为，然后跳转到prepareUserDataLI
+
+```
+VolumeInfo{private}:
+    type=PRIVATE diskId=null partGuid=null mountFlags=0 mountUserId=-1
+    state=MOUNTED
+    fsType=null fsUuid=null fsLabel=null
+    path=/data internalPath=null
+
+    //VolumeInfo初始化位置addInternalVolumeLocked#addInternalVolumeLocked
+    private void addInternalVolumeLocked() {
+        // Create a stub volume that represents internal storage
+        final VolumeInfo internal = new VolumeInfo(VolumeInfo.ID_PRIVATE_INTERNAL,
+                VolumeInfo.TYPE_PRIVATE, null, null);
+        internal.state = VolumeInfo.STATE_MOUNTED;
+        internal.path = Environment.getDataDirectory().getAbsolutePath();
+        mVolumes.put(internal.id, internal);
+    }
+
+```
+
+
+2.1.1.2 prepareUserDataLI
+
+主要是三个阶段：
+阶段一：prepareUserStorage
+
+主要的存储目录创建逻辑在system/vold/FsCrypt.cpp中
+```
+bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_id, int serial,
+                                  int flags) {
+    LOG(DEBUG) << "hzy fscrypt_prepare_user_storage for volume " << escape_empty(volume_uuid)
+               << ", user " << user_id << ", serial " << serial << ", flags " << flags;
+
+    if (flags & android::os::IVold::STORAGE_FLAG_DE) {
+        // DE_sys key
+        auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
+        auto misc_legacy_path = android::vold::BuildDataMiscLegacyPath(user_id);
+        auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
+
+        // DE_n key
+        auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
+        auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
+        auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
+        auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
+
+        if (volume_uuid.empty()) {
+            if (!prepare_dir(system_legacy_path, 0700, AID_SYSTEM, AID_SYSTEM)) return false;
+#if MANAGE_MISC_DIRS
+            if (!prepare_dir(misc_legacy_path, 0750, multiuser_get_uid(user_id, AID_SYSTEM),
+                             multiuser_get_uid(user_id, AID_EVERYBODY)))
+                return false;
+#endif
+            if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+
+            if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
+            if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
+            if (!prepare_dir(vendor_de_path, 0771, AID_ROOT, AID_ROOT)) return false;
+        }
+        if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+
+        if (fscrypt_is_native()) {
+            EncryptionPolicy de_policy;
+            if (volume_uuid.empty()) {
+                if (!lookup_policy(s_de_policies, user_id, &de_policy)) return false;
+                if (!EnsurePolicy(de_policy, system_de_path)) return false;
+                if (!EnsurePolicy(de_policy, misc_de_path)) return false;
+                if (!EnsurePolicy(de_policy, vendor_de_path)) return false;
+            } else {
+                if (!read_or_create_volkey(misc_de_path, volume_uuid, &de_policy)) return false;
+            }
+            if (!EnsurePolicy(de_policy, user_de_path)) return false;
+        }
+    }
+
+    if (flags & android::os::IVold::STORAGE_FLAG_CE) {
+        // CE_n key
+        auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
+        auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
+        auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
+        auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
+
+        if (volume_uuid.empty()) {
+            if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
+            if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return false;
+            if (!prepare_dir(vendor_ce_path, 0771, AID_ROOT, AID_ROOT)) return false;
+        }
+        if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
+
+        if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+
+        if (fscrypt_is_native()) {
+            EncryptionPolicy ce_policy;
+            if (volume_uuid.empty()) {
+                if (!lookup_policy(s_ce_policies, user_id, &ce_policy)) return false;
+                if (!EnsurePolicy(ce_policy, system_ce_path)) return false;
+                if (!EnsurePolicy(ce_policy, misc_ce_path)) return false;
+                if (!EnsurePolicy(ce_policy, vendor_ce_path)) return false;
+            } else {
+                if (!read_or_create_volkey(misc_ce_path, volume_uuid, &ce_policy)) return false;
+            }
+            if (!EnsurePolicy(ce_policy, media_ce_path)) return false;
+            if (!EnsurePolicy(ce_policy, user_ce_path)) return false;
+        }
+
+        if (volume_uuid.empty()) {
+            // Now that credentials have been installed, we can run restorecon
+            // over these paths
+            // NOTE: these paths need to be kept in sync with libselinux
+            android::vold::RestoreconRecursive(system_ce_path);
+            android::vold::RestoreconRecursive(vendor_ce_path);
+            android::vold::RestoreconRecursive(misc_ce_path);
+        }
+    }
+    if (!prepare_subdirs("prepare", volume_uuid, user_id, flags)) return false;
+
+    return true;
+}
+```
+
+在启用了 FBE 的设备上，每位用户均有两个可供应用使用的存储位置：
+
+    设备加密 (DE) 存储空间：在直接启动模式期间以及用户解锁设备后均可用
+  ```
+  //data/system/user_id/
+  //data/misc/user/user_id/
+  //data/misc/profiles/cur/user_id/
+  // DE_n key
+  //data/system_de/user_id/
+  //data/misc_de/userid/
+  //data/vendor_de/user_id
+  //data/user_de/user_id
+```
+
+  凭据加密 (CE) 存储空间：这是默认存储位置，只有在用户解锁设备后才可用
+
+```
+//data/system_ce/user_id/
+//data/misc_ce/user_id/
+//data/vendor_ce/user_id/
+//data/media/user_id/
+//data/user/user_id/
+
+```
+
+prepareUserDataLI主要完成以上目录的创建
+
+阶段二：enforceSerialNumber
+
+```
+if ((flags & StorageManager.FLAG_STORAGE_DE) != 0 && !mOnlyCore) {
+            enforceSerialNumber(getDataUserDeDirectory(volumeUuid, userId), userSerial);
+            if (Objects.equals(volumeUuid, StorageManager.UUID_PRIVATE_INTERNAL)) {
+                enforceSerialNumber(getDataSystemDeDirectory(userId), userSerial);
+            }
+        }
+        if ((flags & StorageManager.FLAG_STORAGE_CE) != 0 && !mOnlyCore) {
+            enforceSerialNumber(getDataUserCeDirectory(volumeUuid, userId), userSerial);
+            if (Objects.equals(volumeUuid, StorageManager.UUID_PRIVATE_INTERNAL)) {
+                enforceSerialNumber(getDataSystemCeDirectory(userId), userSerial);
+            }
+}
+```
+
+以上四个enforceSerialNumber分别对应的目录为：
+```
+//de
+/data/user_de/userid/
+/data/system_de/userid/
+//ce
+/data/user/userid/
+/data/system_ce/userid/
+
+```
+
+
+每个方法最后都会调用到OS的setxattr中去
+
+```
+private static void setSerialNumber(File file, int serialNumber) throws IOException {
+    try {
+        final byte[] buf = Integer.toString(serialNumber).getBytes(StandardCharsets.UTF_8);
+        Os.setxattr(file.getAbsolutePath(), XATTR_SERIAL, buf, OsConstants.XATTR_CREATE);
+    } catch (ErrnoException e) {
+        throw e.rethrowAsIOException();
+    }
+}
+
+
+```
+
+Os.setxattr往user加密所需相应目录inode的属性中加入了key为“user.serial”，value为userinfo：：serialNumber的值
+
+
+阶段三：Installer#createUserData
+
+如上调用序列图，最后的调用逻辑值Utils.cpp中
+
+```
+int ensure_config_user_dirs(userid_t userid) {
+    // writable by system, readable by any app within the same user
+    const int uid = multiuser_get_uid(userid, AID_SYSTEM);
+    const int gid = multiuser_get_uid(userid, AID_EVERYBODY);
+
+    // Ensure /data/misc/user/<userid> exists
+    auto path = create_data_misc_legacy_path(userid);
+    return fs_prepare_dir(path.c_str(), 0750, uid, gid);
+}
+```
+
+
+创建了/data/misc/user/<userid>目录并设置了新的权限，注意这段代码prepareUserStorage#e4crypt_prepare_user_storage中已经覆盖。
+不过MANAGE_MISC_DIRS为0,所以fscrypt_prepare_user_storage中的相同代码其实没有走。
+另一个注意点就是uid和gid是依据userid生成的，所以该目录的linux层面权限检查会更严格
+
+
+2.1.2 PMS#createNewUser
+
+```
+/** Called by UserManagerService */
+void createNewUser(int userId, String[] disallowedPackages) {
+    synchronized (mInstallLock) {
+        mSettings.createNewUserLI(this, mInstaller, userId, disallowedPackages);
+    }
+    synchronized (mPackages) {
+        scheduleWritePackageRestrictionsLocked(userId);
+        scheduleWritePackageListLocked(userId);
+        applyFactoryDefaultBrowserLPw(userId);
+        primeDomainVerificationsLPw(userId);
+    }
+}
+```
+
+整体流程图如下：
+
+![](image/6338004-c9470f879c65e545.png)
+
+第一步： mSettings.createNewUserLI
+
+![](image/6338004-16ecc9defae715d1.png)
+
+
+```
+void createNewUserLI(@NonNull PackageManagerService service, @NonNull Installer installer,
+           int userHandle, String[] disallowedPackages) {
+       String[] volumeUuids;
+       String[] names;
+       int[] appIds;
+       String[] seinfos;
+       int[] targetSdkVersions;
+       int packagesCount;
+       synchronized (mPackages) {
+           Collection<PackageSetting> packages = mPackages.values();//获取系统中的应用包名信息
+           packagesCount = packages.size();
+           //存储保存要安装到新用户的应用信息
+           volumeUuids = new String[packagesCount];
+           names = new String[packagesCount];
+           appIds = new int[packagesCount];
+           seinfos = new String[packagesCount];
+           targetSdkVersions = new int[packagesCount];
+
+           Iterator<PackageSetting> packagesIterator = packages.iterator();
+           for (int i = 0; i < packagesCount; i++) {//遍历每个应用，只有系统应用才会被安装到新创建的用户下
+               PackageSetting ps = packagesIterator.next();
+               if (ps.pkg == null || ps.pkg.applicationInfo == null) {
+                   continue;
+               }
+               final boolean shouldInstall = ps.isSystem() &&
+                       !ArrayUtils.contains(disallowedPackages, ps.name);
+               // Only system apps are initially installed.
+               ps.setInstalled(shouldInstall, userHandle);
+               if (!shouldInstall) {
+                   writeKernelMappingLPr(ps);
+               }
+               // Need to create a data directory for all apps under this user. Accumulate all
+               // required args and call the installer after mPackages lock has been released
+               volumeUuids[i] = ps.volumeUuid;
+               names[i] = ps.name;
+               appIds[i] = ps.appId;
+               seinfos[i] = ps.pkg.applicationInfo.seInfo;
+               targetSdkVersions[i] = ps.pkg.applicationInfo.targetSdkVersion;
+           }
+       }
+       for (int i = 0; i < packagesCount; i++) {
+           if (names[i] == null) {
+               continue;
+           }
+           // TODO: triage flags!
+           final int flags = StorageManager.FLAG_STORAGE_CE | StorageManager.FLAG_STORAGE_DE;
+           try {
+               installer.createAppData(volumeUuids[i], names[i], userHandle, flags, appIds[i],
+                       seinfos[i], targetSdkVersions[i]);//在指定的目录创建app数据
+           } catch (InstallerException e) {
+               Slog.w(TAG, "Failed to prepare app data", e);
+           }
+       }
+       synchronized (mPackages) {
+           applyDefaultPreferredAppsLPw(service, userHandle);
+       }
+   }
+
+
+```
+
+
+以上代码主要做的事情
+
+    获取系统中的应用包名信息，过滤应用，只有系统应用才会被安装到新的用户中
+    对需要安装到新用户的应用执行installer.createAppData操作，其核心逻辑是在InstalldNativeService中
+
+** InstalldNativeService#createAppData **
+
+
+```
+binder::Status InstalldNativeService::createAppData(const std::unique_ptr<std::string>& uuid,
+        const std::string& packageName, int32_t userId, int32_t flags, int32_t appId,
+        const std::string& seInfo, int32_t targetSdkVersion, int64_t* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_UUID(uuid);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
+    std::lock_guard<std::recursive_mutex> lock(mLock);
+
+    const char* uuid_ = uuid ? uuid->c_str() : nullptr;
+    const char* pkgname = packageName.c_str();
+
+    // Assume invalid inode unless filled in below
+    if (_aidl_return != nullptr) *_aidl_return = -1;
+
+    int32_t uid = multiuser_get_uid(userId, appId);
+    int32_t cacheGid = multiuser_get_cache_gid(userId, appId);
+    mode_t targetMode = targetSdkVersion >= MIN_RESTRICTED_HOME_SDK_VERSION ? 0700 : 0751;
+
+    // If UID doesn't have a specific cache GID, use UID value
+    if (cacheGid == -1) {
+        cacheGid = uid;
+    }
+
+    if (flags & FLAG_STORAGE_CE) {
+        //获取要创建的app目录：data/user/user_id/pkgname/
+        auto path = create_data_user_ce_package_path(uuid_, userId, pkgname);
+        bool existing = (access(path.c_str(), F_OK) == 0);//检查改目录是否存在
+        //创建path/cache,/path/code_cache/目录
+        if (prepare_app_dir(path, targetMode, uid) ||
+                prepare_app_cache_dir(path, "cache", 02771, uid, cacheGid) ||
+                prepare_app_cache_dir(path, "code_cache", 02771, uid, cacheGid)) {
+            return error("Failed to prepare " + path);
+        }
+
+        // Consider restorecon over contents if label changed
+       //使用restorecon来恢复app目录中所有文件的SELinux配置信息
+        if (restorecon_app_data_lazy(path, seInfo, uid, existing) ||
+                restorecon_app_data_lazy(path, "cache", seInfo, uid, existing) ||
+                restorecon_app_data_lazy(path, "code_cache", seInfo, uid, existing)) {
+            return error("Failed to restorecon " + path);
+        }
+
+        // Remember inode numbers of cache directories so that we can clear
+        // contents while CE storage is locked
+        if (write_path_inode(path, "cache", kXattrInodeCache) ||
+                write_path_inode(path, "code_cache", kXattrInodeCodeCache)) {
+            return error("Failed to write_path_inode for " + path);
+        }
+
+        // And return the CE inode of the top-level data directory so we can
+        // clear contents while CE storage is locked
+        if ((_aidl_return != nullptr)
+                && get_path_inode(path, reinterpret_cast<ino_t*>(_aidl_return)) != 0) {
+            return error("Failed to get_path_inode for " + path);
+        }
+    }
+    if (flags & FLAG_STORAGE_DE) {
+       //获取要创建的app目录：data/user_de/user_id/pkgname/
+        auto path = create_data_user_de_package_path(uuid_, userId, pkgname);
+        bool existing = (access(path.c_str(), F_OK) == 0);
+       //创建path/cache,/path/code_cache/目录
+        if (prepare_app_dir(path, targetMode, uid) ||
+                prepare_app_cache_dir(path, "cache", 02771, uid, cacheGid) ||
+                prepare_app_cache_dir(path, "code_cache", 02771, uid, cacheGid)) {
+            return error("Failed to prepare " + path);
+        }
+
+        // Consider restorecon over contents if label changed
+        if (restorecon_app_data_lazy(path, seInfo, uid, existing) ||
+                restorecon_app_data_lazy(path, "cache", seInfo, uid, existing) ||
+                restorecon_app_data_lazy(path, "code_cache", seInfo, uid, existing)) {
+            return error("Failed to restorecon " + path);
+        }
+
+        if (prepare_app_quota(uuid, findQuotaDeviceForUuid(uuid), uid)) {
+            return error("Failed to set hard quota " + path);
+        }
+
+        if (!prepare_app_profile_dir(packageName, appId, userId)) {
+            return error("Failed to prepare profiles for " + packageName);
+        }
+    }
+    return ok();
+}
+```
+
+
+以上代码主要完成的事情为创建以下目录：
+```
+//ce
+/data/user/user_id/pkgname/
+/data/user/user_id/pkgname/cache/
+/data/user/user_id/pkgname/code_cache/
+//de
+/data/user_de/user_id/pkgname/
+/data/user_de/user_id/pkgname/cache/
+/data/user_de/user_id/pkgname/code_cache/
+```
+
+
+第二步：scheduleWritePackageRestrictionsLocked
+![](image/6338004-5f55c05fe4692a6b.png)
+
+
+
+该函数的主要逻辑是依据系统的Settings#mPackages重新创建新用户的/data/system/users/11/package-restrictions.xml文件。
+
+写入的内容主要如下：
+
+    系统应用的pkg信息
+    当前用户的preferred-activities信息
+    当前用户的crossProfile-intent-filters信息
+    当前用户的DefaultApps信息
+    当前用户的block-uninstall-packages信息
+
+该文件的主要数据信息为：
+
+```
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<package-restrictions>
+    <pkg name="com.android.fmradio" ceDataInode="579364" />
+    <pkg name="com.mediatek.gba" ceDataInode="579367" />
+    <pkg name="com.mediatek.ims" ceDataInode="579370" />
+    <pkg name="com.android.calendar" ceDataInode="579523">
+        <disabled-components>
+            <item name="com.android.calendar.UpgradeReceiver" />
+        </disabled-components>
+    </pkg>
+    <preferred-activities>
+        <item name="com.android.mms/.ui.ComposeMessageActivity" match="200000" always="true" set="1">
+            <set name="com.android.mms/.ui.ComposeMessageActivity" />
+            <filter>
+                <action name="android.intent.action.SENDTO" />
+                <cat name="android.intent.category.DEFAULT" />
+                <scheme name="mmsto" />
+            </filter>
+        </item>
+        <item name="com.android.mms/.ui.ComposeMessageActivity" match="200000" always="true" set="1">
+            <set name="com.android.mms/.ui.ComposeMessageActivity" />
+            <filter>
+                <action name="android.intent.action.SENDTO" />
+                <cat name="android.intent.category.DEFAULT" />
+                <scheme name="mms" />
+            </filter>
+        </item>
+        <item name="com.android.mms/.ui.ComposeMessageActivity" match="200000" always="true" set="1">
+            <set name="com.android.mms/.ui.ComposeMessageActivity" />
+            <filter>
+                <action name="android.intent.action.SENDTO" />
+                <cat name="android.intent.category.DEFAULT" />
+                <scheme name="smsto" />
+            </filter>
+        </item>
+        <item name="com.android.mms/.ui.ComposeMessageActivity" match="200000" always="true" set="1">
+            <set name="com.android.mms/.ui.ComposeMessageActivity" />
+            <filter>
+                <action name="android.intent.action.SENDTO" />
+                <cat name="android.intent.category.DEFAULT" />
+                <scheme name="sms" />
+            </filter>
+        </item>
+    </preferred-activities>
+    <persistent-preferred-activities />
+    <crossProfile-intent-filters>
+        <item targetUserId="0" flags="2" ownerPackage="com.android.settings">
+            <filter>
+                <action name="com.android.settings.DISPLAY_SETTINGS" />
+                <action name="android.settings.DISPLAY_SETTINGS" />
+                <cat name="android.intent.category.DEFAULT" />
+            </filter>
+        </item>
+        ...
+        <item targetUserId="0" flags="2" ownerPackage="com.android.settings">
+            <filter>
+                <action name="android.settings.MANAGE_DEFAULT_APPS_SETTINGS" />
+                <action name="android.settings.HOME_SETTINGS" />
+                <cat name="android.intent.category.DEFAULT" />
+            </filter>
+        </item>
+        <item targetUserId="0" flags="2" ownerPackage="com.android.settings">
+            <filter>
+                <action name="android.settings.NFCSHARING_SETTINGS" />
+                <cat name="android.intent.category.DEFAULT" />
+            </filter>
+        </item>
+        <item targetUserId="0" flags="2" ownerPackage="com.android.settings">
+            <filter>
+                <action name="android.intent.action.MAIN" />
+                <action name="android.settings.WIFI_CALLING_SETTINGS" />
+                <cat name="android.intent.category.DEFAULT" />
+                <cat name="android.intent.category.VOICE_LAUNCH" />
+            </filter>
+        </item>
+        <item targetUserId="0" flags="2" ownerPackage="com.android.settings">
+            <filter>
+                <action name="android.settings.INTERNAL_STORAGE_SETTINGS" />
+                <action name="android.settings.MEMORY_CARD_SETTINGS" />
+                <cat name="android.intent.category.DEFAULT" />
+            </filter>
+        </item>
+    </crossProfile-intent-filters>
+    <default-apps />
+</package-restrictions>
+```
+第三步：scheduleWritePackageListLocked
+
+![](image/6338004-42ccf974ded7fae8.png)
+
+更新/data/system/packages.list文件
+
+文件格式为：
+```
+com.android.fmradio 10019 0 /data/user/0/com.android.fmradio platform:privapp:targetSdkVersion=28 3002,1013
+com.mediatek.gba 1001 0 /data/user/0/com.mediatek.gba platform:privapp:targetSdkVersion=26 1065,3002,1023,3003,3001,3007,1002,3010,3011,1004,2002,3006
+com.mediatek.ims 1001 0 /data/user/0/com.mediatek.ims platform:privapp:targetSdkVersion=26 1065,3002,1023,3003,3001,3007,1002,3010,3011,1004,2002,3006
+com.android.cts.priv.ctsshim 10022 0 /data/user/0/com.android.cts.priv.ctsshim default:privapp:targetSdkVersion=24 none
+```
+
+
+第一列是app的包名，也就是AndroidManifest.xml文件中的package=”xxx.xxx.xxx”设置的内容
+
+第二列是app的使用的userid(uid), 如果没有在AndroidManifext.xml里使用android:sharedUserId属性指定UID, 在app安装的时候，系统会给这个app自动分配一uid，以后app运行时，就用这个UID运行
+
+第三列是app是否处于调试模式，由AndroidManifext.xml里android:debuggable指定
+
+第四列是app的数据存放路径，一般是”/data/data/${package_name}”这样的文件夹
+
+第五列是app的seinfo信息，这个好像和SEAndroid机制有关，具体我也不是太清楚，它的值好像有platform, default之分
+
+第六列是app所属的user group, 如果一个app不属于任何group, 这里的值是None
+
+第四步：applyFactoryDefaultBrowserLPw
+
+检查是否配置了default_browser字符串，如果配置了，并且系统安装了该应用，则设置改应用为默认的浏览器应用
+
+
+```
+private void applyFactoryDefaultBrowserLPw(int userId) {
+    // The default browser app's package name is stored in a string resource,
+    // with a product-specific overlay used for vendor customization.
+    String browserPkg = mContext.getResources().getString(
+            com.android.internal.R.string.default_browser);
+    //start, wangsenhao, for cts default Browser, 2018.10.25
+    if (SystemProperties.get("ro.hct_fastpass_defaultBrowser").equals("1")) {
+        browserPkg = "com.android.chrome";
+    }
+    //end, wangsenhao, for cts default Browser, 2018.10.25
+    if (!TextUtils.isEmpty(browserPkg)) {
+        // non-empty string => required to be a known package
+        PackageSetting ps = mSettings.mPackages.get(browserPkg);
+        if (ps == null) {
+            Slog.e(TAG, "Product default browser app does not exist: " + browserPkg);
+            browserPkg = null;
+        } else {
+            mSettings.setDefaultBrowserPackageNameLPw(browserPkg, userId);
+        }
+    }
+
+    // Nothing valid explicitly set? Make the factory-installed browser the explicit
+    // default.  If there's more than one, just leave everything alone.
+    if (browserPkg == null) {
+        calculateDefaultBrowserLPw(userId);
+    }
+}
+
+
+```
+
+
+第五步：primeDomainVerificationsLPw
+
+该方法主要逻辑也更新/data/system/users/user_id/package-restrictions.xml文件
+
+
+第六步：scheduleWriteSettingsLocked
+
+该方法主要逻辑是更新/data/system/packages.xml/文件，改文件的主要目录结构如下：
+```
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<packages>
+    <version ... />
+    <version ... />
+
+    <permissions>
+        <item name="xxxS" package="xxx" protection="xx" />
+        ... ...
+    </permissions>
+
+    <package xxx>
+        ...
+    </package>
+    ...
+
+    <shared-user xxx>
+        ...
+    </shared-user>
+    ...
+
+    <keyset-settings version="1">
+        ...
+    </keyset-settings>
+</packages>
+
+```
+该文件主要包含以下内容
+
+
+* permission块: 里面包含了系统中所有定义的权限的信息
+    这个权限包含了系统和应用定义的所有权限,系统是指framework-res.app应用
+```
+    <item name="android.permission.REAL_GET_TASKS" package="android" protection="18" />
+    <item name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" package="com.android.providers.downloads" />
+    <item name="android.permission.PROVISION_MANAGED_DEVICE_SILENTLY" package="com.android.managedprovisioning" protection="1026" />
+```
+
+* keyset-settings块：里面包含了已安装app签名的public key信息
+```
+<keyset-settings version="1">
+    <keys>
+        <public-key identifier="1" value="MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsoQJxQwimg9J8N7NhmOwD5n1jf6ZyzJ3K6bYLDFh/omXKUleH9yq5NYNs/hrNPU5ZKI9DlSKxVJ6fvnxU45ssqWoefXYnED5Uv1MLeT+vB7sxNwxqYRFqi4xMGeh/x9mK1eXR6lEwwt0mIN3HldpJgV14AsUV1Go0ho1XHeJMh/4McmCrmYaRrKIjLDIq5hMDVir5Kgj8M9F7Nw2iusg+LMPxEw1L+Y3CDxtyx6opDTkMeOKcEFJOXL2XnegWbPOHPodvN5c7JLwEmYuDV6CWOKeJudGmZ6uT6TqjyCToLo0s4UbWMH32b9xNZrovghwmfGs7gC+qRZQlRNwVpLi6QIDAQAB" />
+        <public-key identifier="2" value="MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqivHIp7IL1ptF8NimDQQV/jxQj3UHSHoo5/qoJxAM0l22/P9fb8bP7qu1JClJuYN3H7WxdFqW9wtrrOwLM7/Xwgq/TfaaRGe+gQCk+U50kVcRPJ/mvsNHto57eZf7Qf3RT5psGKfjObVULbVsEzu/Oj94mnGNz0vWKoMLqZ62UcdDnG4hJZH1WIJ54qSkZyngG4H8WC/Gbxhlya2/XSXK1tbUcKgpqJX/3XrXwIvkHzMIEr61VhF1NsSuLuptnO4/W5CUr0/o71ebP7uHDMGLYf0hZbIGH2QyAhNaF4ag9ZI31QBMMRQNsKt0vgoysldJlVRt7Xa2R0WhwX00k6AjQIDAQAB" />
+        <public-key identifier="3" value="MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxZCjYuLK/NcZRQSo/fptqccFj0neukgcFq8nltr16X/1LElAkR8vEyo6rLhDgztoKnt2RR9g1oMr3We6Tej2pOLB+6fWA4DxyFG7L+diP729l6B2vvlwy8gwASdqe76sOMqJJnnQiJ1Tha8RpM6L/D4ytmK22JyeZzj/+I3bj/GKjXYsVgHUrxeMaAjlwHr/gO+FVp5bX+gUBn50COlYDGjcRUngtFYww3gO4Rmmr6Of/AijS1zV0jWIJIdLa02EwlQPGPJoM159ZEJfnGNvT74q/mHdzUKMds7miod+FKpscM8OW3ic7074nwLIbzyWZR954J1Gx1cn2jjkpQ0H0wIDAQAB" />
+        <public-key identifier="4" value="MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0aJVoM4srKopnbY0cIc5mre/6TydyZRJPXP5EVTQ20+Iuw3JlgbTbiCN10GVr/LO2u3hgOehDZsDwRWf+GX5nz9sOef8Wtew4M289IhTH8yaU6BtqDw7vWHvYvhuGiZLvI5W2OVoMp0o7hcnTlXxgq7NfKQkMiE/c9gAl8rAbvK4UOzu6IReRFvzN/XjhCEmQbyKQSae05OYySPo+Uvmflbi4dTYV2fTBVK3a0qk6dX8BbTq9ZgZYnqS9aytGYM+PII4SoWk6TINegFJLownYIv1ToFbqqzNZn0EFYsZpxV2oMOf0yrpqd7bNfM5cf5cIXrLTs8IcQHyf4l6+W8I8wIDAQAB" />
+        <public-key identifier="5" value="MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCcelijlXLEs3nd/KZ2XpXTrsaf42LOYi5ilkfPRBueS3tpXlQP0pt9p7KrZHkwifK2kRLRGsV3aXPdaM/4i2cYJsEoblfHKUx2x8EYrkG/kzb/muCqkMZe19sHSf8Te4FbbTtTq6rXLXgXsLiQDK7xLuoT0SuvC4yzBUO/s0icIwIDAQAB" />
+        <public-key identifier="6" value="MIIBIDANBgkqhkiG9w0BAQEFAAOCAQ0AMIIBCAKCAQEA1pMZBN7GCySx7cdi4NnYJT4+zWzrHeL/Boyo6LyozWvTeG6nCqds5g67D5k1Wf/ZPnepQ+foPUtkuOT+otPmVvHiZ6gbv7IwtXjCBEO+THIYuEb1IRWG8DihTonCvjh/jr7Pj8rD2h7jMMnqk9Cnw9xK81AiDVAIBzLggJcX7moFM1nmppTsLLPyhKCkZsh6lNg7MQk6ZzcuL2QSwG5tQvFYGN/+A4HMDNRE2mzdw7gkWBlIAbMlZBNPv96YySh3SNv1Z2pUDYFUyLvKB7niR1UzEcRrmvdv3uzMjmnnyKLQjngmIJQ/mXJ9PAT+cpkdmd+brjigshd/ox1bav7pHwIBAw==" />
+    </keys>
+    <keysets>
+        <keyset identifier="1">
+            <key-id identifier="1" />
+        </keyset>
+        <keyset identifier="2">
+            <key-id identifier="2" />
+        </keyset>
+        <keyset identifier="3">
+            <key-id identifier="3" />
+        </keyset>
+        <keyset identifier="4">
+            <key-id identifier="4" />
+        </keyset>
+        <keyset identifier="5">
+            <key-id identifier="5" />
+        </keyset>
+        <keyset identifier="6">
+            <key-id identifier="6" />
+        </keyset>
+    </keysets>
+    <lastIssuedKeyId value="6" />
+    <lastIssuedKeySetId value="6" />
+</keyset-settings>
+
+```
+
+
+
+keyset-settings块里收集了所有app签名的公钥信息，和后面介绍的package块中的信息有关联。
+
+```
+1. keysets块中包含了很多keyset, 每个keyset都有一个编号用identifier表示，keyset里包含的key-id里的identifier和public-key的identifier的值相对应
+
+2. keys块中public-key里的value值就是从apk包里的签名文件里提取出来的的公钥的值
+
+3. lastIssuedKeyId和lastIssuedKeySetId表示的是最近一次取出来的公钥所属的set编号
+
+```
+* package块：里面包含了系统中所有安装的app的详细信息
+
+```
+<package name="com.baidu.map.location" codePath="/system/priv-app/Baidu_Location" nativeLibraryPath="/system/priv-app/Baidu_Location/lib" primaryCpuAbi="arm64-v8a" publicFlags="940097029" privateFlags="8" ft="1691931ec40" it="1691931ec40" ut="1691931ec40" version="51" userId="10016" isOrphaned="true">
+    <sigs count="1" schemeVersion="1">
+        <cert index="5" key="30820253308201bca00302010202044b9dd8e7300d06092a864886f70d0101050500306d310b300906035504061302434e3111300f060355040813085368616e676861693111300f060355040713085368616e6768616931133011060355040a130a426169647520496e632e31133011060355040b130a426169647520496e632e310e300c0603550403130542616964753020170d3130303331353036353131395a180f32303634313231363036353131395a306d310b300906035504061302434e3111300f060355040813085368616e676861693111300f0603550407130`85368616e6768616931133011060355040a130a426169647520496e632e31133011060355040b130a426169647520496e632e310e300c06035504031305426169647530819f300d06092a864886f70d010101050003818d00308189028181009c7a58a39572c4b379ddfca6765e95d3aec69fe362ce622e629647cf441b9e4b7b695e540fd29b7da7b2ab64793089f2b69112d11ac5776973dd68cff88b671826c1286e57c7294c76c7c118ae41bf9336ff9ae0aa90c65ed7db0749ff137b815b6d3b53abaad72d7817b0b8900caef12eea13d12baf0b8cb30543bfb3489c230203010001300d06092a864886f70d01010505000381810063231fb3859d01f75cd7ed810aa5c08eb8fba5b7b7bf11f2c65ae70aa69365b7c985334a38be2c6712c77a1b8aa09d1ae84b51b0062968734700f795b08a7ff5dd73751cd63254f211cb6386fa733690d826b44c169f76c23b82f813b15c1da47a2be69369cd75bf7cdaa337d2ea38726a778583838409b482efc126f7e668b3" />
+    </sigs>
+    <perms>
+        <item name="android.permission.WRITE_SETTINGS" granted="true" flags="0" />
+        <item name="android.permission.INSTALL_LOCATION_PROVIDER" granted="true" flags="0" />
+        <item name="android.permission.INTERNET" granted="true" flags="0" />
+        <item name="android.permission.WRITE_SECURE_SETTINGS" granted="true" flags="0" />
+        <item name="android.permission.CHANGE_WIFI_STATE" granted="true" flags="0" />
+        <item name="android.permission.ACCESS_NETWORK_STATE" granted="true" flags="0" />
+        <item name="android.permission.INTERACT_ACROSS_USERS" granted="true" flags="0" />
+        <item name="android.permission.ACCESS_WIFI_STATE" granted="true" flags="0" />
+    </perms>
+    <proper-signing-keyset identifier="5" />
+</package>
+
+```
+
+package块里包含了每个app的详细信息，具体说明如下：
+```
+1. name:app的包名；codePath：表示apk的存放路径
+2. nativeLibraryPath表示app使用的.so库存放的位置，primaryCpuAbi表示app以哪种abi架构运行
+3. publicFlags和privateFlags应用的flag信息，privateFlags对应的是ApplicationInfo中的各种PRIVATE_FLAG
+4. ft表示apk文件上次被更改的时间，it表示app第一次安装的时间，ut表示app上次被更新时间，它的值好像一直和ft相同, ota或app重装之后，这里的ft和ut可能会改变
+5. version是app的版本号信息, 也就是在AndroidManifest.xml里配置的android:versioncode
+6. userId是为app分配的user id, 如果有使用shareUserId, 这里出现的就是SharedUserId
+7. sigs块里的count表示这个app有多少个签名信息，有的app可能会被多个证书签名。cert里的index表示这个app使用的证书的序号，当系统发现一个新的证书，这个号就会加1，key是app使用的证书内容的ascii码值；
+8. PKMS在扫apk文件过程中，如果发现它和之前扫描到的apk使用的是相同的签名证书，这里就只会有个index的值，并没有key的值。拥有相同的index的package, 表明它们使用的是相同的签名
+9. perms块里是这个app拥有的权限, 对于一般的app，这些权限是在AndroidManifest.xml里写明的；那些使用了相同UID的app, 这里的权限就是所有使用相同UID的app申请的权限的总和；granted表示这个权限是不是已经被允许
+10. proper-signing-keyset里的identifier就是上面说的keysets里identifier的值。它是用来标明这个app使用的是哪个公钥
+
+```
+
+
+* shared-user块：里面包含了所有系统定义的shareuser的信息
+```
+<shared-user name="android.uid.mms" userId="10020">
+       <sigs count="1" schemeVersion="3">
+           <cert index="0" />
+       </sigs>
+       <perms>
+           <item name="android.permission.WRITE_SETTINGS" granted="true" flags="0" />
+           <item name="android.per
+            ...
+           <item name="android.permission.WAKE_LOCK" granted="true" flags="0" />
+       </perms>
+  </shared-user>
+  <shared-user name="android.uid.system" userId="1000">
+       <sigs count="1" schemeVersion="3">
+           <cert index="0" />
+       </sigs>
+       <perms>
+           <item name="android.permission.BIND_INCALL_SERVICE" granted="true" flags="0" />
+           <item name="android.permission.WRITE_SETTINGS" granted="true" flags="0" />
+           ...
+           <item name="android.permission.DELETE_PACKAGES" granted="true" flags="0" />
+       </perms>
+   </shared-user>
+```
+
+shared_user获取和添加的逻辑如下
+```
+/** Gets and optionally creates a new shared user id. */
+SharedUserSetting getSharedUserLPw(String name, int pkgFlags, int pkgPrivateFlags,
+        boolean create) throws PackageManagerException {
+    SharedUserSetting s = mSharedUsers.get(name);
+    if (s == null && create) {
+        s = new SharedUserSetting(name, pkgFlags, pkgPrivateFlags);
+        s.userId = newUserIdLPw(s);
+        if (s.userId < 0) {
+            // < 0 means we couldn't assign a userid; throw exception
+            throw new PackageManagerException(INSTALL_FAILED_INSUFFICIENT_STORAGE,
+                    "Creating shared user " + name + " failed");
+        }
+        Log.i(PackageManagerService.TAG, "New shared user " + name + ": id=" + s.userId);
+        mSharedUsers.put(name, s);
+    }
+    return s;
+}
+
+```

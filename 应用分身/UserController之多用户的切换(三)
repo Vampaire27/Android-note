@@ -1,0 +1,442 @@
+本章直接从UserController的方法moveUserToForeground讲起，就分析多用户切换的时候，如何启动的新用户里面的那个应用。
+
+此方法进行了一个判断，该判断最终走向两个分支方法：
+
+startHomeActivity 和 stackSupervisorResumeFocusedStackTopActivity。
+
+什么意思呢，就是说切换用户的是，启动用户有两种情况：
+
+前者是启动默认应用，默认应用一般是开机向导或者桌面，如果首次进入则是开机向导，如果已经设置过开机向导则走桌面。
+
+后者是之前切换到这个用户，并且在这个用户使用了应用，并且在该应用使用过程中切换了用户（用过systemUI状态栏就可以办到）。这种常见切回用户，则可以切回到离开时候的用户。
+
+而判断的方法就是判断后者是否存在。
+
+也就是说：
+
+当我们在某个应用使用过程中，切换用户，我们会把当前应用信息存在stack（类似任务栈）中。
+
+而后在切换回本用户的时候，通过stackSupervisorSwitchUser方法判断该栈有没有内容。
+
+如果有内容则通过stackSupervisorResumeFocusedStackTopActivity方法来resume（恢复状态）之前存在stack的应用。
+
+如果没有内容则通过startHomeActivity方法启动默认应用
+
+
+
+private void moveUserToForeground(UserState uss, int oldUserId, int newUserId) {
+
+        boolean homeInFront = mInjector.stackSupervisorSwitchUser(newUserId, uss);
+
+        if (homeInFront) {
+
+            mInjector.startHomeActivity(newUserId, "moveUserToForeground");
+
+        } else {
+
+            mInjector.stackSupervisorResumeFocusedStackTopActivity();
+
+        }
+
+        EventLogTags.writeAmSwitchUser(newUserId);
+
+        sendUserSwitchBroadcasts(oldUserId, newUserId);
+
+    }
+
+
+
+首先是恢复方案：
+   protected void stackSupervisorResumeFocusedStackTopActivity() {
+
+            synchronized (mService) {
+
+                mService.mStackSupervisor.resumeFocusedStackTopActivityLocked();
+
+            }
+
+        }
+
+
+
+根据此方法，是调用ActivityStackSupervisor.java里面的resumeFocusedStackTopActivityLocked方法。
+
+从这里看到传入参数均为空。
+
+boolean resumeFocusedStackTopActivityLocked() {
+
+        return resumeFocusedStackTopActivityLocked(null, null, null);
+
+    }
+
+
+
+    boolean resumeFocusedStackTopActivityLocked(
+
+            ActivityStack targetStack, ActivityRecord target, ActivityOptions targetOptions) {
+
+//进行基础判断，是否做好恢复之前应用的准备
+
+        if (!readyToResume()) {
+
+            return false;
+
+        }
+
+
+
+//targetStack传入就是null，因此不进入此分支
+
+        if (targetStack != null && isFocusedStack(targetStack)) {
+
+            return targetStack.resumeTopActivityUncheckedLocked(target, targetOptions);
+
+        }
+
+
+
+//关键代码是mFocusedStack.topRunningActivityLocked();
+
+        final ActivityRecord r = mFocusedStack.topRunningActivityLocked();
+
+        if (r == null || !r.isState(RESUMED)) {
+
+            mFocusedStack.resumeTopActivityUncheckedLocked(null, null);
+
+        } else if (r.isState(RESUMED)) {
+
+            mFocusedStack.executeAppTransition(targetOptions);
+
+        }
+
+
+
+        return false;
+
+    }
+
+
+
+通过此方法则启动了之前存储在栈里面的应用。
+
+
+
+
+
+接来下讲解启动默认应用的方案，
+
+  protected void startHomeActivity(int userId, String reason) {
+
+            synchronized (mService) {
+
+                mService.startHomeActivityLocked(userId, reason);
+
+            }
+
+        }
+
+
+
+其实质是ActivityManagerService的方法里面的startHomeActivityLocked方法：
+
+
+
+ boolean startHomeActivityLocked(int userId, String reason) {
+
+        if (mFactoryTest == FactoryTest.FACTORY_TEST_LOW_LEVEL
+
+                && mTopAction == null) {
+
+            return false;
+
+        }
+
+//核心是此处获取默认应用，这是最核心的方法
+
+        Intent intent = getHomeIntent();
+
+        ActivityInfo aInfo = resolveActivityInfo(intent, STOCK_PM_FLAGS, userId);
+
+        if (aInfo != null) {
+
+        intent.setComponent(new ComponentName(aInfo.applicationInfo.packageName, aInfo.name));
+
+            aInfo = new ActivityInfo(aInfo);
+
+            aInfo.applicationInfo = getAppInfoForUser(aInfo.applicationInfo, userId);
+
+            ProcessRecord app = getProcessRecordLocked(aInfo.processName,
+
+                    aInfo.applicationInfo.uid, true);
+
+            if (app == null || app.instr == null) {
+
+                intent.setFlags(intent.getFlags() | FLAG_ACTIVITY_NEW_TASK);
+
+                final int resolvedUserId = UserHandle.getUserId(aInfo.applicationInfo.uid);
+
+        //填写启动应用的原因，这里采用应用启动应用所需要的reason字符串的标准格式
+
+                final String myReason = reason + ":" + userId + ":" + resolvedUserId;
+
+        mActivityStartController.startHomeActivity(intent, aInfo, myReason);
+
+            }
+
+        } else {
+
+            Slog.wtf(TAG, "No home screen found for " + intent, new Throwable());
+
+        }
+
+
+
+        return true;
+
+    }
+
+
+
+该方法最终是ActivityStartController类里面的：
+
+   void startHomeActivity(Intent intent, ActivityInfo aInfo, String reason) {
+
+        mSupervisor.moveHomeStackTaskToTop(reason);
+
+
+
+        mLastHomeActivityStartResult = obtainStarter(intent, "startHomeActivity: " + reason)
+
+                .setOutActivity(tmpOutRecord)
+
+                .setCallingUid(0)
+
+                .setActivityInfo(aInfo)
+
+                .execute();
+
+        mLastHomeActivityStartRecord = tmpOutRecord[0];
+
+        if (mSupervisor.inResumeTopActivity) {
+
+             mSupervisor.scheduleResumeTopActivities();
+
+        }
+
+    }
+
+
+由此方法，我们可以看到是调用的obtainStarter方法，obtainStarter是一个使用装饰者模式的方法，其含义是在对目标设置了几个参数之后，统一execute。最终启动应用
+
+
+小结，以上是三大重点之启动目标应用，该方案分两条线，分别是直接启动默认应用，或者是恢复之前使用中的应用。
+
+
+接下来是三大重点之分发切换流程即dispatchUserSwitch（）方法：
+
+
+其功能是让各个模块去做切换用户的对应操作，并且采用木桶法则，当最慢的一个模块都处理完成，则表示切换完成，在屏幕中进行切换的动画。
+
+单说此方法的功能是通知各系统模块，去做用户切换时候的工作，如上一章所讲采用观察者模式，要处理切换工作的各系统模块统统注册此观察者，而在切换的时候，观察者模块启动，
+
+各系统模块知道了用户切换，立刻做对于操作。此外注册一个时间确认，模块做完之后会返回结束信息。
+
+
+void dispatchUserSwitch(final UserState uss, final int oldUserId, final int newUserId) {
+
+        Slog.d(TAG, "Dispatch onUserSwitching oldUser #" + oldUserId + " newUser #" + newUserId);
+
+     //名为mUserSwitchObservers的变量就是观察者，里面是在用户切换需要进行操作的模块的对象。
+
+        final int observerCount = mUserSwitchObservers.beginBroadcast();
+
+        if (observerCount > 0) {
+
+            final ArraySet<String> curWaitingUserSwitchCallbacks = new ArraySet<>();
+
+            synchronized (mLock) {
+
+                uss.switching = true;
+
+                mCurWaitingUserSwitchCallbacks = curWaitingUserSwitchCallbacks;
+
+            }
+
+    //名为WaitingUserSwitchCallbacks就是用来实现木桶法则，其目的是保证所有模块都完成自己的操作再进入下一步。
+
+            final AtomicInteger waitingCallbacksCount = new AtomicInteger(observerCount);
+
+            final long dispatchStartedTime = SystemClock.elapsedRealtime();
+
+            for (int i = 0; i < observerCount; i++) {
+
+                try {
+
+                    // Prepend with unique prefix to guarantee that keys are unique
+
+                    final String name = "#" + i + " " + mUserSwitchObservers.getBroadcastCookie(i);
+
+                    synchronized (mLock) {
+
+                        curWaitingUserSwitchCallbacks.add(name);
+
+                    }
+
+                    final IRemoteCallback callback = new IRemoteCallback.Stub() {
+
+                        @Override
+
+                        public void sendResult(Bundle data) throws RemoteException {
+
+                            synchronized (mLock) {
+
+                                long delay = SystemClock.elapsedRealtime() - dispatchStartedTime;
+
+                                curWaitingUserSwitchCallbacks.remove(name);
+
+                                if (waitingCallbacksCount.decrementAndGet() == 0
+
+                                        && (curWaitingUserSwitchCallbacks
+
+                                        == mCurWaitingUserSwitchCallbacks)) {
+
+//木桶法则的最终体现，必须所有的都完成了，数量变为0，才可以进入下一步，当调用sendContinueUserSwitchLU方法，表示dispatchUserSwitch结束，切换工作完成。
+
+                                    sendContinueUserSwitchLU(uss, oldUserId, newUserId);
+
+                                }
+
+                            }
+
+                        }
+
+                    };
+
+                mUserSwitchObservers.getBroadcastItem(i).onUserSwitching(newUserId, callback);
+
+                } catch (RemoteException e) {
+
+                }
+
+            }
+
+        } else {
+
+            synchronized (mLock) {
+
+                sendContinueUserSwitchLU(uss, oldUserId, newUserId);
+
+            }
+
+        }
+
+        mUserSwitchObservers.finishBroadcast();
+
+    }
+
+
+
+
+
+sendContinueUserSwitchLU方法是dispatchUserSwitch的下一步，用于表示切换用户的准备工作已经做好，接下来就是切换的临界点。
+
+   void sendContinueUserSwitchLU(UserState uss, int oldUserId, int newUserId) {
+
+        mCurWaitingUserSwitchCallbacks = null;
+
+        mHandler.removeMessages(USER_SWITCH_TIMEOUT_MSG);
+
+        mHandler.sendMessage(mHandler.obtainMessage(CONTINUE_USER_SWITCH_MSG,
+
+                oldUserId, newUserId, uss));
+
+    }
+
+
+
+      case CONTINUE_USER_SWITCH_MSG:
+
+                continueUserSwitch((UserState) msg.obj, msg.arg1, msg.arg2);
+
+                break;
+
+切换的临界点continueUserSwitch：
+
+    void continueUserSwitch(UserState uss, int oldUserId, int newUserId) {
+
+        Slog.d(TAG, "Continue user switch oldUser #" + oldUserId + ", newUser #" + newUserId);
+
+        if (mUserSwitchUiEnabled) {
+
+//关键操作，对于用户来说，切换的过程包括三部分，显示dialog，黑屏，显示锁屏界面。而其中的黑屏就是“stopFreezingScreen”产生的。之前在dialog的时候，冻住屏幕，让屏幕始终显示在dialog的场景，而现在解冻，则是放开冻屏期间的所有操作，包括dialog的消失，当前activity的停止和新activity的启动，而表现出来就是黑屏。
+
+            mInjector.getWindowManager().stopFreezingScreen();
+
+        }
+
+
+
+        uss.switching = false;
+
+        mHandler.removeMessages(REPORT_USER_SWITCH_COMPLETE_MSG);
+
+//经过了切换的瞬间，之后就是切换完成了，REPORT_USER_SWITCH_COMPLETE_MSG表示切换完成。
+
+        mHandler.sendMessage(mHandler.obtainMessage(REPORT_USER_SWITCH_COMPLETE_MSG,
+
+                newUserId, 0));
+
+        stopGuestOrEphemeralUserIfBackground(oldUserId);
+
+        stopBackgroundUsersIfEnforced(oldUserId);
+
+    }
+
+
+
+  case REPORT_USER_SWITCH_COMPLETE_MSG:
+
+                dispatchUserSwitchComplete(msg.arg1);
+
+                break;
+
+
+
+方法dispatchUserSwitchComplete则是表示用户切换完成了，也需要进行一系列通知和动作。一般是在开始切换的时候，各个模块都会对一些标志位进行置位，表示正在切换状态。
+在切换状态中，停止提供某些功能，以免由于切换的异步动作，产生一些bug。
+
+    void dispatchUserSwitchComplete(int userId) {
+
+        mInjector.getWindowManager().setSwitchingUser(false);
+
+        final int observerCount = mUserSwitchObservers.beginBroadcast();
+
+        for (int i = 0; i < observerCount; i++) {
+
+            try {
+
+                mUserSwitchObservers.getBroadcastItem(i).onUserSwitchComplete(userId);
+
+            } catch (RemoteException e) {
+
+            }
+
+        }
+
+        mUserSwitchObservers.finishBroadcast();
+
+    }
+
+
+
+以上就是切换过程中的两个值得细详细学习的步骤： 启动目标应用， 用户切换的后续流程。
+
+
+
+关于锁屏相关步骤，则不再切换用户中学习，下一步将针对锁屏解锁进行学习。
+
+
+
+至此多用户切换完成。配合多用户的创建，就是完整的使用多用户的方案。
+
+至于多用户的删除，就是创建的逆过程，而且参数较少，就不讲解了。

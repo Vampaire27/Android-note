@@ -1,0 +1,1291 @@
+Android可以支持多个用户使用系统，通常第一个在系统中注册的用户将默认成为系统管理员。
+不同用户的设置各不相同，并且不同用户安装的应用及应用数据也不相同。但是系统中和硬件相关的设置则是共用的，如网络设置等。
+
+用户切换后前面用户运行的后台进程还可以继续运行，这样进行用户切换时无须中断一些后台进行的耗时操作（如下载）。
+
+管理用户的系统服务--UserManagerService
+
+UserManagerService的主要功能是创建和删除用户，以及查询用户信息。
+
+## 1.在PackageManagerService中进行初始化
+
+```
+final ArrayMap<String, PackageParser.Package> mPackages =
+            new ArrayMap<String, PackageParser.Package>();
+
+public PackageManagerService(Context context, Installer installer,
+        boolean factoryTest, boolean onlyCore) {
+  ...
+    synchronized (mInstallLock) {
+        // writer
+        synchronized (mPackages) {
+      ...
+            sUserManager = new UserManagerService(context, this, mPackages);
+      ...
+        } // synchronized (mPackages)
+    } // synchronized (mInstallLock)
+  ...
+}
+
+@Override
+public void systemReady() {
+  ...
+  sUserManager.systemReady();
+  ...
+}
+```
+
+UserManagerService的构造方法如下：
+
+```
+UserManagerService(Context context, PackageManagerService pm, Object packagesLock) {
+    this(context, pm, packagesLock, Environment.getDataDirectory());
+}
+```
+
+
+调用了另一个构造方法，并多传递了一个参数：/data目录
+
+```
+private static final String USER_INFO_DIR = "system" + File.separator + "users";
+
+private UserManagerService(Context context, PackageManagerService pm,
+        Object packagesLock, File dataDir) {
+    mContext = context;
+    mPm = pm;
+    mPackagesLock = packagesLock;
+    mHandler = new MainHandler();
+    synchronized (mPackagesLock) {
+	// /data/system/users
+        mUsersDir = new File(dataDir, USER_INFO_DIR);
+        mUsersDir.mkdirs();
+        // Make zeroth user directory, for services to migrate their files to that location
+        File userZeroDir = new File(mUsersDir, String.valueOf(UserHandle.USER_SYSTEM));
+	// 创建第一个用户目录：/data/system/users/0
+        userZeroDir.mkdirs();
+	// 设置访问文件的权限
+        FileUtils.setPermissions(mUsersDir.toString(),
+                FileUtils.S_IRWXU | FileUtils.S_IRWXG | FileUtils.S_IROTH | FileUtils.S_IXOTH,
+                -1, -1);
+	// /data/system/users/userlist.xml
+        mUserListFile = new File(mUsersDir, USER_LIST_FILENAME);
+	// 初始化来宾账户的默认限制条件
+        initDefaultGuestRestrictions();
+	// 从/data/system/users/userlist.xml文件读取用户信息
+        readUserListLP();
+        sInstance = this;
+    }
+    mLocalService = new LocalService();
+    LocalServices.addService(UserManagerInternal.class, mLocalService);
+    mLockPatternUtils = new LockPatternUtils(mContext);
+    mUserStates.put(UserHandle.USER_SYSTEM, UserState.STATE_BOOTING);
+}
+
+private final Bundle mGuestRestrictions = new Bundle();
+
+// 初始化来宾账户的默认限制条件
+private void initDefaultGuestRestrictions() {
+    synchronized (mGuestRestrictions) {
+        if (mGuestRestrictions.isEmpty()) {
+	    // "no_config_wifi"，不允许配置WiFi
+            mGuestRestrictions.putBoolean(UserManager.DISALLOW_CONFIG_WIFI, true);
+	    // "no_install_unknown_sources"，不允许安装未知来源的应用
+            mGuestRestrictions.putBoolean(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES, true);
+	    // "no_outgoing_calls"，不允许呼叫电话
+            mGuestRestrictions.putBoolean(UserManager.DISALLOW_OUTGOING_CALLS, true);
+	    // "no_sms"，不允许收发短信
+            mGuestRestrictions.putBoolean(UserManager.DISALLOW_SMS, true);
+        }
+    }
+}
+
+```
+
+
+先看下/data/system/users/userlist.xml文件的内容，再分析读取过程，文件内容如下：
+```
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<users nextSerialNumber="10" version="5">
+    <guestRestrictions>
+        <restrictions no_config_wifi="true" no_outgoing_calls="true" no_sms="true" />
+    </guestRestrictions>
+    <user id="0" />
+</users>
+```
+
+```
+// 从/data/system/users/userlist.xml文件读取用户信息
+private final SparseArray<UserData> mUsers = new SparseArray<>();
+
+private void readUserListLP() {
+    // 如果文件不存在，则创建管理员用户并返回
+    if (!mUserListFile.exists()) {
+        fallbackToSingleUserLP();
+        return;
+    }
+    FileInputStream fis = null;
+    AtomicFile userListFile = new AtomicFile(mUserListFile);
+    try {
+        fis = userListFile.openRead();
+        XmlPullParser parser = Xml.newPullParser();
+        parser.setInput(fis, StandardCharsets.UTF_8.name());
+        int type;
+        while ((type = parser.next()) != XmlPullParser.START_TAG
+                && type != XmlPullParser.END_DOCUMENT) {
+            // Skip
+        }
+
+        if (type != XmlPullParser.START_TAG) {
+            Slog.e(LOG_TAG, "Unable to read user list");
+	    // 如果文件异常，则创建管理员用户并返回
+            fallbackToSingleUserLP();
+            return;
+        }
+
+        mNextSerialNumber = -1;
+	// 解析文件
+        if (parser.getName().equals(TAG_USERS)) {
+            String lastSerialNumber = parser.getAttributeValue(null, ATTR_NEXT_SERIAL_NO);
+            if (lastSerialNumber != null) {
+                mNextSerialNumber = Integer.parseInt(lastSerialNumber);
+            }
+            String versionNumber = parser.getAttributeValue(null, ATTR_USER_VERSION);
+            if (versionNumber != null) {
+                mUserVersion = Integer.parseInt(versionNumber);
+            }
+        }
+
+        final Bundle newDevicePolicyGlobalUserRestrictions = new Bundle();
+
+        while ((type = parser.next()) != XmlPullParser.END_DOCUMENT) {
+            if (type == XmlPullParser.START_TAG) {
+                final String name = parser.getName();
+                if (name.equals(TAG_USER)) {
+                    String id = parser.getAttributeValue(null, ATTR_ID);
+
+		    // 初始化UserData对象保存从 /data/system/users/${id}.xml 文件中读取到的用户信息
+                    UserData userData = readUserLP(Integer.parseInt(id));
+
+                    if (userData != null) {
+                        synchronized (mUsersLock) {
+			    // 把解析到的用户信息保存到mUsers中
+                            mUsers.put(userData.info.id, userData);
+                            if (mNextSerialNumber < 0
+                                    || mNextSerialNumber <= userData.info.id) {
+                                mNextSerialNumber = userData.info.id + 1;
+                            }
+                        }
+                    }
+                } else if (name.equals(TAG_GUEST_RESTRICTIONS)) {
+                    while ((type = parser.next()) != XmlPullParser.END_DOCUMENT
+                            && type != XmlPullParser.END_TAG) {
+                        if (type == XmlPullParser.START_TAG) {
+                            if (parser.getName().equals(TAG_RESTRICTIONS)) {
+                                synchronized (mGuestRestrictions) {
+                                    UserRestrictionsUtils
+                                            .readRestrictions(parser, mGuestRestrictions);
+                                }
+                            } else if (parser.getName().equals(TAG_DEVICE_POLICY_RESTRICTIONS)
+                                    ) {
+                                UserRestrictionsUtils.readRestrictions(parser,
+                                        newDevicePolicyGlobalUserRestrictions);
+                            }
+                            break;
+                        }
+                    }
+                } else if (name.equals(TAG_GLOBAL_RESTRICTION_OWNER_ID)) {
+                    String ownerUserId = parser.getAttributeValue(null, ATTR_ID);
+                    if (ownerUserId != null) {
+                        mGlobalRestrictionOwnerUserId = Integer.parseInt(ownerUserId);
+                    }
+                }
+            }
+        }
+        synchronized (mRestrictionsLock) {
+            mDevicePolicyGlobalUserRestrictions = newDevicePolicyGlobalUserRestrictions;
+        }
+	// 解析完文件后，更新用户ID
+        updateUserIds();
+	// 如果有必要，则升级Version
+        upgradeIfNecessaryLP();
+    } catch (IOException | XmlPullParserException e) {
+        fallbackToSingleUserLP();
+    } finally {
+        IoUtils.closeQuietly(fis);
+    }
+}
+
+// 创建管理员用户
+private void fallbackToSingleUserLP() {
+    int flags = UserInfo.FLAG_INITIALIZED;
+    // In split system user mode, the admin and primary flags are assigned to the first human
+    // user.
+    if (!UserManager.isSplitSystemUser()) {
+        flags |= UserInfo.FLAG_ADMIN | UserInfo.FLAG_PRIMARY;
+    }
+    // Create the system user
+    UserInfo system = new UserInfo(UserHandle.USER_SYSTEM, null, null, flags);
+    UserData userData = new UserData();
+    userData.info = system;
+    synchronized (mUsersLock) {
+        mUsers.put(system.id, userData);
+    }
+    mNextSerialNumber = MIN_USER_ID;
+    mUserVersion = USER_VERSION;
+
+    Bundle restrictions = new Bundle();
+    synchronized (mRestrictionsLock) {
+        mBaseUserRestrictions.append(UserHandle.USER_SYSTEM, restrictions);
+    }
+
+    // 更新用户ID
+    updateUserIds();
+    // 初始化来宾账户的默认限制条件
+    initDefaultGuestRestrictions();
+
+    /*
+     * 把用户信息写到 /data/system/users/${id}.xml文件中，简单的写文件，不再看源码
+     * Writes the user file in this format:
+     *
+     * <user flags="20039023" id="0">
+     *   <name>Primary</name>
+     * </user>
+     */
+    writeUserLP(userData);
+    /*
+     * 把用户信息写到 /data/system/users/userlist.xml文件中
+     * Writes the user list file in this format:
+     *
+     * <users nextSerialNumber="3">
+     *   <user id="0"></user>
+     *   <user id="2"></user>
+     * </users>
+     */
+    writeUserListLP();
+}
+```
+
+
+这样UserManagerService的初始化工作就完成了，主要的工作就是解析userlist.xml文件，并创建了mUsers列表中的UserData对象。
+
+## 2.UserData的定义
+
+```
+private static class UserData {
+    // Basic user information and properties
+    UserInfo info;
+    // Account name used when there is a strong association between a user and an account
+    String account;
+    // Account information for seeding into a newly created user. This could also be
+    // used for login validation for an existing user, for updating their credentials.
+    // In the latter case, data may not need to be persisted as it is only valid for the
+    // current login session.
+    String seedAccountName;
+    String seedAccountType;
+    PersistableBundle seedAccountOptions;
+    // Whether to perist the seed account information to be available after a boot
+    boolean persistSeedData;
+
+    void clearSeedAccountData() {
+        seedAccountName = null;
+        seedAccountType = null;
+        seedAccountOptions = null;
+        persistSeedData = false;
+    }
+}
+
+
+public class UserInfo implements Parcelable {
+
+    /** 8 bits for user type 用户类型*/
+    public static final int FLAG_MASK_USER_TYPE = 0x000000FF;
+
+    /**
+     * *************************** NOTE ***************************
+     * These flag values CAN NOT CHANGE because they are written
+     * directly to storage.
+     */
+
+    /**
+     * Primary user. Only one user can have this flag set. It identifies the first human user
+     * on a device.主用户标志，通常是第一个ID为0的用户
+     */
+    public static final int FLAG_PRIMARY = 0x00000001;
+
+    /**
+     * User with administrative privileges. Such a user can create and
+     * delete users.admin用户标志，有此标志才有创建和删除用户的权限
+     */
+    public static final int FLAG_ADMIN   = 0x00000002;
+
+    /**
+     * Indicates a guest user that may be transient.guest用户标志
+     */
+    public static final int FLAG_GUEST   = 0x00000004;
+
+    /**
+     * Indicates the user has restrictions in privileges, in addition to those for normal users.
+     * Exact meaning TBD. For instance, maybe they can't install apps or administer WiFi access pts.
+	 * 标志权限受限的用户，具体受限功能未定
+     */
+    public static final int FLAG_RESTRICTED = 0x00000008;
+
+    /**
+     * Indicates that this user has gone through its first-time initialization.
+	 * 标志该用户是否已经初始化
+     */
+    public static final int FLAG_INITIALIZED = 0x00000010;
+
+    /**
+     * Indicates that this user is a profile of another user, for example holding a users
+     * corporate data.标志该UserInfo是另一个用户的profile
+     */
+    public static final int FLAG_MANAGED_PROFILE = 0x00000020;
+
+    /**
+     * Indicates that this user is disabled.标志该用户已被禁止
+     *
+     * <p>Note: If an ephemeral user is disabled, it shouldn't be later re-enabled. Ephemeral users
+     * are disabled as their removal is in progress to indicate that they shouldn't be re-entered.
+     */
+    public static final int FLAG_DISABLED = 0x00000040;
+
+    public static final int FLAG_QUIET_MODE = 0x00000080;
+
+    /**
+     * Indicates that this user is ephemeral. I.e. the user will be removed after leaving
+     * the foreground.
+     */
+    public static final int FLAG_EPHEMERAL = 0x00000100;
+
+    public static final int NO_PROFILE_GROUP_ID = UserHandle.USER_NULL;
+
+    public int id; // 用户ID
+    public int serialNumber; // 用户的序列号，不会重复
+    public String name; // 用户名称
+    public String iconPath; // 用户头像路径
+    public int flags; // 用户标志
+    public long creationTime; // 创建用户的时间
+    public long lastLoggedInTime; // 最后一次登录的时间
+    public String lastLoggedInFingerprint; // 最后一次用指纹登录的时间
+    public int profileGroupId; // 用户profile的group ID
+    public int restrictedProfileParentId;
+
+    /** User is only partially created. */
+    public boolean partial; // true表示该用户没有创建完成
+    public boolean guestToRemove;
+	...
+}
+```
+
+3.添加用户
+
+UserManagerService中添加用户的方法是createUser()：
+```
+@Override
+public UserInfo createUser(String name, int flags) {
+    if (DBG) Slog.i(LOG_TAG, "createUser name " + name);
+    // 检查添加用户的权限
+    checkManageOrCreateUsersPermission(flags);
+    return createUserInternal(name, flags, UserHandle.USER_NULL);
+}
+
+private UserInfo createUserInternal(String name, int flags, int parentId) {
+    // 如果没有添加用户的权限则返回null
+    if (hasUserRestriction(UserManager.DISALLOW_ADD_USER, UserHandle.getCallingUserId())) {
+        Log.w(LOG_TAG, "Cannot add user. DISALLOW_ADD_USER is enabled.");
+        return null;
+    }
+    return createUserInternalUnchecked(name, flags, parentId);
+}
+
+private UserInfo createUserInternalUnchecked(String name, int flags, int parentId) {
+    // 如果是一个低内存设备，则返回null
+    if (ActivityManager.isLowRamDeviceStatic()) {
+        return null;
+    }
+    final boolean isGuest = (flags & UserInfo.FLAG_GUEST) != 0;
+    final boolean isManagedProfile = (flags & UserInfo.FLAG_MANAGED_PROFILE) != 0;
+    final boolean isRestricted = (flags & UserInfo.FLAG_RESTRICTED) != 0;
+    final long ident = Binder.clearCallingIdentity();
+    UserInfo userInfo;
+    UserData userData;
+    final int userId;
+    try {
+        synchronized (mPackagesLock) {
+            UserData parent = null;
+            if (parentId != UserHandle.USER_NULL) {
+                synchronized (mUsersLock) {
+        // 根据userId获取UserData信息
+                    parent = getUserDataLU(parentId);
+                }
+                if (parent == null) return null;
+            }
+      // 判断是否可以添加更多profile
+            if (isManagedProfile && !canAddMoreManagedProfiles(parentId, false)) {
+                Log.e(LOG_TAG, "Cannot add more managed profiles for user " + parentId);
+                return null;
+            }
+      // 判断是否达到用户上限
+            if (!isGuest && !isManagedProfile && isUserLimitReached()) {
+                // If we're not adding a guest user or a managed profile and the limit has
+                // been reached, cannot add a user.
+                return null;
+            }
+            // If we're adding a guest and there already exists one, bail.
+      // 如果创建的是guest用户且guest用户已经存在则返回
+            if (isGuest && findCurrentGuestUser() != null) {
+                return null;
+            }
+            // In legacy mode, restricted profile's parent can only be the owner user
+            if (isRestricted && !UserManager.isSplitSystemUser()
+                    && (parentId != UserHandle.USER_SYSTEM)) {
+                Log.w(LOG_TAG, "Cannot add restricted profile - parent user must be owner");
+                return null;
+            }
+            if (isRestricted && UserManager.isSplitSystemUser()) {
+                if (parent == null) {
+                    Log.w(LOG_TAG, "Cannot add restricted profile - parent user must be "
+                            + "specified");
+                    return null;
+                }
+                if (!parent.info.canHaveProfile()) {
+                    Log.w(LOG_TAG, "Cannot add restricted profile - profiles cannot be "
+                            + "created for the specified parent user id " + parentId);
+                    return null;
+                }
+            }
+            if (!UserManager.isSplitSystemUser() && (flags & UserInfo.FLAG_EPHEMERAL) != 0) {
+                Log.e(LOG_TAG,
+                        "Ephemeral users are supported on split-system-user systems only.");
+                return null;
+            }
+            // In split system user mode, we assign the first human user the primary flag.
+            // And if there is no device owner, we also assign the admin flag to primary user.
+            if (UserManager.isSplitSystemUser()
+                    && !isGuest && !isManagedProfile && getPrimaryUser() == null) {
+                flags |= UserInfo.FLAG_PRIMARY;
+                synchronized (mUsersLock) {
+                    if (!mIsDeviceManaged) {
+                        flags |= UserInfo.FLAG_ADMIN;
+                    }
+                }
+            }
+
+      // 获取下一个可用的userId
+            userId = getNextAvailableId();
+      // 创建/data/system/users/userId文件夹
+            Environment.getUserSystemDirectory(userId).mkdirs();
+            boolean ephemeralGuests = Resources.getSystem()
+                    .getBoolean(com.android.internal.R.bool.config_guestUserEphemeral);
+
+            synchronized (mUsersLock) {
+                // Add ephemeral flag to guests/users if required. Also inherit it from parent.
+                if ((isGuest && ephemeralGuests) || mForceEphemeralUsers
+                        || (parent != null && parent.info.isEphemeral())) {
+                    flags |= UserInfo.FLAG_EPHEMERAL;
+                }
+
+    // 初始化新用户
+                userInfo = new UserInfo(userId, name, null, flags);
+                userInfo.serialNumber = mNextSerialNumber++;
+                long now = System.currentTimeMillis();
+                userInfo.creationTime = (now > EPOCH_PLUS_30_YEARS) ? now : 0;
+    // 设置partial变量为true，表示用户还没有创建完成
+                userInfo.partial = true;
+                userInfo.lastLoggedInFingerprint = Build.FINGERPRINT;
+                userData = new UserData();
+                userData.info = userInfo;
+                mUsers.put(userId, userData);
+            }
+      // 保存用户信息
+            writeUserLP(userData);
+            writeUserListLP();
+            if (parent != null) {
+                if (isManagedProfile) {
+                    if (parent.info.profileGroupId == UserInfo.NO_PROFILE_GROUP_ID) {
+                        parent.info.profileGroupId = parent.info.id;
+                        writeUserLP(parent);
+                    }
+                    userInfo.profileGroupId = parent.info.profileGroupId;
+                } else if (isRestricted) {
+                    if (parent.info.restrictedProfileParentId == UserInfo.NO_PROFILE_GROUP_ID) {
+                        parent.info.restrictedProfileParentId = parent.info.id;
+                        writeUserLP(parent);
+                    }
+                    userInfo.restrictedProfileParentId = parent.info.restrictedProfileParentId;
+                }
+            }
+        }
+  // 为新建用户准备存储区域
+        final StorageManager storage = mContext.getSystemService(StorageManager.class);
+        storage.createUserKey(userId, userInfo.serialNumber, userInfo.isEphemeral());
+        mPm.prepareUserData(userId, userInfo.serialNumber,
+                StorageManager.FLAG_STORAGE_DE | StorageManager.FLAG_STORAGE_CE);
+  // 保存所有安装应用在新建用户目录下的安装状态
+        mPm.createNewUser(userId);
+  // 创建完新用户后修改partial变量为false，表示用户创建完成，并重新保存用户信息
+        userInfo.partial = false;
+        synchronized (mPackagesLock) {
+            writeUserLP(userData);
+        }
+        updateUserIds();
+        Bundle restrictions = new Bundle();
+        if (isGuest) {
+            synchronized (mGuestRestrictions) {
+                restrictions.putAll(mGuestRestrictions);
+            }
+        }
+        synchronized (mRestrictionsLock) {
+            mBaseUserRestrictions.append(userId, restrictions);
+        }
+  // 发送成功添加新用户的广播
+        Intent addedIntent = new Intent(Intent.ACTION_USER_ADDED);
+        addedIntent.putExtra(Intent.EXTRA_USER_HANDLE, userId);
+        mContext.sendBroadcastAsUser(addedIntent, UserHandle.ALL,
+                android.Manifest.permission.MANAGE_USERS);
+        MetricsLogger.count(mContext, isGuest ? TRON_GUEST_CREATED : TRON_USER_CREATED, 1);
+    } finally {
+        Binder.restoreCallingIdentity(ident);
+    }
+    return userInfo;
+}
+
+// 根据userId获取UserData信息
+private UserData getUserDataLU(int userId) {
+    final UserData userData = mUsers.get(userId);
+    // If it is partial and not in the process of being removed, return as unknown user.
+    if (userData != null && userData.info.partial && !mRemovingUserIds.get(userId)) {
+        return null;
+    }
+    return userData;
+}
+
+
+final Settings mSettings;
+
+/** Called by UserManagerService */
+// 保存所有安装应用在新建用户目录下的安装状态
+void createNewUser(int userId) {
+    synchronized (mInstallLock) {
+  // 把所有已安装的应用数据拷贝到新建用户对应目录（/data/user/0/）下
+        mSettings.createNewUserLI(this, mInstaller, userId);
+    }
+    synchronized (mPackages) {
+  // 在/data/system/users/0/package-restrictions.xml文件中保存应用的限制信息
+        scheduleWritePackageRestrictionsLocked(userId);
+  // 更新/data/system/packages.list文件
+        scheduleWritePackageListLocked(userId);
+  // 保存默认浏览器应用，并更新/data/system/users/0/package-restrictions.xml文件
+        applyFactoryDefaultBrowserLPw(userId);
+  // 主要域名验证
+        primeDomainVerificationsLPw(userId);
+    }
+}
+
+
+/** Map from package name to settings 每个包名对应一个PackageSetting*/
+final ArrayMap<String, PackageSetting> mPackages = new ArrayMap<>();
+
+// 把所有已安装的系统应用数据拷贝到新建用户对应目录下
+void createNewUserLI(@NonNull PackageManagerService service, @NonNull Installer installer,
+        int userHandle) {
+    String[] volumeUuids;
+    String[] names;
+    int[] appIds;
+    String[] seinfos;
+    int[] targetSdkVersions;
+    int packagesCount;
+    synchronized (mPackages) {
+  // 从map中获取出所有的settings
+        Collection<PackageSetting> packages = mPackages.values();
+        packagesCount = packages.size();
+        volumeUuids = new String[packagesCount];
+        names = new String[packagesCount];
+        appIds = new int[packagesCount];
+        seinfos = new String[packagesCount];
+        targetSdkVersions = new int[packagesCount];
+        Iterator<PackageSetting> packagesIterator = packages.iterator();
+  // 遍历所有的PackageSetting
+        for (int i = 0; i < packagesCount; i++) {
+            PackageSetting ps = packagesIterator.next();
+            if (ps.pkg == null || ps.pkg.applicationInfo == null) {
+                continue;
+            }
+            // Only system apps are initially installed.初始化时只安装系统应用
+            /** M: [Operator] Operator package should also be installed @{ */
+            boolean curInstalledStatus = ps.isSystem()
+                                || (ps.pkgFlagsEx & ApplicationInfo.FLAG_EX_OPERATOR) != 0;
+      // 设置每一个应用在新创建用户下的安装状态，系统应用为true
+            ps.setInstalled(curInstalledStatus, userHandle);
+            /** @} */
+            // Need to create a data directory for all apps under this user. Accumulate all
+            // required args and call the installer after mPackages lock has been released
+            volumeUuids[i] = ps.volumeUuid;
+            names[i] = ps.name;
+            appIds[i] = ps.appId;
+            seinfos[i] = ps.pkg.applicationInfo.seinfo;
+            targetSdkVersions[i] = ps.pkg.applicationInfo.targetSdkVersion;
+        }
+    }
+    for (int i = 0; i < packagesCount; i++) {
+        if (names[i] == null) {
+            continue;
+        }
+        // TODO: triage flags!
+        final int flags = StorageManager.FLAG_STORAGE_CE | StorageManager.FLAG_STORAGE_DE;
+        try {
+      // 在新建用户目录（/data/user/0/）下创建每个应用的数据目录（包名命名的文件夹）
+            installer.createAppData(volumeUuids[i], names[i], userHandle, flags, appIds[i],
+                    seinfos[i], targetSdkVersions[i]);
+        } catch (InstallerException e) {
+            Slog.w(TAG, "Failed to prepare app data", e);
+        }
+    }
+    synchronized (mPackages) {
+  // 解析"etc/preferred-apps"目录下所有XML文件，XML文件中保存的是设备使用者指定的响应某个Intent
+  // 的最合适的组件信息
+        applyDefaultPreferredAppsLPw(service, userHandle);
+    }
+}
+
+```
+
+
+
+## 4.删除用户
+
+```
+/**
+ * Removes a user and all data directories created for that user. This method should be called
+ * after the user's processes have been terminated.
+ * @param userHandle the user's id
+ */
+@Override
+public boolean removeUser(int userHandle) {
+    // 检查调用者是否有删除用户的权限
+    checkManageOrCreateUsersPermission("Only the system can remove users");
+    if (getUserRestrictions(UserHandle.getCallingUserId()).getBoolean(
+            UserManager.DISALLOW_REMOVE_USER, false)) {
+        Log.w(LOG_TAG, "Cannot remove user. DISALLOW_REMOVE_USER is enabled.");
+        return false;
+    }
+
+    long ident = Binder.clearCallingIdentity();
+    try {
+        final UserData userData;
+        int currentUser = ActivityManager.getCurrentUser();
+        if (currentUser == userHandle) {
+            Log.w(LOG_TAG, "Current user cannot be removed");
+            return false;
+        }
+        synchronized (mPackagesLock) {
+            synchronized (mUsersLock) {
+                userData = mUsers.get(userHandle);
+                if (userHandle == 0 || userData == null || mRemovingUserIds.get(userHandle)) {
+                    return false;
+                }
+
+                // We remember deleted user IDs to prevent them from being
+                // reused during the current boot; they can still be reused
+                // after a reboot.保存要删除的userId，防止重复删除
+                mRemovingUserIds.put(userHandle, true);
+            }
+
+            try {
+                mAppOpsService.removeUser(userHandle);
+            } catch (RemoteException e) {
+                Log.w(LOG_TAG, "Unable to notify AppOpsService of removing user", e);
+            }
+            // Set this to a partially created user, so that the user will be purged
+            // on next startup, in case the runtime stops now before stopping and
+            // removing the user completely.
+      // 删除用户并没有删除相关用户文件，只是把partial变量修改为true，
+      // 开机后如果该变量还是true会删除相关文件
+            userData.info.partial = true;
+            // Mark it as disabled, so that it isn't returned any more when
+            // profiles are queried.
+            userData.info.flags |= UserInfo.FLAG_DISABLED;
+      // 更新/data/system/users/${id}.xml文件
+            writeUserLP(userData);
+        }
+
+        if (userData.info.profileGroupId != UserInfo.NO_PROFILE_GROUP_ID
+                && userData.info.isManagedProfile()) {
+            // Send broadcast to notify system that the user removed was a
+            // managed user.发送删除用户的广播
+            sendProfileRemovedBroadcast(userData.info.profileGroupId, userData.info.id);
+        }
+
+        if (DBG) Slog.i(LOG_TAG, "Stopping user " + userHandle);
+        int res;
+        try {
+      // 停止正在运行的用户
+            res = ActivityManagerNative.getDefault().stopUser(userHandle, /* force= */ true,
+            new IStopUserCallback.Stub() {
+                        @Override
+                        public void userStopped(int userId) {
+          // 删除用户相关应用信息
+                            finishRemoveUser(userId);
+                        }
+                        @Override
+                        public void userStopAborted(int userId) {
+                        }
+                    });
+        } catch (RemoteException e) {
+            return false;
+        }
+        return res == ActivityManager.USER_OP_SUCCESS;
+    } finally {
+        Binder.restoreCallingIdentity(ident);
+    }
+}
+```
+
+# 5.多用户管理
+
+UserManagerService主要管理用户的账号信息，运行中的用户管理由ActivityManagerService来负责。
+用户的状态有5种，定义在UserState类中：
+
+```
+public final class UserState {
+    // User is first coming up.启动中
+    public final static int STATE_BOOTING = 0;
+    // User is in the locked state.锁定
+    public final static int STATE_RUNNING_LOCKED = 1;
+    // User is in the unlocking state.未锁定
+    public final static int STATE_RUNNING_UNLOCKING = 2;
+    // User is in the running state.运行中
+    public final static int STATE_RUNNING_UNLOCKED = 3;
+    // User is in the initial process of being stopped.停止的初始过程中
+    public final static int STATE_STOPPING = 4;
+    // User is in the final phase of stopping, sending Intent.ACTION_SHUTDOWN.停止的最后阶段
+    public final static int STATE_SHUTDOWN = 5;
+  ...
+}
+
+@Override
+public boolean switchUser(final int targetUserId) {
+    // 检查调用者是否有切换用户的权限
+    enforceShellRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES, targetUserId);
+    UserInfo currentUserInfo;
+    UserInfo targetUserInfo;
+    synchronized (this) {
+  // 获取当用用户的相关信息
+        int currentUserId = mUserController.getCurrentUserIdLocked();
+        currentUserInfo = mUserController.getUserInfo(currentUserId);
+  // 获取切换目标用户的相关信息
+        targetUserInfo = mUserController.getUserInfo(targetUserId);
+        if (targetUserInfo == null) {
+            Slog.w(TAG, "No user info for user #" + targetUserId);
+            return false;
+        }
+  // 如果目标用户不支持切换，则返回
+        if (!targetUserInfo.supportsSwitchTo()) {
+            Slog.w(TAG, "Cannot switch to User #" + targetUserId + ": not supported");
+            return false;
+        }
+  // 如果目标用户是另一个用户的profile，则返回
+        if (targetUserInfo.isManagedProfile()) {
+            Slog.w(TAG, "Cannot switch to User #" + targetUserId + ": not a full user");
+            return false;
+        }
+        mUserController.setTargetUserIdLocked(targetUserId);
+    }
+    // 发送切换用户的消息
+    Pair<UserInfo, UserInfo> userNames = new Pair<>(currentUserInfo, targetUserInfo);
+    mUiHandler.removeMessages(START_USER_SWITCH_UI_MSG);
+    mUiHandler.sendMessage(mUiHandler.obtainMessage(START_USER_SWITCH_UI_MSG, userNames));
+    return true;
+}
+
+final class UiHandler extends Handler {
+    public UiHandler() {
+        super(com.android.server.UiThread.get().getLooper(), null, true);
+    }
+
+    @Override
+    public void handleMessage(Message msg) {
+        switch (msg.what) {
+      ...
+      case START_USER_SWITCH_UI_MSG: {
+        mUserController.showUserSwitchDialog((Pair<UserInfo, UserInfo>) msg.obj);
+        break;
+      }
+      ...
+        }
+    }
+}
+
+void showUserSwitchDialog(Pair<UserInfo, UserInfo> fromToUserPair) {
+    // The dialog will show and then initiate the user switch by calling startUserInForeground
+    Dialog d = new UserSwitchingDialog(mService, mService.mContext, fromToUserPair.first,
+            fromToUserPair.second, true /* above system */);
+    d.show();
+}
+
+@Override
+public void show() {
+    // Slog.v(TAG, "show called");
+    super.show();
+    final View decorView = getWindow().getDecorView();
+    if (decorView != null) {
+        decorView.getViewTreeObserver().addOnWindowShownListener(this);
+    }
+    // Add a timeout as a safeguard, in case a race in screen on/off causes the window
+    // callback to never come.
+    mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_START_USER),
+            WINDOW_SHOWN_TIMEOUT_MS);
+}
+
+private final Handler mHandler = new Handler() {
+    @Override
+    public void handleMessage(Message msg) {
+        switch (msg.what) {
+            case MSG_START_USER:
+    // 调用startUser()方法
+                startUser();
+                break;
+        }
+    }
+};
+
+
+void startUser() {
+    synchronized (this) {
+        if (!mStartedUser) {
+      // 调用startUserInForeground方法
+            mService.mUserController.startUserInForeground(mUserId, this);
+            mStartedUser = true;
+            final View decorView = getWindow().getDecorView();
+            if (decorView != null) {
+                decorView.getViewTreeObserver().removeOnWindowShownListener(this);
+            }
+            mHandler.removeMessages(MSG_START_USER);
+        }
+    }
+}
+
+/**
+ * Start user, if its not already running, and bring it to foreground.
+ * 开启用户，如果用户没有在运行，则开启它
+ */
+boolean startUserInForeground(final int userId, Dialog dlg) {
+    boolean result = startUser(userId, /* foreground */ true);
+    dlg.dismiss();
+    return result;
+}
+
+/**
+ * Start user, if its not already running.
+ * <p>The user will be brought to the foreground, if {@code foreground} parameter is set.
+ * When starting the user, multiple intents will be broadcast in the following order:</p>
+ * <ul>
+ *     <li>{@link Intent#ACTION_USER_STARTED} - sent to registered receivers of the new user
+ *     <li>{@link Intent#ACTION_USER_BACKGROUND} - sent to registered receivers of the outgoing
+ *     user and all profiles of this user. Sent only if {@code foreground} parameter is true
+ *     <li>{@link Intent#ACTION_USER_FOREGROUND} - sent to registered receivers of the new
+ *     user and all profiles of this user. Sent only if {@code foreground} parameter is true
+ *     <li>{@link Intent#ACTION_USER_SWITCHED} - sent to registered receivers of the new user.
+ *     Sent only if {@code foreground} parameter is true
+ *     <li>{@link Intent#ACTION_USER_STARTING} - ordered broadcast sent to registered receivers
+ *     of the new fg user
+ *     <li>{@link Intent#ACTION_LOCKED_BOOT_COMPLETED} - ordered broadcast sent to receivers of
+ *     the new user
+ *     <li>{@link Intent#ACTION_USER_UNLOCKED} - sent to registered receivers of the new user
+ *     <li>{@link Intent#ACTION_PRE_BOOT_COMPLETED} - ordered broadcast sent to receivers of the
+ *     new user. Sent only when the user is booting after a system update.
+ *     <li>{@link Intent#ACTION_USER_INITIALIZE} - ordered broadcast sent to receivers of the
+ *     new user. Sent only the first time a user is starting.
+ *     <li>{@link Intent#ACTION_BOOT_COMPLETED} - ordered broadcast sent to receivers of the new
+ *     user. Indicates that the user has finished booting.
+ * </ul>
+ *
+ * @param userId ID of the user to start
+ * @param foreground true if user should be brought to the foreground
+ * @return true if the user has been successfully started
+ */
+boolean startUser(final int userId, final boolean foreground) {
+    // 检查调用者权限
+    if (mService.checkCallingPermission(INTERACT_ACROSS_USERS_FULL)
+            != PackageManager.PERMISSION_GRANTED) {
+        String msg = "Permission Denial: switchUser() from pid="
+                + Binder.getCallingPid()
+                + ", uid=" + Binder.getCallingUid()
+                + " requires " + INTERACT_ACROSS_USERS_FULL;
+        Slog.w(TAG, msg);
+        throw new SecurityException(msg);
+    }
+
+    Slog.i(TAG, "Starting userid:" + userId + " fg:" + foreground);
+
+    final long ident = Binder.clearCallingIdentity();
+    try {
+        synchronized (mService) {
+            final int oldUserId = mCurrentUserId;
+      // 如果要开启的用户已经存在，则直接返回true
+            if (oldUserId == userId) {
+                return true;
+            }
+
+            mService.mStackSupervisor.setLockTaskModeLocked(null,
+                    ActivityManager.LOCK_TASK_MODE_NONE, "startUser", false);
+
+      // 获取目标用户的相关信息
+            final UserInfo userInfo = getUserInfo(userId);
+            if (userInfo == null) {
+                Slog.w(TAG, "No user info for user #" + userId);
+                return false;
+            }
+            if (foreground && userInfo.isManagedProfile()) {
+                Slog.w(TAG, "Cannot switch to User #" + userId + ": not a full user");
+                return false;
+            }
+
+      // 如果要把用户切到前台，则播放动画
+            if (foreground) {
+                mService.mWindowManager.startFreezingScreen(
+                        R.anim.screen_user_exit, R.anim.screen_user_enter);
+            }
+
+            boolean needStart = false;
+
+            // If the user we are switching to is not currently started, then
+            // we need to start it now.如果目标用户不存在，则修改用户状态为正在开启
+      // UserState的状态默认值是STATE_BOOTING
+            if (mStartedUsers.get(userId) == null) {
+                UserState userState = new UserState(UserHandle.of(userId));
+                mStartedUsers.put(userId, userState);
+                getUserManagerInternal().setUserState(userId, userState.state);
+    // 根据用户状态更新已经开启的用户列表
+                updateStartedUserArrayLocked();
+                needStart = true;
+            }
+
+            final UserState uss = mStartedUsers.get(userId);
+            final Integer userIdInt = userId;
+            mUserLru.remove(userIdInt);
+      // 调整用户在mUserLru中的位置，当前用户位于末尾
+            mUserLru.add(userIdInt);
+
+            if (foreground) {
+    // 修改当前用户的Id
+                mCurrentUserId = userId;
+    // 更新用户配置信息
+                mService.updateUserConfigurationLocked();
+                mTargetUserId = UserHandle.USER_NULL; // reset, mCurrentUserId has caught up
+    // 更新与当前用户相关的用户列表
+                updateCurrentProfileIdsLocked();
+                mService.mWindowManager.setCurrentUser(userId, mCurrentProfileIds);
+                // Once the internal notion of the active user has switched, we lock the device
+                // with the option to show the user switcher on the keyguard.
+                mService.mWindowManager.lockNow(null);
+            } else {
+                final Integer currentUserIdInt = mCurrentUserId;
+    // 更新与当前用户相关的用户列表
+                updateCurrentProfileIdsLocked();
+                mService.mWindowManager.setCurrentProfileIds(mCurrentProfileIds);
+                mUserLru.remove(currentUserIdInt);
+                mUserLru.add(currentUserIdInt);
+            }
+
+            // Make sure user is in the started state.  If it is currently
+            // stopping, we need to knock that off.确保用户处于启动状态，如果处于
+      // 停止的初始阶段，则中止它。如果已经发送过停止运行的广播，则重新设置用户的状态
+            if (uss.state == UserState.STATE_STOPPING) {
+                // If we are stopping, we haven't sent ACTION_SHUTDOWN,
+                // so we can just fairly silently bring the user back from
+                // the almost-dead.
+                uss.setState(uss.lastState);
+                getUserManagerInternal().setUserState(userId, uss.state);
+    // 根据用户状态更新已经开启的用户列表
+                updateStartedUserArrayLocked();
+                needStart = true;
+            } else if (uss.state == UserState.STATE_SHUTDOWN) {
+                // This means ACTION_SHUTDOWN has been sent, so we will
+                // need to treat this as a new boot of the user.
+                uss.setState(UserState.STATE_BOOTING);
+                getUserManagerInternal().setUserState(userId, uss.state);
+    // 根据用户状态更新已经开启的用户列表
+                updateStartedUserArrayLocked();
+                needStart = true;
+            }
+
+            if (uss.state == UserState.STATE_BOOTING) {
+                // Give user manager a chance to propagate user restrictions
+                // to other services and prepare app storage
+    // 在用户启动之前，先准备相关用户的限制及存储
+                getUserManager().onBeforeStartUser(userId);
+
+                // Booting up a new user, need to tell system services about it.
+                // Note that this is on the same handler as scheduling of broadcasts,
+                // which is important because it needs to go first.
+                mHandler.sendMessage(mHandler.obtainMessage(SYSTEM_USER_START_MSG, userId, 0));
+            }
+
+            if (foreground) {
+    // 发送相关消息
+                mHandler.sendMessage(mHandler.obtainMessage(SYSTEM_USER_CURRENT_MSG, userId,
+                        oldUserId));
+                mHandler.removeMessages(REPORT_USER_SWITCH_MSG);
+                mHandler.removeMessages(USER_SWITCH_TIMEOUT_MSG);
+                mHandler.sendMessage(mHandler.obtainMessage(REPORT_USER_SWITCH_MSG,
+                        oldUserId, userId, uss));
+                mHandler.sendMessageDelayed(mHandler.obtainMessage(USER_SWITCH_TIMEOUT_MSG,
+                        oldUserId, userId, uss), USER_SWITCH_TIMEOUT);
+            }
+
+            if (needStart) {
+                // Send USER_STARTED broadcast 如果需要开启用户，则发送相应广播
+    // 用户切换牵扯到很多模块，如壁纸管理、输入法、账号管理等，都需要收到通知
+                Intent intent = new Intent(Intent.ACTION_USER_STARTED);
+                intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY
+                        | Intent.FLAG_RECEIVER_FOREGROUND);
+                intent.putExtra(Intent.EXTRA_USER_HANDLE, userId);
+                mService.broadcastIntentLocked(null, null, intent,
+                        null, null, 0, null, null, null, AppOpsManager.OP_NONE,
+                        null, false, false, MY_PID, SYSTEM_UID, userId);
+            }
+
+            if (foreground) {
+    // 把开启的用户设为前台用户
+                moveUserToForegroundLocked(uss, oldUserId, userId);
+            } else {
+    // 用户启动结束，则切换用户到STATE_RUNNING_LOCKED状态
+                mService.mUserController.finishUserBoot(uss);
+            }
+
+            if (needStart) {
+    // 如果需要开启用户，则发送相应广播
+                Intent intent = new Intent(Intent.ACTION_USER_STARTING);
+                intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
+                intent.putExtra(Intent.EXTRA_USER_HANDLE, userId);
+                mService.broadcastIntentLocked(null, null, intent,
+                        null, new IIntentReceiver.Stub() {
+                            @Override
+                            public void performReceive(Intent intent, int resultCode,
+                                    String data, Bundle extras, boolean ordered, boolean sticky,
+                                    int sendingUser) throws RemoteException {
+                            }
+                        }, 0, null, null,
+                        new String[] {INTERACT_ACROSS_USERS}, AppOpsManager.OP_NONE,
+                        null, true, false, MY_PID, SYSTEM_UID, UserHandle.USER_ALL);
+            }
+        }
+    } finally {
+        Binder.restoreCallingIdentity(ident);
+    }
+
+    return true;
+}
+
+// 根据用户状态更新已经开启的用户列表mStartedUserArray
+private void updateStartedUserArrayLocked() {
+    int num = 0;
+    for (int i = 0; i < mStartedUsers.size(); i++) {
+        UserState uss = mStartedUsers.valueAt(i);
+        // This list does not include stopping users.
+        if (uss.state != UserState.STATE_STOPPING
+                && uss.state != UserState.STATE_SHUTDOWN) {
+            num++;
+        }
+    }
+    mStartedUserArray = new int[num];
+    num = 0;
+    for (int i = 0; i < mStartedUsers.size(); i++) {
+        UserState uss = mStartedUsers.valueAt(i);
+        if (uss.state != UserState.STATE_STOPPING
+                && uss.state != UserState.STATE_SHUTDOWN) {
+            mStartedUserArray[num++] = mStartedUsers.keyAt(i);
+        }
+    }
+}
+
+
+发送的msg消息是在ActivityManagerService中处理的：
+final class UiHandler extends Handler {
+    public UiHandler() {
+        super(com.android.server.UiThread.get().getLooper(), null, true);
+    }
+
+    @Override
+    public void handleMessage(Message msg) {
+        switch (msg.what) {
+    ...
+    case SYSTEM_USER_START_MSG: {
+            mBatteryStatsService.noteEvent(BatteryStats.HistoryItem.EVENT_USER_RUNNING_START,
+                    Integer.toString(msg.arg1), msg.arg1);
+      // 新建用户时调用
+            mSystemServiceManager.startUser(msg.arg1);
+            break;
+        }
+    case SYSTEM_USER_CURRENT_MSG: {
+            mBatteryStatsService.noteEvent(
+                    BatteryStats.HistoryItem.EVENT_USER_FOREGROUND_FINISH,
+                    Integer.toString(msg.arg2), msg.arg2);
+            mBatteryStatsService.noteEvent(
+                    BatteryStats.HistoryItem.EVENT_USER_FOREGROUND_START,
+                    Integer.toString(msg.arg1), msg.arg1);
+      // 切换用户时调用
+            mSystemServiceManager.switchUser(msg.arg1);
+            break;
+        }
+    case REPORT_USER_SWITCH_MSG: {
+            mUserController.dispatchUserSwitch((UserState) msg.obj, msg.arg1, msg.arg2);
+            break;
+        }
+    case CONTINUE_USER_SWITCH_MSG: {
+            mUserController.continueUserSwitch((UserState) msg.obj, msg.arg1, msg.arg2);
+            break;
+        }
+        case USER_SWITCH_TIMEOUT_MSG: {
+            mUserController.timeoutUserSwitch((UserState) msg.obj, msg.arg1, msg.arg2);
+            break;
+        }
+    case REPORT_USER_SWITCH_COMPLETE_MSG: {
+            mUserController.dispatchUserSwitchComplete(msg.arg1);
+      break;
+        }
+    ...
+    }
+};
+
+// 该方法主要是调用mUserSwitchObservers列表中的IUserSwitchObserver对象的onUserSwitching方法
+// 如果想知道用户切换，可以调用AMS的registerUserSwitchObserver()方法来注册一个观察者对象
+void dispatchUserSwitch(final UserState uss, final int oldUserId, final int newUserId) {
+    Slog.d(TAG, "Dispatch onUserSwitching oldUser #" + oldUserId + " newUser #" + newUserId);
+    // 获取所有注册回调方法的总数
+    final int observerCount = mUserSwitchObservers.beginBroadcast();
+    if (observerCount > 0) {
+        final IRemoteCallback callback = new IRemoteCallback.Stub() {
+            int mCount = 0;
+            @Override
+            public void sendResult(Bundle data) throws RemoteException {
+                synchronized (mService) {
+                    if (mCurUserSwitchCallback == this) {
+      // 收到一条回调，就加一
+                        mCount++;
+      // 所有注册的回调方法都执行了，发送继续处理的消息
+                        if (mCount == observerCount) {
+                            sendContinueUserSwitchLocked(uss, oldUserId, newUserId);
+                        }
+                    }
+                }
+            }
+        };
+        synchronized (mService) {
+            uss.switching = true;
+            mCurUserSwitchCallback = callback;
+        }
+  // 遍历调用所有注册回调对象的onUserSwitching方法
+        for (int i = 0; i < observerCount; i++) {
+            try {
+                mUserSwitchObservers.getBroadcastItem(i).onUserSwitching(
+                        newUserId, callback);
+            } catch (RemoteException e) {
+            }
+        }
+    } else {
+        synchronized (mService) {
+      // 如果没有注册回调方法的，直接调用继续执行用户切换的方法
+            sendContinueUserSwitchLocked(uss, oldUserId, newUserId);
+        }
+    }
+    mUserSwitchObservers.finishBroadcast();
+}
+
+void sendContinueUserSwitchLocked(UserState uss, int oldUserId, int newUserId) {
+    mCurUserSwitchCallback = null;
+    mHandler.removeMessages(USER_SWITCH_TIMEOUT_MSG);
+    mHandler.sendMessage(mHandler.obtainMessage(ActivityManagerService.CONTINUE_USER_SWITCH_MSG,
+            oldUserId, newUserId, uss));
+}
+
+void continueUserSwitch(UserState uss, int oldUserId, int newUserId) {
+    Slog.d(TAG, "Continue user switch oldUser #" + oldUserId + ", newUser #" + newUserId);
+    synchronized (mService) {
+        mService.mWindowManager.stopFreezingScreen();
+    }
+    uss.switching = false;
+    // 发送完成切换用户的消息
+    mHandler.removeMessages(REPORT_USER_SWITCH_COMPLETE_MSG);
+    mHandler.sendMessage(mHandler.obtainMessage(REPORT_USER_SWITCH_COMPLETE_MSG,
+            newUserId, 0));
+    // 停止切换到后台的Guest或临时用户
+    stopGuestOrEphemeralUserIfBackground();
+    // 强制停止后台用户
+    stopBackgroundUsersIfEnforced(oldUserId);
+}
+
+/** Called on handler thread */
+void dispatchUserSwitchComplete(int userId) {
+    final int observerCount = mUserSwitchObservers.beginBroadcast();
+    for (int i = 0; i < observerCount; i++) {
+        try {
+      // 遍历调用所有观察者的onUserSwitchComplete方法
+            mUserSwitchObservers.getBroadcastItem(i).onUserSwitchComplete(userId);
+        } catch (RemoteException e) {
+        }
+    }
+    mUserSwitchObservers.finishBroadcast();
+}
+
+/**
+ * Stops the guest or ephemeral user if it has gone to the background.
+ * 停止切换到后台的Guest或临时用户
+ */
+private void stopGuestOrEphemeralUserIfBackground() {
+    synchronized (mService) {
+        final int num = mUserLru.size();
+        for (int i = 0; i < num; i++) {
+            Integer oldUserId = mUserLru.get(i);
+            UserState oldUss = mStartedUsers.get(oldUserId);
+            if (oldUserId == UserHandle.USER_SYSTEM || oldUserId == mCurrentUserId
+                    || oldUss.state == UserState.STATE_STOPPING
+                    || oldUss.state == UserState.STATE_SHUTDOWN) {
+                continue;
+            }
+            UserInfo userInfo = getUserInfo(oldUserId);
+            if (userInfo.isEphemeral()) {
+                LocalServices.getService(UserManagerInternal.class)
+                        .onEphemeralUserStop(oldUserId);
+            }
+            if (userInfo.isGuest() || userInfo.isEphemeral()) {
+                // This is a user to be stopped.
+                stopUsersLocked(oldUserId, true, null);
+                break;
+            }
+        }
+    }
+}
+
+// 强制停止后台用户
+private void stopBackgroundUsersIfEnforced(int oldUserId) {
+    // Never stop system user
+    if (oldUserId == UserHandle.USER_SYSTEM) {
+        return;
+    }
+    // For now, only check for user restriction. Additional checks can be added here
+    boolean disallowRunInBg = hasUserRestriction(UserManager.DISALLOW_RUN_IN_BACKGROUND,
+            oldUserId);
+    if (!disallowRunInBg) {
+        return;
+    }
+    synchronized (mService) {
+        if (DEBUG_MU) Slog.i(TAG, "stopBackgroundUsersIfEnforced stopping " + oldUserId
+                + " and related users");
+        stopUsersLocked(oldUserId, false, null);
+    }
+}
+
+void timeoutUserSwitch(UserState uss, int oldUserId, int newUserId) {
+    synchronized (mService) {
+        /// M: Change Slog.wtf to Slog.w to avoid having WTF easily after adding new user
+        Slog.w(TAG, "User switch timeout: from " + oldUserId + " to " + newUserId);
+        sendContinueUserSwitchLocked(uss, oldUserId, newUserId);
+    }
+}
+
+```
+
+Activity进入Idle状态时会调用activityIdleInternalLocked方法，该方法中会修改用户的状态到STATE_RUNNING_LOCKED状态

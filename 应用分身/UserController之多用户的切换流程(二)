@@ -1,0 +1,448 @@
+上一章讲解了，第三方app要切换用户ActivityManagerService的SwtichUser方法最终走到切换用户的最关键方法： UserController里面的startUser方法。
+前面叫做切换用户，而当前这一步这叫做启动新用户。其实切换到新用户就是启动新用户的过程。
+
+本章将详细讲解startUser方法。
+
+```
+boolean startUser(
+
+            final int userId,
+
+            final boolean foreground,
+
+            @Nullable IProgressListener unlockListener) {
+
+        if (mInjector.checkCallingPermission(INTERACT_ACROSS_USERS_FULL)
+
+                != PackageManager.PERMISSION_GRANTED) {
+
+            String msg = "Permission Denial: switchUser() from pid="
+
+                    + Binder.getCallingPid()
+
+                    + ", uid=" + Binder.getCallingUid()
+
+                    + " requires " + INTERACT_ACROSS_USERS_FULL;
+
+            Slog.w(TAG, msg);
+
+            throw new SecurityException(msg);
+
+        }
+
+       //首先是加个打印，一共查询
+
+        Slog.i(TAG, "Starting userid:" + userId + " fg:" + foreground);
+
+        final long ident = Binder.clearCallingIdentity();
+
+
+
+        //核心功能第一步，再次查询，目标用户是否满足被切换的条件，逻辑代码和SwtichUser有重合的地方。
+
+        try {
+
+            final int oldUserId = getCurrentUserId();
+
+         //如果目标用户就是当前用户则不启动目标用户
+
+            if (oldUserId == userId) {
+
+                return true;
+
+            }
+
+
+
+            if (foreground) {
+
+                mInjector.clearAllLockedTasks("startUser");
+
+            }
+
+            //如果目标用户不存在则不启动目标用户
+
+            final UserInfo userInfo = getUserInfo(userId);
+
+            if (userInfo == null) {
+
+                Slog.w(TAG, "No user info for user #" + userId);
+
+                return false;
+
+            }
+
+           //如果目标用户不支持切换则不启动目标用户
+
+            if (foreground && userInfo.isManagedProfile()) {
+
+                Slog.w(TAG, "Cannot switch to User #" + userId + ": not a full user");
+
+                return false;
+
+            }
+
+         //核心代码第二步，如果采用有提示的切换方式则冻屏。这里很多人不理解为什么要冻屏。这是为了保证dialog的显示时间和切换用户的时间保持一致。
+
+        //切换用户的时间是不确定的，受CPU等因素影响，每次切换用户时间都不太一样。我们既不希望用户还没切换的时候，提示的dialog就消失了，也不希望用户已经切换过去，dialog还在继续显示。
+
+        //那么最好的方案就是在dialog显示的时候把屏幕冻住，而后在用户切完结束的时候在把屏幕激活。
+
+      //所以，实际的dialog很早就调用了dismiss，但是由于屏幕冻住，所以dialog的图片还显示在window上，但是实际上dialog在程序里面已经消失了。于是在屏幕激活，
+
+       //刷新的一瞬间就会同时出发dialog消失和切换用户，达到dialog消失和切换用户同步的效果
+
+            if (foreground && mUserSwitchUiEnabled) {
+
+                mInjector.getWindowManager().startFreezingScreen(
+
+                        R.anim.screen_user_exit, R.anim.screen_user_enter);
+
+            }
+
+            boolean needStart = false;
+
+            boolean updateUmState = false;
+
+            UserState uss;
+
+            //开始记录一些信息，mStartedUsers记录启动过的用户，mUserLru也类似。可以用来查询被启动过的用户，或者当前正在运行的用户。
+
+            凡是被启动过的用户，在未删除的情况下，都会一直处于启动状态。
+
+            synchronized (mLock) {
+
+                uss = mStartedUsers.get(userId);
+
+                if (uss == null) {
+
+                    uss = new UserState(UserHandle.of(userId));
+
+                    uss.mUnlockProgress.addListener(new UserProgressListener());
+
+                    mStartedUsers.put(userId, uss);
+
+                    updateStartedUserArrayLU();
+
+                    needStart = true;
+
+                    updateUmState = true;
+
+                } else if (uss.state == UserState.STATE_SHUTDOWN && !isCallingOnHandlerThread()) {
+
+                    Slog.i(TAG, "User #" + userId
+
+                            + " is shutting down - will start after full stop");
+
+                    mHandler.post(() -> startUser(userId, foreground, unlockListener));
+
+                    return true;
+
+                }
+
+                final Integer userIdInt = userId;
+
+                mUserLru.remove(userIdInt);
+
+                mUserLru.add(userIdInt);
+
+            }
+
+            if (unlockListener != null) {
+
+                uss.mUnlockProgress.addListener(unlockListener);
+
+            }
+
+            if (updateUmState) {
+
+                mInjector.getUserManagerInternal().setUserState(userId, uss.state);
+
+            }
+
+            //这里有个概念，我启动这个用户是否要把用户切换到前台用户。这是因为startUser不仅仅被switchUser调用。可以这么说，切换用户的核心是把目标用户启动到前台。
+             而startUser则包括启动到前台和启动到后台。
+
+            if (foreground) {
+
+                // 如果是启动到前台，那么这个时候就切换currentUser了。currentUser是一个参数，用来表示当前用户是哪一个
+
+
+                mInjector.reportGlobalUsageEventLocked(UsageEvents.Event.SCREEN_NON_INTERACTIVE);
+
+                synchronized (mLock) {
+
+              // 如果是启动到前台，则更换当前mCurrentUserId 至目标Userid,这个时候如果UserController类里面的方法查询当前用户，则查询结果是切换后的结果
+
+                    mCurrentUserId = userId;
+
+                    mTargetUserId = UserHandle.USER_NULL; // reset, mCurrentUserId has caught up
+
+                }
+
+              //而后把mCurrentUserId的切换同步到整个系统,从而确保如windowManager可以获取到正确的预期的userId
+
+                mInjector.updateUserConfiguration();
+
+                updateCurrentProfileIds();
+
+                mInjector.getWindowManager().setCurrentUser(userId, getCurrentProfileIds());
+
+                mInjector.reportCurWakefulnessUsageEvent();
+
+                // Once the internal notion of the active user has switched, we lock the device
+
+                // with the option to show the user switcher on the keyguard.
+
+                if (mUserSwitchUiEnabled) {
+
+               //容易被忽略掉一处核心代码第三步：lockNow，进入锁屏状态，我们知道当我们正常切换到目标用户的时候，新用户是处于锁屏状态的。所以普通切换就是锁屏的。
+
+               //那么有哪些情况是不锁屏的，常见有两种情况，一种是首次切换，此时切换过去就是开机向导，这种状态没必要锁屏，第二种是目前用户不是独立界面，这种状态也不用锁屏。
+
+               比如，应用克隆，实质就是一个非独立界面的用户。
+
+                    mInjector.getWindowManager().setSwitchingUser(true);
+
+                    mInjector.getWindowManager().lockNow(null);
+
+                }
+
+            } else {
+
+                final Integer currentUserIdInt = mCurrentUserId;
+
+                updateCurrentProfileIds();
+
+                mInjector.getWindowManager().setCurrentProfileIds(getCurrentProfileIds());
+
+                synchronized (mLock) {
+
+                    mUserLru.remove(currentUserIdInt);
+
+                    mUserLru.add(currentUserIdInt);
+
+                }
+
+            }
+
+
+/接下来是对多用户状态的一个确认，其中正确的状态是STATE_START,也就是正常流程是不会走下面3种分支的
+
+            if (uss.state == UserState.STATE_STOPPING) {
+
+                uss.setState(uss.lastState);
+
+                mInjector.getUserManagerInternal().setUserState(userId, uss.state);
+
+                synchronized (mLock) {
+
+                    updateStartedUserArrayLU();
+
+                }
+
+                needStart = true;
+
+            } else if (uss.state == UserState.STATE_SHUTDOWN) {
+
+                uss.setState(UserState.STATE_BOOTING);
+
+                mInjector.getUserManagerInternal().setUserState(userId, uss.state);
+
+                synchronized (mLock) {
+
+                    updateStartedUserArrayLU();
+
+                }
+
+                needStart = true;
+
+            }
+
+
+
+            if (uss.state == UserState.STATE_BOOTING) {
+
+                mInjector.getUserManager().onBeforeStartUser(userId);
+
+                mHandler.sendMessage(
+
+                        mHandler.obtainMessage(SYSTEM_USER_START_MSG, userId, 0));
+
+            }
+
+
+
+// 以上三种分支基本可以忽略，因为正常流程不走，接下来，首先是通知系统服务（systemService）我们切换用户啦，
+
+//其次核心代码第四步是开始进行切换用户的进行用户切换的工作，其核心是调用dispatchUserSwitch（）方法来完成。
+
+            if (foreground) {
+
+                mHandler.sendMessage(mHandler.obtainMessage(SYSTEM_USER_CURRENT_MSG, userId,
+
+                        oldUserId));
+
+                mHandler.removeMessages(REPORT_USER_SWITCH_MSG);
+
+                mHandler.removeMessages(USER_SWITCH_TIMEOUT_MSG);
+
+                mHandler.sendMessage(mHandler.obtainMessage(REPORT_USER_SWITCH_MSG,
+
+                        oldUserId, userId, uss));
+
+                mHandler.sendMessageDelayed(mHandler.obtainMessage(USER_SWITCH_TIMEOUT_MSG,
+
+                        oldUserId, userId, uss), USER_SWITCH_TIMEOUT_MS);
+
+            }
+
+
+
+            if (needStart) {
+
+                // 发送广播告知user启动
+
+                Intent intent = new Intent(Intent.ACTION_USER_STARTED);
+
+                intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY
+
+                        | Intent.FLAG_RECEIVER_FOREGROUND);
+
+                intent.putExtra(Intent.EXTRA_USER_HANDLE, userId);
+
+                mInjector.broadcastIntent(intent,
+
+                        null, null, 0, null, null, null, AppOpsManager.OP_NONE,
+
+                        null, false, false, MY_PID, SYSTEM_UID, userId);
+
+            }
+
+ //核心代码第5步，启动目标用户的应用，也就是启动目标用户的初始应用，该核心通过调用moveUserToForeground（）方法完成。
+
+//什么叫做初始应用，我们在首次开机的时候，初始应用是开机向导，而走过开机向导之后，后面再重启初始应用就是桌面。所以初始应用就是首次进入该用户时候的应用。
+
+//对于多用1户来说，具备应用记忆功能，也就是我们离开这个用户的时候是哪个应用，则进去还可以是那个应用。当然默认首先是开机向导，走过开机向导就是桌面，
+
+而后如果已经在该用户启动过其应用，且在其他应用的使用过程中，切换离开，那么再次回到此用户的时候，就可以启动离开前的那个应用。
+
+            if (foreground) {
+
+                moveUserToForeground(uss, oldUserId, userId);
+
+            } else {
+
+                finishUserBoot(uss);
+
+            }
+
+
+            if (needStart) {
+
+                Intent intent = new Intent(Intent.ACTION_USER_STARTING);
+
+                intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
+
+                intent.putExtra(Intent.EXTRA_USER_HANDLE, userId);
+
+                mInjector.broadcastIntent(intent,
+
+                        null, new IIntentReceiver.Stub() {
+
+                            @Override
+
+                            public void performReceive(Intent intent, int resultCode,
+
+                                    String data, Bundle extras, boolean ordered,
+
+                                    boolean sticky,
+
+                                    int sendingUser) throws RemoteException {
+
+                            }
+
+                        }, 0, null, null,
+
+                        new String[]{INTERACT_ACROSS_USERS}, AppOpsManager.OP_NONE,
+
+                        null, true, false, MY_PID, SYSTEM_UID, UserHandle.USER_ALL);
+
+            }
+
+        } finally {
+
+            Binder.restoreCallingIdentity(ident);
+
+        }
+
+
+
+        return true;
+
+    }
+
+
+至此就是整个startUser的代码。
+
+在进行一次总结，核心代码如下：
+
+1：检查是否能够切换
+
+2：冻屏
+
+3：锁屏
+
+4：分发切换事件
+
+5：启动目标应用。
+
+
+
+对于后面3种常见都是调用其他的应用，值得展开细讲。
+
+这里进行一个简单的描述，后面再详细讲解具体实现流程。
+
+
+
+锁屏操作主要是在systemUI里面完成，systemUI不是普通应用，也不在应用堆栈里面，systemUI是一个永远活跃的应用。
+
+systemUI又称状态栏，平常使用的时候，在顶部显示时间，电池等小图标的地方。
+
+systemUI有3个显示状态，我简单称之为顶部状态、下拉状态、锁屏状态。
+
+顶部状态则是在顶部的时候，而下拉状态则是可以有一些快捷开关，显示一些通知内容，而最后则是锁屏状态，锁屏的时候，其实也就是状态栏全屏显示的时候，状态栏全屏你的一切操作都被状态栏拦截，因此也就操作不到桌面以及其他应用上。
+
+systemUI有一个核心模块叫做keyguard，顾名思义密码。systemUI的锁屏模式下，只有keyguard通过校验才会缩小状态栏进入顶部状态。这就是我们的锁屏。
+
+在切换用户的过程中，我们会申请systemUI去进行锁屏操作，锁屏的过程中，需要为解锁做准备所以比较花时间且流程复杂，这就是startUser的第三个核心步骤。
+
+
+
+分发切换事件有几大功能，比如onUserSwitched的调用，在多用户的切换过程中，有很多回调，大体流程是用户切换，通过广播和回调通知到各个模块，然后各个模块立刻联动起来，
+
+做各自模块应该做的切换的事情，比如wallpaperManager就会接到切换用户的回调，然后修改当前壁纸。
+
+当然在这个流程中也包括解除冻屏操作。
+
+正如之前所说，为了保证切换的一致性，通过冻屏来控制dialog的显示时间，会在切换完用户的时候解除冻屏。什么时候是切换完用户的时候，
+
+答案是当各个回调都结束的时候，这里采用木桶法则，所有回调中最后一个完成时，算是用户切换完成，切换用户回调大约20多个。
+
+启动目标应用，此方法是涉及堆栈的一个方法，因此很复杂。在启动目标应用的时候首先进行一个判断，判断是启动默认应用还是启动历史应用，而后在根据堆栈等启动对应应用。
+
+此方法主要通过ActivityManagerService完成。
+
+总结，整个切换流程大概分为:
+
+1：检查是否能够切换
+
+2：显示dialog
+
+3：冻屏
+
+4：锁屏
+
+5：分发切换事件
+
+6：启动目标应用

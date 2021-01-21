@@ -1,0 +1,299 @@
+# MediaProvider流程分析
+
+## 1. 概要
+
+Android MediaProvider 使用 SQLite 数据库存储图片、视频、音频、文档等多媒体文件的信息，供视频播放器、音乐播放器、图库、文档编辑器使用。
+按照谷歌的要求,Android上其他应用获取文件列表的时候修需要通过contentprovider来读取.类似的还有TelephonyProvider、CalendarProvider、
+ContactsProvider,掌握其中一个其他的也就不难理解了。
+
+
+## 2. MediaProvider基础介绍
+### 2.1. MediaProvider在Android中的定位
+
+
+MediaProvider在Android中的角色参看如下图:
+![](image/20190804200457862.png)
+
+## 2.2. MediaProvider 扫描流程
+
+MediaProvider 的扫描流程图如下
+![](image/20190804200518959.png)
+
+应该是MediaService版本...
+
+
+## 2.3. MddiaProvider数据库相关
+2.3.1. 数据库文件位置以及查看方式
+
+MediaProvicer涉及到的数据库文件如下：
+```
+/data/data/com.android.providers.media/databases # ls
+
+external.db external.db-shm external.db-wal internal.db
+```
+
+该数据库文件的查看方式：
+
+```
+以 root 权限进入 adb shell，使用 sqlite3 打开位于手机上 /data/data/com.android.providers.media/databases 上的一个数据库。
+以 external 开头的数据库存储的是 SD 卡媒体信息，一张卡对应一个，所以如果手机使用过多张卡会有多个数据库。
+以 internal 开头的数据库存储手机内部存储器的媒体信息。因为一般用户无法访问手机内部存储器，而且这两个数据库结构是大体上是相同的，
+所以只需要关注 external 数据库即可。
+Note: 数据库都是以类似 external-ffffffff.db 的形式命名的， 后面的 8 个 16 进制字符是该 SD 卡 FAT 分区的 Volume ID。
+该 ID 是分区时决定的，只有重新分区或者手动改变才会更改，可以防止插入不同 SD 卡时数据库冲突。要简单了解 FAT 文件系统请看 Understanding FAT Filesystems
+
+```
+
+### 2.3.2. 数据库表、视图、索引、触发器列表
+
+sqlite3 external.db 中 表、视图、索引、触发器列表如下:
+![](image/20190804200603101.png)
+
+我是用的sqlite的数据库软件直接连接DB文件进行查看的，类似的sqlite、mysql的查看工具非常多，比如 navicat
+ 还可以直接生成ER关系图。还有visio 的逆向工程、mysql workbench 也可以生成ER关系图。
+
+### 2.3.3. 各数据表的简要介绍
+
+如下以 external.db 进行分析.
+
+Table:files 这个表里面存放了所有的文件/文件夹的信息, 而其他表则存放了各自有针对的信息,
+比如截屏图片文件既存放在了files表里,也存放在了images视图里.
+而各种表之间的关联基本上是通过 TRIGGER 来管理的.要查看表结构请使用 .schema进行直接查看,
+这些表有些复杂,其创建位置在packages/providers/MediaProvider/src/com/android/providers/media/MediaProvider.java
+
+图片数据库
+
+images：图片信息
+
+thumbnails：缩略图
+
+视频数据库
+
+video：视频信息
+
+videothumbnails：视频缩略图
+
+音频数据库
+
+album_art：专辑封面
+
+albums：专辑信息
+
+android_metadata：当前字符编码
+
+artists：艺术家
+
+audio_genres：流派
+
+audio_genres_map：音频流派映射
+
+audio_meta：音频信息
+
+audio_playlists：播放列表
+
+audio_playlists_map：音频播放列表映射
+
+每一个表里面的字段可以用如下命令查看:
+
+方法1: select * from sqlite_master where type=“table”
+
+方法2: .schema
+
+## 3. MediaProvider中重要文件介绍
+### 3.1. 直接管理数据库的MediaProvider.java
+
+文件路径：
+
+MediaProvider/src/com/android/providers/media/MediaProvider.java
+
+MediaProvider.java就是创建数据库，对外提供URI以实现对数据库的增删改查功能以及URI管理。直接与数据库打交道。
+如果要修改数据库中的字段，则可以在此文件中修改。比如现在流行的在拍照的时候记录下城市信息，则可以做如下修改：
+
+```
+db.execSQL("CREATE VIEW images AS SELECT _id,_data,_size,_display_name,mime_type,title,"
+- + "date_added,date_modified,description,picasa_id,isprivate,latitude,longitude,"
++ + "date_added,date_modified,description,picasa_id,isprivate,city,latitude,longitude,"
++ "datetaken,orientation,mini_thumb_magic,bucket_id,bucket_display_name,width,"
++ "height FROM files WHERE media_type=1");
+…
+private static final String IMAGE_COLUMNS =
+"_data,_size,_display_name,mime_type,title,date_added," +
+- "date_modified,description,picasa_id,isprivate,latitude,longitude," +
++ "date_modified,description,picasa_id,isprivate,city,latitude,longitude," +
+"datetaken,orientation,mini_thumb_magic,bucket_id,bucket_display_name," +
+"width,height";
+
+private static final String IMAGE_COLUMNSv407 =
+"_data,_size,_display_name,mime_type,title,date_added," +
+- "date_modified,description,picasa_id,isprivate,latitude,longitude," +
++ "date_modified,description,picasa_id,isprivate,city,latitude,longitude," +
+"datetaken,orientation,mini_thumb_magic,bucket_id,bucket_display_name";
+
+```
+
+
+MediaProvider 另外一个非常重要的功能就是通过URI给其他应用提供数据。那么MediaProvider提供的url如下：
+
+```
+URI_MATCHER.addURI("media", "*/images/media", IMAGES_MEDIA);   // * 可换成 external 或者 internal ， 下同
+URI_MATCHER.addURI("media", "*/images/media/#", IMAGES_MEDIA_ID);
+URI_MATCHER.addURI("media", "*/images/thumbnails", IMAGES_THUMBNAILS);
+URI_MATCHER.addURI("media", "*/images/thumbnails/#", IMAGES_THUMBNAILS_ID);
+URI_MATCHER.addURI("media", "*/audio/media", AUDIO_MEDIA);
+URI_MATCHER.addURI("media", "*/audio/media/#", AUDIO_MEDIA_ID);
+URI_MATCHER.addURI("media", "*/audio/media/#/genres", AUDIO_MEDIA_ID_GENRES);
+URI_MATCHER.addURI("media", "*/audio/media/#/genres/#", AUDIO_MEDIA_ID_GENRES_ID);
+URI_MATCHER.addURI("media", "*/audio/media/#/playlists", AUDIO_MEDIA_ID_PLAYLISTS);
+URI_MATCHER.addURI("media", "*/audio/media/#/playlists/#", AUDIO_MEDIA_ID_PLAYLISTS_ID);
+URI_MATCHER.addURI("media", "*/audio/genres", AUDIO_GENRES);
+URI_MATCHER.addURI("media", "*/audio/genres/#", AUDIO_GENRES_ID);
+URI_MATCHER.addURI("media", "*/audio/genres/#/members", AUDIO_GENRES_ID_MEMBERS);
+URI_MATCHER.addURI("media", "*/audio/genres/all/members", AUDIO_GENRES_ALL_MEMBERS);
+URI_MATCHER.addURI("media", "*/audio/playlists", AUDIO_PLAYLISTS);
+URI_MATCHER.addURI("media", "*/audio/playlists/#", AUDIO_PLAYLISTS_ID);
+URI_MATCHER.addURI("media", "*/audio/playlists/#/members", AUDIO_PLAYLISTS_ID_MEMBERS);
+URI_MATCHER.addURI("media", "*/audio/playlists/#/members/#", AUDIO_PLAYLISTS_ID_MEMBERS_ID);
+URI_MATCHER.addURI("media", "*/audio/artists", AUDIO_ARTISTS);
+URI_MATCHER.addURI("media", "*/audio/artists/#", AUDIO_ARTISTS_ID);
+URI_MATCHER.addURI("media", "*/audio/artists/#/albums", AUDIO_ARTISTS_ID_ALBUMS);
+URI_MATCHER.addURI("media", "*/audio/albums", AUDIO_ALBUMS);
+URI_MATCHER.addURI("media", "*/audio/albums/#", AUDIO_ALBUMS_ID);
+URI_MATCHER.addURI("media", "*/audio/albumart", AUDIO_ALBUMART);
+URI_MATCHER.addURI("media", "*/audio/albumart/#", AUDIO_ALBUMART_ID);
+URI_MATCHER.addURI("media", "*/audio/media/#/albumart", AUDIO_ALBUMART_FILE_ID);
+URI_MATCHER.addURI("media", "*/video/media", VIDEO_MEDIA);
+URI_MATCHER.addURI("media", "*/video/media/#", VIDEO_MEDIA_ID);
+URI_MATCHER.addURI("media", "*/video/thumbnails", VIDEO_THUMBNAILS);
+URI_MATCHER.addURI("media", "*/video/thumbnails/#", VIDEO_THUMBNAILS_ID);
+URI_MATCHER.addURI("media", "*/media_scanner", MEDIA_SCANNER);
+URI_MATCHER.addURI("media", "*/fs_id", FS_ID);
+URI_MATCHER.addURI("media", "*/version", VERSION);
+URI_MATCHER.addURI("media", "*/mtp_connected", MTP_CONNECTED);
+URI_MATCHER.addURI("media", "*", VOLUMES_ID);
+URI_MATCHER.addURI("media", null, VOLUMES);
+// Used by MTP implementation
+URI_MATCHER.addURI("media", "*/file", FILES);
+URI_MATCHER.addURI("media", "*/file/#", FILES_ID);
+URI_MATCHER.addURI("media", "*/object", MTP_OBJECTS);
+URI_MATCHER.addURI("media", "*/object/#", MTP_OBJECTS_ID);
+URI_MATCHER.addURI("media", "*/object/#/references", MTP_OBJECT_REFERENCES);
+// Used only to trigger special logic for directories
+URI_MATCHER.addURI("media", "*/dir", FILES_DIRECTORY);
+/**
+* @deprecated use the 'basic' or 'fancy' search Uris instead
+*/
+URI_MATCHER.addURI("media", "*/audio/" + SearchManager.SUGGEST_URI_PATH_QUERY,
+AUDIO_SEARCH_LEGACY);
+URI_MATCHER.addURI("media", "*/audio/" + SearchManager.SUGGEST_URI_PATH_QUERY + "/*",
+AUDIO_SEARCH_LEGACY);
+// used for search suggestions
+URI_MATCHER.addURI("media", "*/audio/search/" + SearchManager.SUGGEST_URI_PATH_QUERY,
+AUDIO_SEARCH_BASIC);
+URI_MATCHER.addURI("media", "*/audio/search/" + SearchManager.SUGGEST_URI_PATH_QUERY +
+"/*", AUDIO_SEARCH_BASIC);
+
+// used by the music app's search activity
+URI_MATCHER.addURI("media", "*/audio/search/fancy", AUDIO_SEARCH_FANCY);
+URI_MATCHER.addURI("media", "*/audio/search/fancy/*", AUDIO_SEARCH_FANCY);
+```
+
+
+
+在命令行中可以直接通过content query进行数据的查询，比如常用的:
+
+adb shell content query --uri content://media/external/file //查询外部存储器扫描到的文件详情列表
+
+adb shell content query --uri content://media/external/dir //参照上一条
+
+adb shell content query --uri content://media/internal/audio/media/ --where “_id=7” //查询内部存储器中 audio文件，且id 为 7 的内容
+
+adb shell content query --uri content://media/external/images/media/ //查询外部存储器上有多少图片存储
+
+adb shell content query --uri content://media/external/images/media/ --user 0 //只查询user id为0 的用户的外部存储器的图片列表
+
+Tips：adb shell content query 对于分析为什么有的应用不能显示图片、音频文件、doc文件等非常有帮助。
+
+​ 比如：在有的机种中，APP无法显示DOCX/PPTX/XLSX文件的列表，其实就是mediaprovider 在扫描到这类型文件的时候，并没有将其标识为指定的格式，而将其mime_type标识为了null。所以APP去读取指定类型文件的时候就不会列举到它。
+
+重要成员变量与函数：
+
+
+```
+private void ensureDefaultFolders(DatabaseHelper helper, SQLiteDatabase db) {
+public static int getDatabaseVersion(Context context) {
+private static void createLatestSchema(SQLiteDatabase db, boolean internal) {
+private static void updateDatabase(Context context, SQLiteDatabase db, boolean internal,
+private boolean queryThumbnail(SQLiteQueryBuilder qb, Uri uri, String table,String column, boolean hasThumbnailId) {
+public Cursor query(Uri uri, String[] projectionIn, String selection,String[] selectionArgs, String sort) {
+public String getType(Uri url)
+public Uri insert(Uri uri, ContentValues initialValues) {
+private long insertDirectory(DatabaseHelper helper, SQLiteDatabase db, String path) {
+private long insertFile(DatabaseHelper helper, Uri uri, ContentValues initialValues, int mediaType,boolean notify, ArrayList<Long> notifyRowIds) {
+public int delete(Uri uri, String userWhere, String[] whereArgs) {
+public int update(Uri uri, ContentValues initialValues, String userWhere,String[] whereArgs) {
+private DatabaseHelper getDatabaseForUri(Uri uri) {
+private Uri attachVolume(String volume) {
+private static String getVolumeName(Uri uri) {
+```
+
+
+
+## 3.2. 扫描文件的入口MediaScannerReceiver.java
+
+文件路径：
+
+packages/providers/MediaProvider/src/com/android/providers/media/MediaScannerService.java
+
+MediaScannerReceiver.java主要监听四个广播，分别是：
+
+ACTION_BOOT_COMPLETED //开机完成广播
+
+ACTION_LOCALE_CHANGED // 区域改变广播
+
+ACTION_MEDIA_MOUNTED //磁盘挂载完成广播
+
+ACTION_MEDIA_SCANNER_SCAN_FILE //指定扫描某个文件的广播
+
+MediaScannerReceiver收到广播之后，收集整理数据随即就去启动 MediaScannerService.
+
+其关键代码以及相关注释如下：
+
+```
+public class MediaScannerReceiver extends BroadcastReceiver {
+    private final static String TAG = "MediaScannerReceiver";
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        final String action = intent.getAction();
+        final Uri uri = intent.getData();
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+            // Scan internal only.
+            scan(context, MediaProvider.INTERNAL_VOLUME);  // 开机的时候扫描内部存储区
+        } else if (Intent.ACTION_LOCALE_CHANGED.equals(action)) {
+            scanTranslatable(context);      // 当所在地区发生改变之后，对数据进行区域更新等操作
+        } else {
+            if (uri.getScheme().equals("file")) {
+                Log.d(TAG, "action: " + action + " path: " + path);
+                if (Intent.ACTION_MEDIA_MOUNTED.equals(action)) {
+                    // scan whenever any volume is mounted
+                    scan(context, MediaProvider.EXTERNAL_VOLUME);   //扫描外部分区，其实就是SD卡（分内部sd卡和外置sd卡）
+                } else if (Intent.ACTION_MEDIA_SCANNER_SCAN_FILE.equals(action) &&
+                        path != null && path.startsWith(externalStoragePath + "/")) {
+                    scanFile(context, path);  //扫描外部存储器上的一个媒体文件
+                }
+            }
+        }
+}
+    private void scan(Context context, String volume) {
+        Bundle args = new Bundle();
+        args.putString("volume", volume);
+        context.startService(
+                new Intent(context, MediaScannerService.class).putExtras(args));  //启动MediaScannerService 进行相关实际动作，同理 scanFilescanTranslatable 也是如此。
+    }
+
+    private void scanFile(Context context, String path) {
+    }
+
+    private void scanTranslatable(Context context) {
+    }
+  ```

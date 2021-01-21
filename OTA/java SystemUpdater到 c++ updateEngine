@@ -1,0 +1,241 @@
+## 一、java SystemUpdater
+代码路径：packages/apps/Car/SystemUpdater
+原生UI画面：setting ->
+主要代码文件
+![](image/20200522200035213.png)
+
+这是android9上Google提供的一个apk，可以理解就是本地U盘测试update_engine升级的一个app。
+这个app的主要作用就是：
+1、读取U盘中的升级文件，用户点击目标升级文件。
+
+2、调用updateEngine传递主要参数，收updateEngine的callback向用户显示升级升级进度
+
+3、在升级结束之后通知powermanager重启机器。
+
+分析代码：
+在这里我们有一条重要的时序，就是java的updateEngine applyUpdate（）方法的调用关系，因为这个方法在U盘升级中负责将，升级文件的path和
+升级文件的size 、payload.bin的偏移量、hash值等传给c++的updateEngine。
+
+```
+DeviceListFragment.java
+........
+        @Override
+        public ListItem get(int position) {
+            if (position < 0 || position >= mListItems.size()) {
+                return null;
+            }
+            TextListItem item = new TextListItem(mContext);
+            File file = mListItems.get(position);
+            if (file != null) {
+                item.setTitle(file.getName());
+                item.setOnClickListener(v -> onFileSelected(file)); //item选中了我们的升级文件
+            } else {
+                item.setTitle(getString(R.string.unknown_file));
+            }
+            return item;
+        }
+  .......
+
+    private void onFileSelected(File file) {
+        if (isUpdateFile(file)) {
+            mFileStack.clear();
+            mSystemUpdater.applyUpdate(file); //调到了SystemUpdaterActivity中的applyUpdate（）传入升级文件的path
+        } else if (file.isDirectory()) {
+            showFolderContent(file);
+            mFileStack.push(file);
+        } else {
+            Toast.makeText(getContext(), R.string.invalid_file_type, Toast.LENGTH_LONG).show();
+        }
+    }
+.........
+```
+
+
+```
+SystemUpdaterActivity.java
+.........
+    public void applyUpdate(File file) {
+        UpdateLayoutFragment fragment = UpdateLayoutFragment.getInstance(file);  //得到UpdateLayoutFragment对象，将升级文件路径传递给UpdateLayoutFragment
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.device_container, fragment, FRAGMENT_TAG)
+                .addToBackStack(null)
+                .commit();
+    }
+........
+```
+
+```
+
+UpdateLayoutFragment.java
+..........
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+.............
+        if (getArguments().getBoolean(EXTRA_RESUME_UPDATE)) {
+            // Rejoin the update already in progress.
+            showInstallationInProgress();
+        } else {
+            // Extract the necessary information and begin the update.
+            mPackageVerifier.execute(mUpdateFile);  //异步执行UpdateVerifier的方法doInBackground和onPostExecute
+        }
+    }
+.............
+```
+
+
+```
+UpdateVerifier.java //这个类里的这个方法都是比价重要的
+
+        @Override
+        protected UpdateParser.ParsedUpdate doInBackground(File... files) {
+            Preconditions.checkArgument(files.length > 0, "No file specified");
+            File file = files[0];
+            try {
+                return UpdateParser.parse(file); //在UpdateParser的parse解析升级文件
+            } catch (IOException e) {
+                Log.e(TAG, String.format("For file %s", file), e);
+                return null;
+            }
+        }
+
+        @Override
+        protected void onPostExecute(UpdateParser.ParsedUpdate result) {
+            mProgressBar.setVisibility(View.GONE);
+            if (result == null) {
+                showStatus(R.string.verify_failure);
+                return;
+            }
+            if (!result.isValid()) {
+                showStatus(R.string.verify_failure);
+                Log.e(TAG, String.format("Failed verification %s", result));
+                return;
+            }
+            if (Log.isLoggable(TAG, Log.INFO)) {
+                Log.i(TAG, result.toString());
+            }
+
+            showInstallNow(result); //解析升级之后在这个方法里面简洁调用UpdateEngine.applyPayload（）
+        }
+    }
+
+```
+
+
+```
+UpdateParser.java
+    static ParsedUpdate parse(@NonNull File file) throws IOException {
+        Preconditions.checkNotNull(file);
+
+        long payloadOffset = 0;
+        long payloadSize = 0;
+        boolean payloadFound = false;
+        String[] props = null;
+
+        try (ZipFile zipFile = new ZipFile(file)) {
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                long fileSize = entry.getCompressedSize();
+                if (!payloadFound) {
+                    payloadOffset += ZIP_FILE_HEADER + entry.getName().length();
+                    if (entry.getExtra() != null) {
+                        payloadOffset += entry.getExtra().length;
+                    }
+                }
+
+                if (entry.isDirectory()) {
+                    continue;
+                } else if (entry.getName().equals(PAYLOAD_BIN_FILE)) {
+                    payloadSize = fileSize; // 得到 PAYLOAD_BIN_FILE（payload.bin）的文件大小
+                    payloadFound = true;
+                } else if (entry.getName().equals(PAYLOAD_PROPERTIES)) {
+                    try (BufferedReader buffer = new BufferedReader(
+                            new InputStreamReader(zipFile.getInputStream(entry)))) {
+                        props = buffer.lines().toArray(String[]::new); //得到hash值
+                    }
+                }
+                if (!payloadFound) {
+                    payloadOffset += fileSize; //在没有遍历到payload.bin之前，前面的文件都是记录为偏移量
+                }
+
+                if (Log.isLoggable(TAG, Log.DEBUG)) {
+                    Log.d(TAG, String.format("Entry %s", entry.getName()));
+                }
+            }
+        }
+        return new ParsedUpdate(file, payloadOffset, payloadSize, props);  //关于这几个参数后面会讲到
+    }
+```
+
+
+```
+frameworks/base/core/java/android/os/UpdateEngine.java
+//从UpdateLayoutFragment的showInstallNow（） ——> installUpdate() 到 updateEngine的applyPayload（）
+    public void applyPayload(String url, long offset, long size, String[] headerKeyValuePairs) {
+        try {
+            mUpdateEngine.applyPayload(url, offset, size, headerKeyValuePairs); // 是从serviceManager中拿到的
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+    public UpdateEngine() {
+        mUpdateEngine = IUpdateEngine.Stub.asInterface(
+                ServiceManager.getService(UPDATE_ENGINE_SERVICE)); //是c++层的updateEngine注册到serviceManager中的
+    }
+
+```
+
+二、java updateEngine到c++ updateEngine
+这部分比较简单，c++ updateEngine（其实是BinderUpdateEngineAndroidService）会将自己注册到serviceManager中去，然后Java updateEngine通过binder调用， ServiceManager.getService(UPDATE_ENGINE_SERVICE))，得到c++ updateEngine的代理对象。
+代码分析：
+
+```
+UpdateEngine.java
+.............
+    public UpdateEngine() {
+        mUpdateEngine = IUpdateEngine.Stub.asInterface(
+                ServiceManager.getService(UPDATE_ENGINE_SERVICE)); //得到update_engine service
+    }
+
+     @SystemApi
+    public boolean bind(final UpdateEngineCallback callback, final Handler handler) { // UpdateEngineCallback 在 UpdateLayoutFragment.java中实现了，具体的回调通知流程就是 BinderUpdateEngineAndroidService ->  UpdateEngineCallback -> CarUpdateEngineCallback
+        synchronized (mUpdateEngineCallbackLock) {
+            mUpdateEngineCallback = new IUpdateEngineCallback.Stub() {  //BinderUpdateEngineAndroidService提供的代码路径在 system/update_engin/binder_service_android.cc
+                @Override
+                public void onStatusUpdate(final int status, final float percent) {
+                    if (handler != null) {
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                callback.onStatusUpdate(status, percent);
+                            }
+                        });
+                    } else {
+                        callback.onStatusUpdate(status, percent);
+                    }
+                }
+
+                @Override
+                public void onPayloadApplicationComplete(final int errorCode) {
+                    if (handler != null) {
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                callback.onPayloadApplicationComplete(errorCode);
+                            }
+                        });
+                    } else {
+                        callback.onPayloadApplicationComplete(errorCode);
+                    }
+                }
+            };
+
+            try {
+                return mUpdateEngine.bind(mUpdateEngineCallback); //mUpdateEngineCallback 注册到BinderUpdateEngineAndroidService，后面升级的进度会通过这个回调通知。
+            } catch (RemoteException e) {
+                throw e.rethrowFromSystemServer();
+            }
+        }
+    }
+................
+```

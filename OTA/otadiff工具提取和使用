@@ -1,0 +1,83 @@
+# Why
+  集成组编译差分包不能依赖源码,所以需要从Android 源码中提取OTA DIFF 工具,给到集成组,用于后面制作差分包
+
+# What
+   Android 源码差分包工具主要包括如下几部分.
+   * py脚本:
+          ota_from_target_files.py
+          common.py
+          check_ota_package_signature.py
+          blockimgdiff.py
+          ...
+
+   * 签名文件
+   ```
+   build/make/target/product/security
+   ```
+
+   * 依赖工具
+
+   out/host/linux-x86/bin
+   ```
+   signapk.jar
+
+   imgdiff
+   simg2img
+   mkbootfs
+   mkbootimg
+   ...
+   ```
+   * 运行环境
+
+  ```
+  openJDK 版本
+
+  ```
+
+
+# How
+1. 编译对应的源码项目,生成out目录相关工具.
+
+2. mkdir otadifftools目录.
+
+3. copy build/tools/releasetools/* 到otadifftools目录
+
+4. copy build/make/target/product/security/* 到otadifftools目录
+
+5. copy out/host/linux-x86/bin/* 到otadifftools目录
+
+6. copy out/host/linux-x86/framework/* 到otadifftools目录
+
+7. copy out/host/linux-x86/lib/*和out/host/linux-x86/lib64/* 到otadifftools目录
+
+8. copy prebuilts/jdk/jdk11/* 到 otadifftools目录(jdk本版根据实际情况)
+
+9. 在otadifftools创建setup.sh 脚本
+
+```
+#!/bin/bash
+
+workdir=$(cd $(dirname $0); pwd)
+#echo "pwd is $workdir"
+ANDROID_JAVA_HOME=$workdir/prebuilts/jdk/jdk11/linux-x86
+export ANDROID_JAVA_HOME=$workdir/prebuilts/jdk/jdk11/linux-x86
+export JAVA_HOME=$ANDROID_JAVA_HOME
+export CLASSPATH=$ANDROID_JAVA_HOME/lib
+export PATH=${ANDROID_JAVA_HOME}/bin:$PATH
+
+```
+
+# 工具使用
+1. cd otadifftools && source setup.sh
+
+2. 执行ota_from_target_files 命令
+
+
+ ```
+ ./build/tools/releasetools/ota_from_target_files.py
+ -k build/make/target/product/security/testkey
+ -p build/host/
+ -i /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012101.zip
+ /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012102.zip
+ /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-BN012101-BN012102.zip
+ ```

@@ -1,0 +1,428 @@
+上文提到创建用户的方法：
+
+```
+UserManager mUserManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+
+UserInfo  newUserInfo = mUserManager.createUser(“用户名”, 0);
+
+```
+
+入口代码是UserManagerService中的createUser。
+
+
+```
+
+public UserInfo createUser(String name, int flags) {
+
+checkManageOrCreateUsersPermission(flags);
+
+return createUserInternal(name, flags, UserHandle.USER_NULL);
+
+}
+
+```
+
+
+而最核心的方法是createUserInternalUnchecked。
+
+调用流程实际从UserManager的对外接口代码开始。
+
+APP创建用户，包括系统设置，必须通过UserManager来创建
+
+上文提到了一个示例，而实际上在UserManager中创建用户的代码，一共有六个接口。
+
+
+## 1.标准的用户创建
+
+```
+
+ public UserInfo createUser(String name, int flags) {
+
+        UserInfo user = null;
+
+        try {
+
+            // 核心代码就调用service的createUser。
+
+            user = mService.createUser(name, flags);
+
+
+            if (user != null && !user.isAdmin() && !user.isDemo()) {
+
+                mService.setUserRestriction(DISALLOW_SMS, true, user.id);
+
+                mService.setUserRestriction(DISALLOW_OUTGOING_CALLS, true, user.id);
+
+            }
+
+        } catch (RemoteException re) {
+
+            throw re.rethrowFromSystemServer();
+
+        }
+
+        return user;
+
+    }
+
+```
+
+
+## 2.创建访客用户
+
+
+```
+
+  public UserInfo createGuest(Context context, String name) {
+
+        UserInfo guest = null;
+
+        try {
+
+            //同样适用了标准创建方式，只是帮助大家写好了flag，表示创建的是访客。
+
+            guest = mService.createUser(name, UserInfo.FLAG_GUEST);
+
+            if (guest != null) {
+
+                Settings.Secure.putStringForUser(context.getContentResolver(),
+
+                        Settings.Secure.SKIP_FIRST_USE_HINTS, "1", guest.id);
+
+            }
+
+        } catch (RemoteException re) {
+
+            throw re.rethrowFromSystemServer();
+        }
+        return guest;
+  }
+
+```
+
+接下来出现了一个新的创建用户的方法，叫做创建用户的子用户。当创建子用户之后，我总结了一些概念来帮助理解子用户：
+
+* a.用户和其子用户成对出现，user是正常用户，profile是子用户
+
+*  b.profile必须依附于user生存，也就是一个子用户一定对应一个主用户。
+
+* c.当一个用户创建了子用户之后，该用户和子用户直接就建立了连接。我们这时候可以称这个用户为主用户。也就是主用户和子用户的成对出现的。
+
+* d.感觉有人读到这里有点绕，这是因为代码里面User的概念太宽泛：我们通过UserId来区分每个用户，而仅仅拥有UserId的情况下，我们无法知道这个UserId对应的
+   User是普通用户，还是具备子用户的主用户，或者就是子用户。在代码里面，所用用户无论子用户，主用户，乃至工作用户，统统都是User。
+
+* e.对于一个用户我们通过getprofiles方法，可以获取该用户及其关联用户的userId。 也就是普通用户会获取一个user，而无论是主用户还是子用户，
+   都会获取出主用户+子用户的user集合。
+
+* f.对于一个子用户而言，它的parentUser是主用户。对于主用户而言，它的profile是子用户。
+
+---
+  总结在创建的时候，我们可以知道我们是创建子用户。但是对于某个用户而言，我们需要对其参数进行判断才能知道其为哪种类型的用户。
+
+
+
+在创建子用户的时候，需要传入正常用户的信息。
+
+# 3.创建子用户
+
+```
+ public UserInfo createProfileForUser(String name, int flags, @UserIdInt int userHandle) {
+
+        //创建指定user的子用户，且子用户的应用均可正常使用
+
+        return createProfileForUser(name, flags, userHandle, null);
+
+    }
+```
+
+## 4.创建子用户，且子用户部分应用不可使用
+
+```
+
+ public UserInfo createProfileForUser(String name, int flags, @UserIdInt int userHandle,
+
+            String[] disallowedPackages) {
+
+        try {
+
+    //创建指定user的子用户，且子用户的部分应用禁止使用
+
+            return mService.createProfileForUser(name, flags, userHandle, disallowedPackages);
+
+        } catch (RemoteException re) {
+
+            throw re.rethrowFromSystemServer();
+
+        }
+
+    }
+
+```
+
+//5.在不允许创建子用户的情况下强行创建子用户，且子用户部分应用不可使用
+
+```
+
+    public UserInfo createProfileForUserEvenWhenDisallowed(String name, int flags,
+
+            @UserIdInt int userHandle, String[] disallowedPackages) {
+
+        try {
+
+            return mService.createProfileForUserEvenWhenDisallowed(name, flags, userHandle,
+
+                    disallowedPackages);
+
+        } catch (RemoteException re) {
+
+            throw re.rethrowFromSystemServer();
+
+        }
+
+    }
+```
+
+
+## 6.创建严格受管控的子用户
+```
+public UserInfo createRestrictedProfile(String name) {
+
+        try {
+
+            UserHandle parentUserHandle = Process.myUserHandle();
+
+            UserInfo user = mService.createRestrictedProfile(name,
+
+                    parentUserHandle.getIdentifier());
+
+            if (user != null) {
+
+                AccountManager.get(mContext).addSharedAccountsFromParentUser(parentUserHandle,
+
+                        UserHandle.of(user.id));
+
+            }
+
+            return user;
+
+        } catch (RemoteException re) {
+
+            throw re.rethrowFromSystemServer();
+
+        }
+
+    }
+
+
+```
+
+---
+
+
+
+# 小结：
+UserManager给出了6种创建用户的方式，进一步分析则发现实质上一共调用了4种
+
+UserManagerService的创建方式:
+
+* mService.createUser
+
+* mService.createProfileForUser
+
+* mService.createProfileForUserEvenWhenDisallowed
+
+* mService.createRestrictedProfile
+
+
+实际上这4种方式在UserManagerService中最终都调用到最核心的方法createUserInternalUnchecked来完成用户创建。而他们的主要区别在于传入的Flag。
+
+---
+
+下面来跟踪这4种方式在UserManagerServices是如何一一走入createUserInternalUnchecked
+
+* 1.最常用的createUser。其特征为创建新用户时，不对新用户进行部分应用禁用，且不是创建子用户，且需要明确是否能够创建用户。
+
+
+```
+    public UserInfo createUser(String name, int flags) {
+
+     //普通模式入口，传入参数少。
+
+        checkManageOrCreateUsersPermission(flags);
+
+       //不创建子用户，因此不传入主用户id，即USER_NULL
+
+        return createUserInternal(name, flags, UserHandle.USER_NULL);
+
+    }
+```
+
+```
+    private UserInfo createUserInternal(String name, int flags, int parentId) {
+
+       //此方式表示创建的新用户，所有应用均可正常使用，于是第4个参数传入为null
+
+        return createUserInternal(name, flags, parentId, null);
+
+    }
+```
+
+
+```
+    private UserInfo createUserInternal(String name, int flags, int parentId,
+
+            String[] disallowedPackages) {
+
+       //这是比较完整的创建用户的参数，只是需要判断一下是否可以创建用户。
+
+        String restriction = ((flags & UserInfo.FLAG_MANAGED_PROFILE) != 0)
+
+                ? UserManager.DISALLOW_ADD_MANAGED_PROFILE
+
+                : UserManager.DISALLOW_ADD_USER;
+
+        if (hasUserRestriction(restriction, UserHandle.getCallingUserId())) {
+
+            //判断是否可以创建用户
+
+            Log.w(LOG_TAG, "Cannot add user. " + restriction + " is enabled.");
+
+            return null;
+
+        }
+
+      //最终走到createUserInternalUnchecked
+
+        return createUserInternalUnchecked(name, flags, parentId, disallowedPackages);
+
+    }
+ ```
+
+
+ * 2.createProfileForUser和createUser基本一模一样，也是通过createUserInternal，传入参数中可以传入paretId 和 disallowedPackages。
+
+
+```
+     public UserInfo createProfileForUser(String name, int flags, int userId,
+
+             String[] disallowedPackages) {
+
+         checkManageOrCreateUsersPermission(flags);
+
+        //和createUser的区别就是增加主用户（paretId）和应用禁用（disallowedPackages）的参数入口
+
+         return createUserInternal(name, flags, userId, disallowedPackages);
+
+     }
+```
+
+```
+
+
+ private UserInfo createUserInternal(String name, int flags, int parentId,
+
+             String[] disallowedPackages) {
+
+        //这是比较完整的创建用户的参数，只是需要判断一下是否可以创建用户。
+
+         String restriction = ((flags & UserInfo.FLAG_MANAGED_PROFILE) != 0)
+
+                 ? UserManager.DISALLOW_ADD_MANAGED_PROFILE
+
+                 : UserManager.DISALLOW_ADD_USER;
+
+         if (hasUserRestriction(restriction, UserHandle.getCallingUserId())) {
+
+       //判断是否可以创建用户
+
+             Log.w(LOG_TAG, "Cannot add user. " + restriction + " is enabled.");
+
+             return null;
+
+         }
+
+      //最终走到createUserInternalUnchecked
+
+         return createUserInternalUnchecked(name, flags, parentId, disallowedPackages);
+
+     }
+```
+
+
+* 3.createProfileForUserEvenWhenDisallowed 也是创建子用户，不经过createUserInternal来确认是否可以创建用户，
+  而是直接进入createUserInternalUnchecked
+
+
+```
+  public UserInfo createProfileForUserEvenWhenDisallowed(String name, int flags, int userId,String[] disallowedPackages) {
+
+        checkManageOrCreateUsersPermission(flags);
+
+       //最终走到createUserInternalUnchecked
+
+        return createUserInternalUnchecked(name, flags, userId, disallowedPackages);
+
+    }
+```
+
+* 4.createRestrictedProfile一个快捷入口，本质是调用createProfileForUser，自然最终走入createUserInternalUnchecked ，
+主要是锁定了flag
+
+
+```
+public UserInfo createRestrictedProfile(String name, int parentUserId) {
+
+        checkManageOrCreateUsersPermission("setupRestrictedProfile");
+
+        final UserInfo user = createProfileForUser(
+
+                name, UserInfo.FLAG_RESTRICTED, parentUserId, null);
+
+        if (user == null) {
+
+            return null;
+
+        }
+
+        long identity = Binder.clearCallingIdentity();
+
+        try {
+
+            setUserRestriction(UserManager.DISALLOW_MODIFY_ACCOUNTS, true, user.id);
+
+            android.provider.Settings.Secure.putIntForUser(mContext.getContentResolver(),
+
+                    android.provider.Settings.Secure.LOCATION_MODE,
+
+                    android.provider.Settings.Secure.LOCATION_MODE_OFF, user.id);
+
+            setUserRestriction(UserManager.DISALLOW_SHARE_LOCATION, true, user.id);
+
+        } finally {
+
+            Binder.restoreCallingIdentity(identity);
+
+        }
+
+        return user;
+
+    }
+```
+
+---
+小结：在创建用户的流程中，最终统一走到了createUserInternalUnchecked 方法，这个方法需要传入用户名，用户特征，主用户编号，禁用应用4个参数。
+当主用户名为空则表示普通用户，主用户编号不为空则创建的用户为主用户编号的子用户。而从开发接口来看，必须是设定子用户的路线才能设定禁用应用。
+
+
+```
+
+private UserInfo createUserInternalUnchecked(String name, int flags, int parentId,
+
+            String[] disallowedPackages)
+```
+
+
+
+
+总结，今天对创建用户的接口进行了与对外接口有关部分的梳理。从app可以调用的UserManager对应的6个接口，到UserManagerService实际开放的4个接口，
+最终统一到了createUserInternalUnchecked 这一个创建用户的方法。

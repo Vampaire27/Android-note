@@ -1,0 +1,90 @@
+     OTA 升级文件涉及到System team,集成组,后台,和app.我这基于我们前面的讨论和调研,简单梳理一下流程.有什么不妥的地方,大家指出.
+
+## 系统相关属性
+  System, 后台,和APK 需要同步的信息如下:
+```
+  品牌名称:  BN
+  产品型号:  aosp_coral
+  软件版本号: BN012102
+
+```
+
+## OTA 编译
+
+* 全包编译
+
+1. vendnor/build_number.txt中配置版本号. 如BN012101
+
+2. 编译全包
+```
+
+          source build/envsetup.sh
+          lunch （选择项目）
+          make otapackage
+```
+3.备份ota全包,并根据需要是否需要是否上传后台
+  ```
+      out/target/product/coral/aosp_coral-ota-BN012101.zip
+                                   |        |         |
+                                产品型号    ota       软件版本号
+
+  ```
+
+4. 备份target file用于后续制作差分包
+   ```
+
+      out/target/product/coral/obj/PACKAGING/target_files_intermediates/aosp_coral-target_files-BN012101.zip
+                                                                             |          |           |
+                                                                          产品型号    target_files   软件版本号
+```
+
+
+
+* 差分包制作:
+   编译命令:
+   ```
+     ./build/tools/releasetools/ota_from_target_files -v \
+          --block \
+          -p out/host/linux-x86 \
+          -k build/target/product/security/testkey \
+          -i ./aosp_coral-target_files--BN012101.zip ./aosp_coral-target_files--BN012102.zip
+          ./aosp_coral-BN012101-BN012102.zip
+```
+```
+        --block：指定system以block方式升级
+        -p：指定编译过程中使用的一些工具存放的路径
+        -k：指定升级包签名使用的私钥
+        -i：指定当前编译的是增量升级包 后面跟差分包基础包.
+```
+
+## 后台
+
+  集成组在编译之后,生成的差分包名称如下:
+
+      aosp_coral-BN012101-BN012102.zip
+          |          |        |
+       产品型号     原版本号   目标版本号
+
+   后台通过解析上面的包名即可得到相关信息.
+
+
+## OTA APP
+
+ 品牌名称,产品型号,软件版本号 相关信息存放在设备的属性值中,如下:
+
+```
+  品牌名称: ro.product.brand  =   BN
+  产品型号: ro.product.name = aosp_coral
+  软件版本号: ro.build.version.incremental = BN012102
+
+```
+
+
+OTA APP通过如下方法获取.
+
+```
+  public   String brandName= SystemProperties.get("ro.product.brand ", "");
+  public   String productName = SystemProperties.get("ro.product.name ", "");
+  public   String versionName = SystemProperties.get("ro.build.version.incremental", "");
+
+```

@@ -1,6 +1,7 @@
 
 
 adb reboot bootloader
+
 fastboot devices
 
 fastboot flash aboot out/target/product/$BUILD_PROJECT_NAME/emmc_appsboot.mbn
@@ -11,3 +12,25 @@ fastboot flash persist out/target/product/$BUILD_PROJECT_NAME/persist.img
 fastboot flash recovery out/target/product/$BUILD_PROJECT_NAME/recovery.img
 
 fastboot reboot  //重启
+
+    android:key="app_profileUser_qq"
+    android:title="@string/app_profileUser_qq"
+    android:order="103"
+
+<SwitchPreference
+    android:key="app_profileUser_qq"
+    android:title="@string/app_profileUser_vx"
+    android:order="104"
+
+<SwitchPreference
+    android:key="app_profileUser_qq"
+    android:title="@string/app_profileUser_tb"
+    android:order="105"
+
+
+
+    <string name="app_profileUser_qq">QQ 双开/string>
+
+  <string name="app_profileUser_vx">微信 双开/string>
+
+  <string name="app_profileUser_tb">淘宝 双开/string>

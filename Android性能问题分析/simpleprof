@@ -1,0 +1,224 @@
+# Profile 工具系列之四：simpleperf
+
+
+
+关于 simpleperf
+
+    simpleperf 是 google 随 NDK 一起发布的一款 profile 工具，从 NDK r13 开始
+    官方文档请参考 google 在 NDK 里放的 README
+
+# HelloWorld 步骤
+
+    把 simpleperf 可执行程序 push 到手机上。 simpleperf 在 NDK-r13b 的 simpleperf/android/ 里。根据被测程序和手机的CPU选择对应版本：
+
+adb push simpleperf /data/local/tmp/
+adb shell chmod 777 /data/local/tmp/simpleperf
+
+    1.启动被测程序，ps 出它的进程 ID
+    2.用 simpleperf 进行 profile：
+
+adb shell /data/local/tmp/simpleperf record -p 3972 --duration 30 -o /sdcard/perf.data
+
+```
+130|coral:/data/test # ./simpleperf  record -p 5166 --duration 30
+simpleperf W dso.cpp:415] /vendor/lib64/egl/libEGL_adreno.so doesn't contain symbol table
+simpleperf W dso.cpp:415] /vendor/lib64/egl/eglSubDriverAndroid.so doesn't contain symbol table
+simpleperf I cmd_record.cpp:698] Samples recorded: 20418. Samples lost: 0.
+
+```
+
+看起来一切正常，把结果 report 一下看看：
+
+adb shell /data/local/tmp/simpleperf report -i /sdcard/perf.data -n --sort dso
+
+```
+coral:/data/test # simpleperf report -i perf.data -n --sort dso
+Cmdline: /data/test/simpleperf record -p 5166 --duration 30
+Arch: arm64
+Event: cpu-cycles (type 0, config 0)
+Samples: 20418
+Event count: 8851825582
+
+Overhead  Sample  Shared Object
+30.38%    6770    [kernel.kallsyms]
+15.73%    3359    /system/lib64/libhwui.so
+14.77%    3163    /vendor/lib64/egl/libGLESv2_adreno.so
+7.27%     1349    /system/framework/arm64/boot-framework.oat
+6.28%     1191    /apex/com.android.runtime/lib64/bionic/libc.so
+5.45%     975     /apex/com.android.art/lib64/libart.so
+2.33%     439     /system/lib64/libbinder.so
+2.21%     444     /system/lib64/libgui.so
+1.70%     293     /system/lib64/libutils.so
+1.54%     274     /apex/com.android.art/javalib/arm64/boot.oat
+1.09%     174     /data/dalvik-cache/arm64/product@app@Camera2@Camera2.apk@classes.dex
+0.80%     140     /system/lib64/libandroid_runtime.so
+0.67%     139     /vendor/lib64/egl/eglSubDriverAndroid.so
+0.64%     133     /system/lib64/libui.so
+0.64%     140     /vendor/lib64/libgsl.so
+0.56%     121     /system/lib64/libEGL.so
+0.46%     54      /system/lib64/libsfplugin_ccodec.so
+0.46%     37      /system/lib64/libandroidfw.so
+0.44%     45      /system/lib64/libstagefright.so
+0.38%     82      /vendor/lib64/vendor.qti.hardware.display.mapperextensions@1.1.so
+0.37%     80      /system/lib64/libc++.so
+0.33%     72      /system/lib64/libcamera_client.so
+0.30%     48      [vdso]
+0.29%     56      perf.data_jit_app_cache:56368-58432
+0.27%     25      /system/lib64/libstagefright_bufferpool@2.0.1.so
+0.26%     60      /vendor/lib64/egl/libEGL_adreno.so
+0.26%     51      perf.data_jit_app_cache:49592-56368
+0.24%     33      /system/lib64/libstagefright_foundation.so
+0.23%     53      /vendor/lib64/libgrallocutils.so
+0.22%     25      /system/lib64/libcodec2_vndk.so
+0.21%     48      /vendor/lib64/hw/android.hardware.graphics.mapper@3.0-impl-qti-display.so
+0.20%     45      /system/lib64/libcamera_metadata.so
+0.19%     17      /system/lib64/libz.so
+0.19%     26      /system/lib64/libhidlbase.so
+0.17%     34      /system/lib64/libcutils.so
+0.17%     12      /system/lib64/libcodec2_hidl_client@1.0.so
+0.15%     34      /system/lib64/libGLESv1_CM.so
+0.12%     22      /vendor/lib64/libgralloccore.so
+0.11%     27      /apex/com.android.vndk.v30/lib64/libhidlbase.so
+0.11%     20      /apex/com.android.vndk.v30/lib64/libc++.so
+0.11%     9       /system/lib64/libcodec2_client.so
+0.10%     22      /apex/com.android.art/javalib/arm64/boot-core-libart.oat
+0.10%     23      /vendor/lib64/libadreno_utils.so
+0.09%     11      /system/lib64/libmediandk.so
+0.08%     11      /system/lib64/libartpalette-system.so
+0.08%     16      /system/lib64/libnativedisplay.so
+0.07%     3       /system/lib64/libdatasource.so
+0.07%     14      /apex/com.android.vndk.v30/lib64/libcutils.so
+0.07%     15      /system/lib64/libnativewindow.so
+
+```
+ * 其中的 –sort 参数是用来指定结果显示哪些列，我们这里只写了一个 dso（即 dynamic shared object），所以结果只显示一列 “Shared Object”，而且按 dso 分类，结果也只有三行而已。
+如果不加 –sort 参数，默认显示这几列：Command，Pid，Tid，Shared Object，Symbol，相当于：
+
+        --sort comm,pid,tid,dso,symbol
+
+
+ * -n 参数用来显示 Sample 那列，表示该行共命中了多少个 Sample，加不加随意。
+可以看到，百分之 88.93 的时间都耗费在了我们的被测程序上，这是预期中的。
+
+
+看一下我们 app 内部，那些函数占的比重最大：
+
+    adb shell /data/local/tmp/simpleperf report -i /sdcard/perf.data --dsos /data/local/rvdecApp --sort symbol
+
+
+
+结果如下：
+
+```
+coral:/data/test # simpleperf report -i perf.data --dsos /data/dalvik-cache/arm64/product@app@Camera2@Camera2.apk@classes.dex  --sort symbol
+Cmdline: /data/test/simpleperf record -p 5166 --duration 30
+Arch: arm64
+Event: cpu-cycles (type 0, config 0)
+Samples: 174
+Event count: 96541330
+
+Overhead  Symbol
+12.33%    com.android.camera.ui.motion.DynamicAnimator.draw
+8.02%     com.android.camera.ui.focus.AutoFocusRing.draw
+7.55%     com.android.camera.one.v2.core.ResponseListenerBroadcaster.onStarted
+4.30%     com.android.camera.TextureViewHelper.onSurfaceTextureUpdated
+3.81%     com.bumptech.glide.load.resource.bitmap.GlideBitmapDrawable.<init>
+3.56%     com.android.camera.async.ConcurrentState.update
+3.25%     com.android.camera.one.v2.initialization.MetadataCallback.updateOneCameraFocusState
+3.25%     com.google.common.collect.AbstractIndexedListIterator.next
+2.76%     com.google.common.collect.ImmutableList.listIterator
+2.69%     com.android.camera.CaptureModule$3.onSurfaceTextureUpdated
+2.57%     com.android.camera.one.v2.initialization.MetadataCallback.update
+2.54%     com.android.camera.one.v2.core.TagDispatchCaptureSession$CaptureCallback.onCaptureCompleted
+2.45%     com.android.camera.async.ConcurrentState$ExecutorListenerPair.run
+2.30%     com.android.camera.stats.profiler.Profilers$InfoWriter.write
+2.12%     com.android.camera.one.v2.core.TagDispatchCaptureSession$CaptureCallback.onCaptureStarted
+2.09%     com.android.camera.app.CameraAppUI.onSurfaceTextureUpdated
+2.00%     com.android.camera.async.ConcurrentBufferQueue.update
+1.91%     com.android.camera.ui.focus.FocusRingView.onDraw
+1.56%     com.google.common.collect.AbstractIndexedListIterator.hasNext
+1.44%     com.android.camera.app.MotionManager.<init> [DEDUPED]
+1.42%     com.google.common.collect.RegularImmutableList.get
+1.29%     com.android.camera.one.v2.initialization.GenericOneCameraImpl$2.onCallback
+1.25%     com.android.camera.async.FilteredUpdatable.update
+1.18%     com.android.camera.ui.focus.FocusController.onFocusDistance
+1.13%     com.android.camera.CaptureModule.closeCamera
+1.06%     com.android.camera.one.v2.core.ResponseListenerBroadcaster.onCompleted
+1.04%     com.android.camera.one.v2.core.ResponseListeners$3.onStarted
+1.03%     com.android.camera.hardware.HeadingSensor.onSensorChanged
+0.97%     com.google.common.collect.ImmutableList$Itr.get
+0.92%     com.android.camera.CameraActivity.getCameraAppUI
+0.92%     com.android.camera.ui.ModeListView.onModeListOpenRatioUpdate
+0.91%     com.android.camera.util.AndroidServices.provideWindowManager
+0.79%     com.android.camera.app.CameraAppUI.onModeListOpenProgress
+0.78%     com.android.camera.ui.focus.FocusController$6.run
+0.76%     com.android.camera.ui.focus.FocusRingRenderer.setRadius
+0.74%     com.android.camera.ui.focus.AutoFocusRing.processStates [DEDUPED]
+0.72%     com.android.camera.async.FilteredUpdatable.setNewValue
+0.72%     com.android.camera.one.v2.camera2proxy.AndroidCameraCaptureSessionProxy$AndroidCaptureCallback.onCaptureStarted
+0.72%     com.android.camera.one.v2.core.ResponseListeners$1.onCompleted [DEDUPED]
+0.71%     com.android.camera.CameraActivity$1.run
+0.66%     com.android.camera.ButtonManager.getButtonOrError
+0.66%     com.android.camera.ui.focus.FocusRingRenderer.isActive
+0.62%     com.android.camera.one.v2.camera2proxy.AndroidCaptureResultProxy.get
+0.61%     com.android.camera.one.OneCamera$FocusState.equals
+0.57%     com.google.common.collect.ImmutableList.iterator
+0.53%     com.android.camera.util.Gusterpolator.getInterpolation
+0.53%     com.android.camera.widget.RoundedThumbnailView.hasOverlappingRendering [DEDUPED]
+0.51%     com.android.camera.settings.DefaultsStore.getDefaultValue
+0.47%     com.android.camera.widget.FilmstripView.reload
+0.42%     com.android.camera.ui.focus.FocusController.setFocusRatio
+0.38%     com.android.camera.ui.focus.FocusRingView.isPassiveFocusRunning
+0.37%     com.android.camera.async.HandlerExecutor.execute
+0.37%     com.android.camera.ui.focus.FocusRingView.setRadiusRatio
+0.35%     com.android.camera.async.ConcurrentState.get
+0.35%     com.android.camera.ui.ModeSelectorItem.setVisibleWidth
+0.35%     com.android.camera.ui.motion.DampedSpring.update
+0.34%     com.android.camera.ui.motion.DampedSpring.isActive
+0.33%     com.android.camera.async.Listenable$1.run
+
+```
+
+* 其中的 –dsos 参数是 simpleperf 的 5 个 filter 之一，意思是按照指定的 dynamic shared objects 进行过滤，只显示参数指定的 dso 里面的结果。全部 5 个 filter 是：
+    –comms： 按 command 过滤，比如：--comm rvdecApp
+
+    –pids: 按 pid 过来
+
+    –tids: 按 tid（线程id）过滤
+
+    –dsos： 按库文件/可执行文件名过滤
+
+    –symbols： 按函数名过滤，比如： --symbols "RVComFunc::getPUMVPredictor(RefBlockInfo*, unsigned int, int, int, unsigned int)"，注意函数里有空格的，需要用双引号引起来。
+可以看到，结果里没有函数名字。那是因为我们的 rvdecApp 是没有符号表的版本。我们用带符号表的 app 进行分析即可。
+带符号表的 app 可执行文件可以在 obj 目录下找到。把它 push 到手机上，覆盖原来的可执行文件。
+注意，不用重新执行 rvdecApp 并重新采集 perf.data, 只需要在分析时使用带有符号表的 rvdecApp 即可。
+
+
+
+## 实际使用
+1. 用 simpleperf 启动被测进程
+
+    可以用 simpleperf 启动被测进程。而不必先把被测进程启动，然后 ps 出进程号再采集。其命令行格式如下：
+
+        adb shell /data/local/tmp/simpleperf record -o /sdcard/a.log /data/local/rvdecApp /data/local/CampfireParty_2496x1404_30_300_5000_rmhd_slow2pass.rv -i w=2496,h=1404
+
+    其中 /data/local/rvdecApp 是被测 app 的可执行文件，后面跟的都是该 app 的启动参数
+    如此启动的 simpleperf，将在被测进程运行结束后停止采集并退出。
+
+2. cache-miss
+
+    默认采集的是 event 是 cpu-cycles，所以我们默认得到的结果都是“CPU使用率”
+
+        As the perf event is cpu-cycles, the overhead can be seen as the percentage of cpu time used in each function.
+
+    用 -e 参数可以指定要采集哪些 event，我们用 -e cache-misses 即可以采集 cache-miss
+
+
+      adb shell /data/local/tmp/simpleperf record -o /sdcard/a.log -e cache-misses /data/local/rvdecApp /data/local/CampfireParty_2496x1404_30_300_5000_rmhd_slow2pass.rv -i w=2496,h=1404
+
+
+其他
+
+    不使用 –duration 参数指定采集时间，当被采集进程退出时，simpleperf 不会自动停止采集，而是会报告如下的log：
+
+simpleperf I 04-19 17:39:06  6956  6956 cmd_record.cpp:1105] Cpu 1 is offlined
