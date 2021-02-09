@@ -1,0 +1,93 @@
+# FUSE文件系统
+
+Fuse(filesystem in userspace),是一个用户空间的文件系统。通过fuse内核模块的支持，开发者只需要根据fuse提供的接口实现具体的文件操作就可以实现一个文件系统。由于其主要实现代码位于用户空间中，而不需要重新编译内核，这给开发者带来了众多便利。Google在Android 11上，为了实现scoped storage，也引入了fuse。下面我们从Fuse的架构设计以及具体的实现细节来谈一谈fuse文件系统。
+
+一、 Fuse架构设计
+
+![](image/1111111111111123.png)
+
+
+> 图片摘自《To FUSE or Not to FUSE: Performance of User-Space File Systems》
+
+Fuse包含一个内核模块和一个用户空间守护进程（下文称fuse daemon）。内核模块加载时被注册成 Linux 虚拟文件系统的一个 fuse 文件系统驱动。此外，还注册了一个/dev/fuse的块设备。该块设备作为fuse daemon与内核通信的桥梁，fuse daemon通过/dev/fuse读取fuse request，处理后将reply写入/dev/fuse。
+
+上图详细展示了fuse的构架。当application挂在fuse文件系统上，并且执行一些系统调用时，VFS会将这些操作路由至fuse driver，fuse driver创建了一个fuse request结构体，并把request保存在请求队列中。此时，执行操作的进程会被阻塞，同时fuse daemon通过读取/dev/fuse将request从内核队列中取出，并且提交操作到底层文件系统中(例如 EXT4 或 F2FS)。当处理完请求后，fuse daemon会将reply写回/dev/fuse，fuse driver此时把requset标记为completed，最终唤醒用户进程。
+
+
+# 二、 Fuse实现细节
+
+下面我们基于Android 11 AOSP 以及 kernel4.19的开源代码，讨论一些fuse的实现细节，包括：fuse 用户空间流程、内核队列、/dev/fuse的读写流程等。
+
+* 1. fuse用户空间流程
+
+  1）fuse mount
+
+
+  ![](image/123.png)
+
+Fuse的挂载通过mount函数，将指定的fuse_path挂载到/dev/fuse设备上。之后对于fuse_path下的文件操作，都会通过fuse文件系统，并通过/dev/fuse被fuse daemon读取处理。
+
+  （2） fuse thread
+
+  ![](image/123456.png)
+
+  Fuse  daemon还会创建一个服务线程，基于libfuse库来处理文件操作请求。这里主要关注fuse_session_new和fuse_session_loop_mt。通过fuse_session_new在libfuse中注册了fuse daemon实现的fuse_lowlevel_ops，之后通过fuse的所有的文件操作，都会通过libfuse回调到fuse daemon进行处理。
+
+  fuse_session_loop_mt在libfuse中实现了一个多线程模式来读取请求，相比单线程，在请求处理上效率更高。
+
+  （3）libfuse
+
+    由fuse_session_loop_mt在libfuse中的调用流程如下：
+  ![](image/12345678.png)
+
+  这里我们关注两点：
+
+  a) splice实现内存零拷贝。在默认情况下，fuse daemon必须通过read()从/dev/fuse读取请求，通过write()将请求回复写入/dev/fuse。每次读写系统调用都需要进行一次内核-用户空间的内存拷贝。这样对读写的性能损耗十分严重，因为一次内存拷贝需要处理大量数据。为了缓解这个问题，fuse支持了Linux内核提供的 splice 功能。splice 允许用户空间在两个内核内存缓冲区之间传输数据，而无需将数据复制给用户空间。如果fuse daemon实现了write_buf()方法，则 FUSE 从/dev/fuse读取数据，并以包含文件描述符的缓冲区的形式将数据直接传递给此方法处理，从而省去了一次内存申请与拷贝。
+
+  b) 多线程模式。在多线程模式下，fuse  daemon以一个线程开始，如果内核队列中有两个以上的request，则会自动生成其他线程。默认最大支持10个线程同时处理请求。
+
+* 2. fuse内核队列
+
+  ![](image/12344.png)
+
+  图片摘自《To FUSE or Not to FUSE: Performance of User-Space File Systems》
+
+ fuse在内核中维护了五个队列，分别为：Backgroud、Pending、Processing、Interrupts、Forgets。一个请求在任何时候只会存在于一个队列中。
+
+ a) Backgroud：background 队列用于暂存异步请求。在默认情况下，只有读请求进入 background 队列；当writeback cache启用时，写请求也会进入 background 队列。当开启writeback cache时，来自用户进程的写请求会先在页缓存中累积，然后当bdflush 线程被唤醒时会下刷脏页。在下刷脏页时，FUSE会构造异步请求，并将它们放入 background 队列中。
+
+ b) Pending：同步请求（例如，元数据）放在 pending 队列中，并且pending队列会周期性接收来自background 的请求。但是pending队列中异步请求的个数最大为max_background（最大为12），当pending队列的异步请求未达到12时，background队列的请求将被移动到pending队列中。这样做的目的是为了控制pending队列中异步请求的个数，防止在突发大量异步请求的情况下，阻塞了同步请求。
+
+ c) Processing：当pending队列中的请求被转发到fuse daemon的同时，也被移动到processing队列。所以processing队列中的请求，表示正在被处理fuse daemon处理的请求。当fuse daemon真正处理完请求，通过/dev/fuse下发reply时，该请求将从processing队列中删除。
+
+ d) Interrupts：用于存放中断请求，比如当发送的请求被用户取消时，内核会发送一个Interrupts请求，来取消已被发送的请求。中断请求的优先级最高，Interrupts中的请求会最先得到处理。
+
+ e) Forgets：forget请求用于删除dcache中缓存的inode。
+
+
+
+* 3. /dev/fuse 读写调用流程
+
+  Fuse driver加载过程中注册了对/dev/fuse的操作接口fuse_dev_operations。fuse_dev_do_read/fuse_dev_do_write分别对应fuse daemon从内核读取请求，以及处理完请求后写回reply的函数调用。我们分别看下具体的代码片段
+![](image/121212.png)
+
+  当pending 、interrups、forgets队列都没有请求时，读进程进入休眠。一旦有请求到达，这个等待队列上的进程将被唤醒。Interrups 和 forgets的请求优先级高于pending队列。当请求的数据内容被拷贝至用户空间后，该请求会被移至processing队列，并且req->flags会保存当前请求的状态。
+  ![](image/12341234.png)
+
+  当fuse daemon处理完请求后，会将结果写回到/dev/fuse。写数据保存在struct  fuse_copy_state中，并且会根据unique id在fc(fuse_conn)中找到对应的req，并将写回的参数从fuse_copy_state拷贝至req->out。
+
+  最后我们以unlink为例，看下fuse整体是如何工作的：
+  ![](image/adfdfasdf.png)
+  图片摘自fuse内核官方文档
+
+  首先，fuse daemon会阻塞在读/dev/fuse,当app进程在fuse挂载点下面有新的文件操作（unlink），这时系统调用会调用fuse内核接口，并生成request，同时唤醒阻塞的fuse daemon。fuse daemon读到request后，在libfuse中进行解析，根据request的opcode来执行对应的ops，完成后会把处理结果返回给/dev/fuse。此时vfs调用阻塞的行为将被唤醒，最后返回vfs调用。
+
+# 三、 总结
+
+虽然Fuse简化了文件系统的实现，给开发者带来了便利。但是其额外的内核态/用户态切换带来的性能开销不能被忽视，所以fuse性能问题，一直是业界绕不开的话题。前面说到的splice、多线程、writeback cache都是为了改善其性能问题。后续，我们再具体谈谈fuse性能改善。
+
+
+
+参考文献：
+
+[1] Bharath Kumar Reddy Vangoor, Vasily Tarasov, Erez Zadok.To FUSE or Not to FUSE: Performance of User-Space File Systems. in Proceedings of the 15th USENIX Conference on File and Storage Technologies (FAST ’17), 2017 • Santa Clara, CA, USA

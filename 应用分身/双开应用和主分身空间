@@ -1672,3 +1672,16 @@ huzhongyang@huzhongyang-HP-EliteDesk-800-G5-TWR:~/code/debug$ adb logcat |grep -
 01-12 11:09:12.005  1475  1656 D StorageManagerService: Volume emulated;0 broadcasting mounted to UserHandle{0}
 01-12 11:09:12.006  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}
 01-12 11:09:12.007  1475  1656 D StorageManagerService: Volume emulated;9876 broadcasting unmountable to UserHandle{9876}
+
+
+pm uninstall --user 9876 com.android.dialer
+
+pm uninstall --user 9876 com.android.documentsui
+
+pm uninstall --user 9876 com.android.messaging
+
+pm uninstall --user 9876 com.android.gallery3d
+pm uninstall --user 9876 com.android.contacts
+pm uninstall --user 9876 com.android.deskclock
+pm uninstall --user 9876 com.android.camera2
+pm uninstall --user 9876 com.android.calendar

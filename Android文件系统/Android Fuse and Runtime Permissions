@@ -1,0 +1,264 @@
+# Android Fuse
+
+用户空间文件系统（Filesystem in Userspace），是操作系统中的概念，指完全在用户态实现的文件系统。它们需要链接到FUSE 库上—— 换言之，这个文件系统框架并不需要您了解文件系统的内幕和内核模块编程的知识。
+
+Android上将 /data/media 这个目录通过fuse 虚拟成内置的sdcard。使用fuse的话，文件的操作需要与用户空间fuse进程通信，在user space与kernel space间多次切换。相比于ext4，读写速度等性能必然下降。Android O以后这层FUSE换成了sdcardfs，性能有了大幅提升。
+Runtime Permissions
+
+在 Android L 前 , 访问 sdcard 主要是通过用户和组权限来控制。M以后，多了运行时权限。Android M 引入了runtime permissions，应用在运行时申请权限。不用重启，动态对应用访问授权。这样的话更易用，更安全。该模型将标记为危险的权限从安装时权限 ( Install Time Permission ) 模型移动到运行时权限模型（ Runtime Permissions ）。
+
+init.rc
+
+```
+# Storage views to support runtime permissions
+  mkdir /mnt/runtime 0700 root root
+  mkdir /mnt/runtime/default 0755 root root
+  mkdir /mnt/runtime/default/self 0755 root root
+  mkdir /mnt/runtime/read 0755 root root
+  mkdir /mnt/runtime/read/self 0755 root root
+  mkdir /mnt/runtime/write 0755 root root
+  mkdir /mnt/runtime/write/self 0755 root root
+
+  # Symlink to keep legacy apps working in multi-user world
+  symlink /storage/self/primary /sdcard
+  symlink /storage/self/primary /mnt/sdcard
+  symlink /mnt/user/0/primary /mnt/runtime/default/self/primary
+
+```
+
+sdcard目录是个符号链接，链接到/storage/self/primary
+
+```
+p212:/ # ls -ld /sdcard
+lrwxrwxrwx 1 root root 21 1970-01-01 00:00 /sdcard -> /storage/self/primary
+p212:/ # ls -ld /mnt/user/0/primary
+lrwxrwxrwx 1 root root 19 2015-01-01 00:00 /mnt/user/0/primary -> /storage/emulated/0
+```
+
+/storage/self 是访问 sdcard 的关键路径。 各个路径间的关系：
+
+```
+/sdcard              (intrc)    -> symbol link ->   /storage/self/primary
+/storage/self         (zygote)  -> bind mount  ->   /mnt/user/user_id
+/mnt/user/0/primary  (vold)     -> symbol link ->   /storage/emulated/0
+/storage            (zygote)    -> bind mount  ->   /mnt/runtime/default
+/mnt/runtime/default/emulated   -> fuse mount  ->   /data/media
+```
+
+其中/storage对不同的用户（APK进程）来说，会根据不同的权限bind mount到不同的目录：/mnt/runtime/default，/mnt/runtime/read或者/mnt/runtime/write。
+
+为什么要做这些symbol link和bind mount呢？ 是为了支持多用户和运行时权限。
+
+Vold挂载 volume后，会维护三个不同mount视图：
+
+    /mnt/runtime/default - 对所有的应用、root 命名空间（adb 和其他系统组件）可见，而无需任何权限
+    /mnt/runtime/read - 对有 READ_EXTERNAL_STORAGE 权限的应用可见。
+    /mnt/runtime/write - 对有 WRITE_EXTERNAL_STORAGE 权限的应用可见。
+
+那么apk权限授权是如何做的呢？
+
+frameworks/base/core/jni/com_android_internal_os_Zygote.cpp
+
+```
+// Create a private mount namespace and bind mount appropriate emulated
+// storage for the given user.
+static bool MountEmulatedStorage(uid_t uid, jint mount_mode,
+        bool force_mount_namespace) {
+    // See storage config details at http://source.android.com/tech/storage/
+
+    // Create a second private mount namespace for our process
+    if (unshare(CLONE_NEWNS) == -1) {
+        ALOGW("Failed to unshare(): %s", strerror(errno));
+        return false;
+    }
+
+    String8 storageSource;
+    if (mount_mode == MOUNT_EXTERNAL_DEFAULT) {
+        storageSource = "/mnt/runtime/default";
+    } else if (mount_mode == MOUNT_EXTERNAL_READ) {
+        storageSource = "/mnt/runtime/read";
+    } else if (mount_mode == MOUNT_EXTERNAL_WRITE) {
+        storageSource = "/mnt/runtime/write";
+    } else {
+        // Sane default of no storage visible
+        return true;
+    }
+    if (TEMP_FAILURE_RETRY(mount(storageSource.string(), "/storage",
+            NULL, MS_BIND | MS_REC | MS_SLAVE, NULL)) == -1) {
+        ALOGW("Failed to mount %s to /storage: %s", storageSource.string(), strerror(errno));
+        return false;
+    }
+
+    // Mount user-specific symlink helper into place
+    userid_t user_id = multiuser_get_user_id(uid);
+    const String8 userSource(String8::format("/mnt/user/%d", user_id));
+    if (fs_prepare_dir(userSource.string(), 0751, 0, 0) == -1) {
+        return false;
+    }
+    if (TEMP_FAILURE_RETRY(mount(userSource.string(), "/storage/self",
+            NULL, MS_BIND, NULL)) == -1) {
+        ALOGW("Failed to mount %s to /storage/self: %s", userSource.string(), strerror(errno));
+        return false;
+    }
+
+    return true;
+}
+```
+
+在Zygote fork进程时，会为每个APK mount 一个适合的namespace。上段代码中，具体来说：
+
+>根据 mount mode选择一个默认的挂载路径，并将这个路径挂到 /storage 上。参数是： MS_BIND | MS_REC | MS_SLAVE，这意味着会拷贝命名空间，所以，每个 app 进入的 /storage 都是私有的。
+再根据当前的 user_id ，将 /mnt/user/user_id bind mount到当前 /storage 的 self 目录上。
+
+经过上述两步之后，每个 app 都根据自己的授权，选择了不同权限的 runtime 目录进行访问，而不同用户访问的目录也由用户的 id 区分开了。
+
+
+# 应用程序 runtime 授权
+
+当被授予运行时权限READ_EXTERNAL_STORAGE 或 WRITE_EXTERNAL_STORAGE时，vold 在应用的名字空间上，通过 bind mount 来更新视图。读写storage 运行时权限授权的入口代码是这个：
+
+frameworks/base/services/core/java/com/android/server/pm/PackageManagerService.java
+
+```
+grantRuntimePermission
+ --> onExternalStoragePolicyChanged
+    -->remountUidExternalStorage
+       -->mConnector.execute("volume", "remount_uid", uid, modeName);
+                           ↓
+             -->vm->remountUid(uid, mode)
+```
+
+上述核心代码和 zygote 中很类似，不再赘述，至此，才算彻底搞清楚了 Androd M 在外置存储上权限控制的改变和多用户多进程下的安全原理。
+系统使用 setns() 函数来实现上述特性。
+
+
+
+# sdcardd
+
+Code: system/core/sdcard/sdcard.cpp
+
+android m 以后，sdcard程序是由vold启动的。之前是在init.*.rc里，当Udisk插入时，通过设置property，由init程序启动的。
+
+system/vold/PublicVolume.cpp
+
+```
+ doMount
+
+    if (!(mFusePid = fork())) {
+        if (getMountFlags() & MountFlags::kPrimary) {
+            if (execl(kFusePath, kFusePath,
+                    "-u", "1023", // AID_MEDIA_RW
+                    "-g", "1023", // AID_MEDIA_RW
+                    "-U", std::to_string(getMountUserId()).c_str(),
+                    "-w",
+                    mRawPath.c_str(),
+                    stableName.c_str(),
+                    NULL)) {
+                PLOG(ERROR) << "Failed to exec";
+            }
+        } else {
+            if (execl(kFusePath, kFusePath,
+                    "-u", "1023", // AID_MEDIA_RW
+                    "-g", "1023", // AID_MEDIA_RW
+                    "-U", std::to_string(getMountUserId()).c_str(),
+                    mRawPath.c_str(),
+                    stableName.c_str(),
+                    NULL)) {
+                PLOG(ERROR) << "Failed to exec";
+            }
+        }
+```
+
+sdcard 会起三个pthread 线程，分别响应read, write, default mountpoint下的操作。sdcard会读/dev/fuse， 得到数据后，进行操作。同时把结果写到/dev/fuse里。sdcard 会为每个path虚拟一个struct node结点，有perm, uid,gid的项。
+
+system/core/sdcard/sdcard.cpp
+
+```
+
+    if (multi_user) {
+        /* Multi-user storage is fully isolated per user, so "other"
+         * permissions are completely masked off. */
+        if (fuse_setup(&fuse_default, AID_SDCARD_RW, 0006)
+                || fuse_setup(&fuse_read, AID_EVERYBODY, 0027)
+                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0027)) {
+            PLOG(FATAL) << "failed to fuse_setup";
+        }
+    } else {
+        /* Physical storage is readable by all users on device, but
+         * the Android directories are masked off to a single user
+         * deep inside attr_from_stat(). */
+        if (fuse_setup(&fuse_default, AID_SDCARD_RW, 0006)
+                || fuse_setup(&fuse_read, AID_EVERYBODY, full_write ? 0027 : 0022)
+                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0022)) {
+            PLOG(FATAL) << "failed to fuse_setup";
+        }
+    }
+
+    // Will abort if priv-dropping fails.
+    drop_privs(uid, gid);
+
+    if (multi_user) {
+        fs_prepare_dir(global.obb_path, 0775, uid, gid);
+    }
+
+    if (pthread_create(&thread_default, NULL, start_handler, &handler_default)
+            || pthread_create(&thread_read, NULL, start_handler, &handler_read)
+            || pthread_create(&thread_write, NULL, start_handler, &handler_write)) {
+        LOG(FATAL) << "failed to pthread_create";
+    }
+
+```
+
+从上面这段代码可以看出，default, read 和 write 主要是mount时的gid 和 mask不同。以emulate volume 为例，这样的结果是这三个目录的权限也是不同的：
+
+```
+p212:/ # ls -l /mnt/runtime/default/emulated/
+total 16
+drwxrwx--x 12 root sdcard_rw 4096 2015-01-02 05:27 0
+drwxrwx--x  2 root sdcard_rw 4096 2015-01-01 21:47 obb
+p212:/ # ls -l /mnt/runtime/write/emulated/
+total 16
+drwxrwx--- 12 root everybody 4096 2015-01-02 05:27 0
+drwxrwx---  2 root everybody 4096 2015-01-01 21:47 obb
+p212:/ # ls -l /mnt/runtime/read/emulated/
+total 16
+drwxr-x--- 12 root everybody 4096 2015-01-02 05:27 0
+drwxr-x---  2 root everybody 4096 2015-01-01 21:47 obb
+
+```
+
+
+可以看到，default的组是sdcard_rw, write的组是everybody，但是组权限是7；而read的组也是everybody，但是组权限是5, 没有写权限。
+
+Fuse custom Perm类型有以下几种，
+
+```
+/* Permission mode for a specific node. Controls how file permissions
+ * are derived for children nodes. */
+typedef enum {
+    /* Nothing special; this node should just inherit from its parent. */
+    PERM_INHERIT,
+    /* This node is one level above a normal root; used for legacy layouts
+     * which use the first level to represent user_id. */
+    PERM_PRE_ROOT,
+    /* This node is "/" */
+    PERM_ROOT,
+    /* This node is "/Android" */
+    PERM_ANDROID,
+    /* This node is "/Android/data" */
+    PERM_ANDROID_DATA,
+    /* This node is "/Android/obb" */
+    PERM_ANDROID_OBB,
+    /* This node is "/Android/media" */
+    PERM_ANDROID_MEDIA,
+} perm_t;
+```
+
+
+# summary
+
+由于emulated volume一般是primary volume，也就是APK存放数据的地方。如果/data分区不太大，而APK产生的数据又比较多的话。/data分区非常容易出现空间不足的问题，从而导致android 系统出现问题。目前通常的做法是在fuse这一层，限制/data/media的空间。如果/data分区还剩200M时，那么/datra/media（也就是emulated volume）,就不让写了。
+
+Android 使用fuse 这一层，实现了更好权限控制。但是由于fuse，读写性能相比于Ext4，会有比较大的损失。
+
+Android O上已经启用了sdcardfs，一种性能接近Ext4，同时也可以更好控制权限的文件系统。

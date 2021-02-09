@@ -1,0 +1,983 @@
+# 背景
+
+本文不是主要简介fuse文件系统，本文主要是将Android如何使用fuse文件系统来做到灵活的权限管理。 Android对于外置存储的管理，需要实现以下几个目标：
+
+1、读写外置存储需要 android.permission.READ_EXTERNAL_STORAGE和android.permission.WRITE_EXTERNAL_STORAGE， 这两个权限是运行时权限，可以动态的授予和撤销， 所以主存储目录的权限管理需要动态支持。
+
+2、主存储目录下的${userid}/Android/obb, ${userid}/Android/data, ${userid}/Android/media 下的应用程序包名目录不需要读写存储卡权限。比如 com.androiud.ss.ugc.aweme这个应用程序读写 ${userid}/Android/data/com.androiud.ss.ugc.aweme 目录是不需要申请权限的。
+但是不同应用对应的${userid}/Android/data/${package} 目录是权限隔离的，不能相互访问的。
+
+3、除${userid}/Android/obb/${package}目录外，相同应用程序(相同包名)不同用户( ${userid} )的目录也是权限隔离的。但是${userid}/Android/obb/${package}是跨用户( ${userid} ) 共享的。
+
+要实现上述目标，使用传统文件系统是比较困难的，要使用十分复杂的组管理才能达到目标。为了实现更灵活的权限管理能力，Android引入了fuse文件系统。
+fuse文件系统是一个用户空间的文件系统，需要内核级别的支持。关于fuse文件系统的详细说明请参考[Linux内核fuse文档](https://www.kernel.org/doc/html/latest/filesystems/fuse.html) 。 我们只简单介绍下:
+![](image/2020080507581825.png)
+
+fuse的基本架构如图，Linux为了支持多种文件系统，添加了一个VFS层，通过VFS层进行数据结构抽象，来将文件操作请求转发给具体的文件系统，如常见的ext4，ntfs，fat文件系统等。fuse也是这些常见文件系统中的一种。 不像ext4，ntfs，fat等常见的文件系统，会直接将磁盘上的数据进行抽象组织提供给vfs层，供用户操作，fuse文件系统是将这些操作的请求转发给用户空间的fuse file-system deamon进程，由fuse file-system deamon进程来组织vfs需要的数据。 这样就大大的提高了文件系统的灵活性， 在FUSE file-system daemon中可以提供超级灵活的策略，来对权限，文件信息等数据进行组织。 举个例子，我们将/mnt/runtime/default/emulated目录挂载为fuse文件系统，当我们向/mnt/runtime/default/emulated目录写入数据的时候，我们可以将数据实际写入其他的file system，比如ext4 文件系统下的目录/data/media(前提是FUSE file-system deamon 进程有权限)。 所以fuse文件系统可以提供灵活的文件位置管理。权限管理也是fuse文件系统的一大优势，FUSE file-system deamon进程可以动态的给一个目录设置权限，构造文件权限信息返回给VFS做权限验证。 总之fuse文件系统最大的优势就是灵活。 要实现这套功能，我们可以想象， FUSE driver必然和FUSE file-system deamon 之间有一套通信协议，来处理VFS的文件操作请求。可以想象的一次文件写操作可能是下面这样的（还是以/mnt/runtime/default/emulated为例）：
+
+/mnt/runtime/default/emulated是一个fuse文件系统，Application要在/mnt/runtime/default/emulated目录下创建a.txt文件。 通过open系统调用请求到VFS， VFS将请求转发给FUSE driver， FUSE driver将请求转发给FUSE file-system daemon进程。 然后FUSE file-system daemon返回一个节点信息(/mnt/runtime/default/emulated目录的节点信息inode), 然后FUSE driver将信息给VFS层，VFS层做一系列的权限校验等操作，最终确认可以创建文件，然后将创建文件请求发送给FUSE driver， FUSE driver将请求发送给FUSE file-system daemon进程，FUSE file-system daemon在/data/media/ 创建a.txt文件，这个过程又会通过open调用VFS层，不过这次VFS层请求/data/media/ 目录对应的ext4文件系统来创建a.txt文件， 所以应用程序请求创建/mnt/runtime/default/emulated/a.txt文件，实际上创建的是/data/media/a.txt文件。假如FUSE file-system daemon进程对/data/media/a.txt看到的权限是777，它可以让应用程序看到的/mnt/runtime/default/emulated/a.txt的权限是711。假如FUSE file-system daemon看到的/data/media/a.txt的属主和属组是都是AID_SDCARD_RW，它可以让应用程序看到的/mnt/runtime/default/emulated/a.txt数组和属主都是AID_EVERYBODY。 文件的读写删除最终都是由FUSE file-system daemon来完成，不管实际要求操作的应用程序是否有权限，只要FUSE file-system daemon进程有权限即可完成相关操作，所以控制权都在FUSE file-system daemon进程手上。
+
+# Android 实现
+
+ 知道了fuse的灵活性之后，我们再来说明Android如何使用fuse来实现外置存储的管理目标。 下面我们拿使用/data分区来模拟主存储的情况进行说明。
+
+1、为了实现动态的外置存储权限，Android会挂载三个目录到/dev/fuse来对应同一个外置存储，三个目录分别是/mnt/runtime/default/${label}， /mnt/runtime/read/${label}，/mnt/runtime/write/${label}, 这三个目录代表不同的权限，当一个应用进程取得了读外置存储的权限，那么它将使用 /mnt/runtime/read/${label} 目录来操作外置存储，当一个应用程序取得了写外置存储的权限，那么它将使用/mnt/runtime/write/${label}目录来操作外置存储。当一个应用程序没有获取操作外置存储的权限，将使用/mnt/runtime/default/${label}目录来操作主存储。三个fuse目录最终都会作用于外置存储的media目录，只不过对目录下的可进行的操作权限是不同的。Android 的FUSE file-system daemon会根据应用程序进程使用的fuse目录来决定是否可以读写外置存储的media目录下的数据。
+
+2、${userid}/Android/obb, ${userid}/Android/data, ${userid}/Android/media 下的${package} 权限管理则根据/data/system/packages.list文件中的内容来完成。 如果一个应用程序操作fuse目录，FUSE file-system daemon处理文件请求的时候可以获取操作文件的进程的uid，并根据/data/system/packages.list下的内容找到uid对应的包名，如果进程操作的报名和uid相对应，则允许操作，否则拒绝操作。
+
+3、不同userid对应的相同应用的uid不同，根据 2中规则，即可实现 相同应用程序(相同包名)不同用户( ${userid} )的目录的权限隔离。
+整体架构
+
+ 我们回过头来看下EmulatedVolume挂载时如何启动FUSE file-system daemon，关于EmulatedVolume相关知识请参考[Android存储系统-MountService](https://blog.csdn.net/woai110120130/article/details/107329827) 和vold 对外置存储的管理（1） 。
+
+system/vold/EmulatedVolume.cpp
+```
+static const char* kFusePath = "/system/bin/sdcard";
+
+status_t EmulatedVolume::doMount() {
+    // We could have migrated storage to an adopted private volume, so always
+    // call primary storage "emulated" to avoid media rescans.
+    std::string label = mLabel;
+    if (getMountFlags() & MountFlags::kPrimary) {
+        label = "emulated";
+    }
+
+    mFuseDefault = StringPrintf("/mnt/runtime/default/%s", label.c_str());
+    mFuseRead = StringPrintf("/mnt/runtime/read/%s", label.c_str());
+    mFuseWrite = StringPrintf("/mnt/runtime/write/%s", label.c_str());
+
+    setInternalPath(mRawPath);
+    setPath(StringPrintf("/storage/%s", label.c_str()));
+
+    if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << getId() << " failed to create mount points";
+        return -errno;
+    }
+
+    dev_t before = GetDevice(mFuseWrite);
+
+    if (!(mFusePid = fork())) {
+        if (execl(kFusePath, kFusePath,
+                "-u", "1023", // AID_MEDIA_RW
+                "-g", "1023", // AID_MEDIA_RW
+                "-m",
+                "-w",
+                mRawPath.c_str(),
+                label.c_str(),
+                NULL)) {
+            PLOG(ERROR) << "Failed to exec";
+        }
+
+        LOG(ERROR) << "FUSE exiting";
+        _exit(1);
+    }
+
+    if (mFusePid == -1) {
+        PLOG(ERROR) << getId() << " failed to fork";
+        return -errno;
+    }
+
+    while (before == GetDevice(mFuseWrite)) {
+        LOG(VERBOSE) << "Waiting for FUSE to spin up...";
+        usleep(50000); // 50ms
+    }
+
+    return OK;
+}
+
+```
+
+
+根据代码我们可以得出启动FUSE file-system daemon 的命令为:
+
+  /system/bin/sdcard -u 1023 -g 1023 -m -w ${mRawPath} ${label}
+
+   ```
+
+   这里-u 参数指定uid 为1023 是media账号的uid， -g指定gid是media组的gid， -m表示支持多用户， -w表示全写模式， mRawPath就是外置存储的目标目录，比如/data/media 。 ${label} 用于区分fuse 目录，比如/dev/fuse 会挂载到/mnt/runtime/write/${label}，用于 ${mRawPath} 的写访问路径。 知道这些我们就来看看sdcard的代码吧，它是FUSE file-system daemon 的实现。
+  ```
+  ![](image/20200809102048917.png)
+
+  如上图所示，Android的sdcard进程中有四个线程， 其中main线程在创建了其他三个线程后调用watch_package_list()函数，来读取/data/system/packages_list.xml文件的内容。sdcard进程通过读取/data/system/packages_list.xml的内容，来维护程序包名和uid的关系，针对外置存储下 ${user_id}/Android 目录的动态权限做处理，基本思路就是当应用程序读写${user_id}/Android/media|obb|data/${package_name} 下文件的时候，把该目录下的文件属主都改成应用程序的uid，作为文件的属主基本上就获得了文件的读写权限，这样应用程序就可以不需要获取外置存储读写权限来读写${user_id}/Android/media|obb|data/${package_name} 下的文件了（因为应用程序就是属主）。
+
+packages.list文件内容。
+```
+com.android.soundrecorder 10021 0 /data/data/com.android.soundrecorder
+com.android.sdksetup 10020 0 /data/data/com.android.sdksetup
+com.android.launcher 10005 0 /data/data/com.android.launcher
+com.android.defcontainer 10009 0 /data/data/com.android.defcontainer
+com.android.smoketest 10044 0 /data/data/com.android.smoketest
+
+```
+
+其他三个线程，每个线程负责一个fuse目录的读写请求。thread_default线程负责/mnt/runtime/default/${label} 目录的读写，thread_read 负责 /mnt/runtime/read/${label}目录的读写， thread_write负责 /mnt/runtime/read/${label}目录的读写，三个线程都是接收fuse driver的文件操作请求，然后将请求转化为对source_path 文件夹的读写。 不同点就是三个线程默认的umask和gid不同。 这里我列了一张表格，如下
+
+表格1-1
+
+线程 | 管理的fuse目录 | umask | gid | Android目录权限 | 其他目录权限
+- | -|-|-|-|-
+thread_default |	/mnt/runtime/default/${label}	|0006 |	AID_SDCARD_RW	 | 771 |	770
+thread_read	| /mnt/runtime/read/${label}	|0027	 | AID_EVERYBODY	|750	|750
+thread_write |	/mnt/runtime/write/${label}	|0007	 |AID_EVERYBODY	 | 770	|770
+
+
+
+如上面表格所示，如果应该应用程序没有获得读写外置存储权限，那么它操作/mnt/runtime/default/${label}文件夹下的文件，经由 thread_default线程处理。thread_default线程会将/mnt/runtime/default/${label}/${user_id}/${Android} 下的所有文件权限设置为 771，也就是属主和属组可读写执行，其他用户可执行。/mnt/runtime/default/${label}/${user_id}/下的其他文件权限设置成770，表示其他组不可执行。另外thread_default线程会将/mnt/runtime/default/${label}下的所有文件属组映射成AID_SDCARD_RW。 一般的应用程序不属于AID_SDCARD_RW组，所以无法进行读写，但是属于AID_SDCARD_RW组的特权程序还是可以读写的。
+
+ 如果一个应用程序获取了读外置存储权限，而没有获取写外置存储权限，则它看到的目录是/mnt/runtime/read/${label}目录， 经由 thread_read线程处理。thread_read线程会将/mnt/runtime/read/${label}/${user_id}/下的所有文件权限设置为 750，也就是属主可读写执行，属组可读可执行，其他组无任何权限。另外thread_read线程会将/mnt/runtime/default/${label}下的所有文件属主映射成AID_EVERYBODY。 一般的应用程序属于AID_EVERYBODY组，所以可以进行读操作，对于${user_id}/Android/media|obb|data/${package_name} 目录，由于属主就是应用程序本身的uid，所以读写执行都可以。
+
+ 如果一个应用程序获取了读权限，而没有获取写外置存储权限，则它看到的目录是/mnt/runtime/write/${label}目录， 经由 thread_write线程处理。thread_write线程会将/mnt/runtime/write/${label}/${user_id}/下的所有文件权限设置为770，也就是属主属组可读写执行，其他组无任何权限。另外thread_write线程会将/mnt/runtime/default/${label}下的所有文件属主映射成AID_EVERYBODY。 一般的应用程序属于AID_EVERYBODY组，所以可以进行读写执行操作。
+
+ 上面介绍了sdcard卡对外置存储权限管理的设计思路，下面我们顺着代码来看一遍。
+
+代码分析
+
+system/core/sdcard/sdcard.c
+```
+int main(int argc, char **argv) {
+    ......
+    rlim.rlim_cur = 8192;
+    rlim.rlim_max = 8192;
+    if (setrlimit(RLIMIT_NOFILE, &rlim)) {
+        ERROR("Error setting RLIMIT_NOFILE, errno = %d\n", errno);
+    }
+
+   .......
+    run(source_path, label, uid, gid, userid, multi_user, full_write);
+}
+
+```
+
+上述代码省略了参数解析， 最终调用run函数， run函数的参数和我们调用sdcard程序传参含义一样。 source_path为外置存储上的路径。
+```
+static void run(const char* source_path, const char* label, uid_t uid,
+        gid_t gid, userid_t userid, bool multi_user, bool full_write) {
+    struct fuse_global global; //用于记录全局信息，主要是fuse路径和 source_path（外置存储的关系）
+    struct fuse fuse_default; // 没有读写权限的fuse 信息
+    struct fuse fuse_read; // 读权限的fuse信息
+    struct fuse fuse_write; // 写权限的fuse信息
+    struct fuse_handler handler_default;
+    struct fuse_handler handler_read;
+    struct fuse_handler handler_write;
+    pthread_t thread_default; //无权限fuse工作线程。
+    pthread_t thread_read; //读权限fuse工作线程。
+    pthread_t thread_write; // 写权限fuse工作线程。
+
+    memset(&global, 0, sizeof(global));
+    memset(&fuse_default, 0, sizeof(fuse_default));
+    memset(&fuse_read, 0, sizeof(fuse_read));
+    memset(&fuse_write, 0, sizeof(fuse_write));
+    memset(&handler_default, 0, sizeof(handler_default));
+    memset(&handler_read, 0, sizeof(handler_read));
+    memset(&handler_write, 0, sizeof(handler_write));
+
+    pthread_mutex_init(&global.lock, NULL);
+    global.package_to_appid = hashmapCreate(256, str_hash, str_icase_equals); // 保存包名和uid关系的hash map，用于${source_path}/Android目录权限管理
+    global.uid = uid;  //fuse 根目录属主
+    global.gid = gid; // fuse 根目录属组
+    global.multi_user = multi_user; // 是否支持多用户
+    global.next_generation = 0;
+    global.inode_ctr = 1; // inode 号
+
+    memset(&global.root, 0, sizeof(global.root));
+    global.root.nid = FUSE_ROOT_ID; /* 1 */
+    global.root.refcount = 2;
+    global.root.namelen = strlen(source_path);
+    global.root.name = strdup(source_path);  // 后端路径
+    global.root.userid = userid; // 创建者的userid
+    global.root.uid = AID_ROOT;
+    global.root.under_android = false;
+
+    strcpy(global.source_path, source_path);
+
+    if (multi_user) {
+        global.root.perm = PERM_PRE_ROOT; //支持多用户设置根目录权限为PERM_PRE_ROOT
+        snprintf(global.obb_path, sizeof(global.obb_path), "%s/obb", source_path);
+    } else {
+        global.root.perm = PERM_ROOT; //不支持多用户设置根目录权限为PERM_ROOT
+        snprintf(global.obb_path, sizeof(global.obb_path), "%s/Android/obb", source_path);
+    }
+
+    fuse_default.global = &global;
+    fuse_read.global = &global;
+    fuse_write.global = &global;
+
+    global.fuse_default = &fuse_default;
+    global.fuse_read = &fuse_read;
+    global.fuse_write = &fuse_write;
+
+    1. 设置挂载路径
+    snprintf(fuse_default.dest_path, PATH_MAX, "/mnt/runtime/default/%s", label);
+    snprintf(fuse_read.dest_path, PATH_MAX, "/mnt/runtime/read/%s", label);
+    snprintf(fuse_write.dest_path, PATH_MAX, "/mnt/runtime/write/%s", label);
+
+    handler_default.fuse = &fuse_default;
+    handler_read.fuse = &fuse_read;
+    handler_write.fuse = &fuse_write;
+
+    handler_default.token = 0;
+    handler_read.token = 1;
+    handler_write.token = 2;
+
+    umask(0);
+
+    if (multi_user) {
+        /* Multi-user storage is fully isolated per user, so "other"
+         * permissions are completely masked off. */
+        if (fuse_setup(&fuse_default, AID_SDCARD_RW, 0006) // 无外置存储权限，默认只支持执行权限
+                || fuse_setup(&fuse_read, AID_EVERYBODY, 0027) //有读外置存储权限。默认支持属主读权限和数组读写权限
+                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0027)) { // 有写外置存储权限，只有在全写模式下树主才有写权限，否则只有读权限
+            ERROR("failed to fuse_setup\n");
+            exit(1);
+        }
+    } else {
+        /* Physical storage is readable by all users on device, but
+         * the Android directories are masked off to a single user
+         * deep inside attr_from_stat(). */
+        if (fuse_setup(&fuse_default, AID_SDCARD_RW, 0006)
+                || fuse_setup(&fuse_read, AID_EVERYBODY, full_write ? 0027 : 0022)
+                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0022)) {
+            ERROR("failed to fuse_setup\n");
+            exit(1);
+        }
+    }
+
+    /* Drop privs */
+    if (setgroups(sizeof(kGroups) / sizeof(kGroups[0]), kGroups) < 0) { // 取消特权组，只保留AID_PACKAGE_INFO组，用于读取/data/system/packages.list文件
+        ERROR("cannot setgroups: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (setgid(gid) < 0) { // 设置gid，保证拥有source_path的读写权限
+        ERROR("cannot setgid: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (setuid(uid) < 0) { // 设置gid，保证拥有source_path的读写权限
+        ERROR("cannot setuid: %s\n", strerror(errno));
+        exit(1);
+    }
+
+    if (multi_user) { // 创建obb共享文件夹。
+        fs_prepare_dir(global.obb_path, 0775, uid, gid);
+    }
+
+    if (pthread_create(&thread_default, NULL, start_handler, &handler_default)
+            || pthread_create(&thread_read, NULL, start_handler, &handler_read)
+            || pthread_create(&thread_write, NULL, start_handler, &handler_write)) { // 启动三个线程用于处理三个fuse目录的文件操作请求
+        ERROR("failed to pthread_create\n");
+        exit(1);
+    }
+
+    watch_package_list(&global);
+    ERROR("terminated prematurely\n");
+    exit(1);
+}
+
+```
+
+
+run函数准备三个fuse目录，分别是/mnt/runtime/default/${lable},/mnt/runtime/read/${lable}. /mnt/runtime/default/${lable}，然后通过fuse_setup进行挂载。 最后创建三个线程用于处理三个目录的读写请求。 我们先来看下fuse的挂载。
+
+```
+static int fuse_setup(struct fuse* fuse, gid_t gid, mode_t mask) {
+    char opts[256];
+
+    fuse->fd = open("/dev/fuse", O_RDWR);
+    if (fuse->fd == -1) {
+        ERROR("failed to open fuse device: %s\n", strerror(errno));
+        return -1;
+    }
+
+    umount2(fuse->dest_path, MNT_DETACH);
+
+    snprintf(opts, sizeof(opts),
+            "fd=%i,rootmode=40000,default_permissions,allow_other,user_id=%d,group_id=%d",
+            fuse->fd, fuse->global->uid, fuse->global->gid);
+    if (mount("/dev/fuse", fuse->dest_path, "fuse", MS_NOSUID | MS_NODEV | MS_NOEXEC |
+            MS_NOATIME, opts) != 0) {
+        ERROR("failed to mount fuse filesystem: %s\n", strerror(errno));
+        return -1;
+    }
+
+    fuse->gid = gid;
+    fuse->mask = mask;
+
+    return 0;
+}
+
+```
+
+挂载使用mount函数来进行， 挂载参数为fd=%i,rootmode=40000,default_permissions,allow_other,user_id=%d,group_id=%d。这里一个至关重要的参数fuse->fd是通过打开/dev/fuse得到的，它的作用类似一个上下文，绑定该目录到这个文件描述后，以后fuse 内核驱动上来的文件操作请求都会写入fuse->fd， 只要读取fuse->fd就能获得fuse 内核驱动上来的文件操作请求。 另外还值得注意的一点，fuse_setup的第二个参数为gid，对于 /mnt/runtime/default/${lable} 目录设置的gid为AID_SDCARD_RW，一般应用程序不属于该组。/mnt/runtime/read/${lable} 和/mnt/runtime/write/${lable}目录设置的gid为AID_EVERYBODY，所有的应用程序都属于该组。 fuse服务线程调用的函数为start_handler，用于处理文件操作请求。参数fuse_handler用于保存当前线程处理的fuse的上下文信息。
+
+```
+static void* start_handler(void* data)
+{
+    struct fuse_handler* handler = data;
+    handle_fuse_requests(handler);
+    return NULL;
+}
+
+```
+```
+
+static void handle_fuse_requests(struct fuse_handler* handler)
+{
+    struct fuse* fuse = handler->fuse;
+    for (;;) {
+        // 1 监听 fuse driver 发上来的请求，写入handler->request_buffer
+        ssize_t len = TEMP_FAILURE_RETRY(read(fuse->fd,
+                handler->request_buffer, sizeof(handler->request_buffer)));
+        if (len < 0) {
+            if (errno == ENODEV) {
+                ERROR("[%d] someone stole our marbles!\n", handler->token);
+                exit(2);
+            }
+            ERROR("[%d] handle_fuse_requests: errno=%d\n", handler->token, errno);
+            continue;
+        }
+
+        if ((size_t)len < sizeof(struct fuse_in_header)) {
+            ERROR("[%d] request too short: len=%zu\n", handler->token, (size_t)len);
+            continue;
+        }
+        // 2 将消息转成fuse_in_header + data 两部分
+        const struct fuse_in_header *hdr = (void*)handler->request_buffer;
+        if (hdr->len != (size_t)len) {
+            ERROR("[%d] malformed header: len=%zu, hdr->len=%u\n",
+                    handler->token, (size_t)len, hdr->len);
+            continue;
+        }
+
+        const void *data = handler->request_buffer + sizeof(struct fuse_in_header);
+        size_t data_len = len - sizeof(struct fuse_in_header);
+        __u64 unique = hdr->unique;
+
+        // 3 处理请求
+        int res = handle_fuse_request(fuse, handler, hdr, data, data_len);
+
+        /* We do not access the request again after this point because the underlying
+         * buffer storage may have been reused while processing the request. */
+
+        if (res != NO_STATUS) {
+            if (res) {
+                TRACE("[%d] ERROR %d\n", handler->token, res);
+            }
+            fuse_status(fuse, unique, res);
+        }
+    }
+}
+
+```
+
+ start_handler 调用handle_fuse_requests来接收处理fuse driver送上来的请求， handle_fuse_requests 通过打开的/dev/fuse文件描述符来读取fuse driver送上来的请求， 然后将请求转换成fuse_in_header + data 两部分，交给handle_fuse_request函数还实际处理。
+
+ ```
+ static int handle_fuse_request(struct fuse *fuse, struct fuse_handler* handler,
+        const struct fuse_in_header *hdr, const void *data, size_t data_len) {
+    switch (hdr->opcode) {
+    case FUSE_LOOKUP: { /* bytez[] -> entry_out */
+        const char* name = data;
+        return handle_lookup(fuse, handler, hdr, name);
+    }
+    .......
+    case FUSE_OPEN: { /* open_in -> open_out */
+        const struct fuse_open_in *req = data;
+        return handle_open(fuse, handler, hdr, req);
+    }
+
+    case FUSE_READ: { /* read_in -> byte[] */
+        const struct fuse_read_in *req = data;
+        return handle_read(fuse, handler, hdr, req);
+    }
+    .......
+    case FUSE_MKDIR: { /* mkdir_in, bytez[] -> entry_out */
+        const struct fuse_mkdir_in *req = data;
+        const char *name = ((const char*) data) + sizeof(*req);
+        return handle_mkdir(fuse, handler, hdr, req, name);
+    }
+    ......
+    default: {
+        TRACE("[%d] NOTIMPL op=%d uniq=%"PRIx64" nid=%"PRIx64"\n",
+                handler->token, hdr->opcode, hdr->unique, hdr->nodeid);
+        return -ENOSYS;
+    }
+}
+
+ ```
+
+ handle_fuse_request 处理的消息类型比较多，这里只介FUSE_MKDIR消息，用于创建文件夹。
+
+ 我们先来看看对创建文件夹请求的处理。
+
+ ```
+ static int handle_mkdir(struct fuse* fuse, struct fuse_handler* handler,
+        const struct fuse_in_header* hdr, const struct fuse_mkdir_in* req, const char* name)
+{
+    struct node* parent_node;
+    char parent_path[PATH_MAX];
+    char child_path[PATH_MAX];
+    const char* actual_name;
+
+    pthread_mutex_lock(&fuse->global->lock);
+
+    // 1 找到父节点（parent_path为对应真实要操作目录， source_path路径）
+    parent_node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid,
+            parent_path, sizeof(parent_path));
+    TRACE("[%d] MKDIR %s 0%o @ %"PRIx64" (%s)\n", handler->token,
+            name, req->mode, hdr->nodeid, parent_node ? parent_node->name : "?");
+    pthread_mutex_unlock(&fuse->global->lock);
+
+    // 2 父节点不存在或者要创建的文件路径太长 返回-ENOENT
+    if (!parent_node || !(actual_name = find_file_within(parent_path, name,
+            child_path, sizeof(child_path), 1))) {
+        return -ENOENT;
+    }
+    // 3 进一步权限检查
+    if (!check_caller_access_to_name(fuse, hdr, parent_node, name, W_OK)) {
+        return -EACCES;
+    }
+   // 4 真正创建文件夹
+    __u32 mode = (req->mode & (~0777)) | 0775;
+    if (mkdir(child_path, mode) < 0) {
+        return -errno;
+    }
+
+    // 5 如果新建目录是 Android/data 和 /Android/obb 目录，添加.nomedia文件，禁止media扫描
+    /* When creating /Android/data and /Android/obb, mark them as .nomedia */
+    if (parent_node->perm == PERM_ANDROID && !strcasecmp(name, "data")) {
+        char nomedia[PATH_MAX];
+        snprintf(nomedia, PATH_MAX, "%s/.nomedia", child_path);
+        if (touch(nomedia, 0664) != 0) {
+            ERROR("Failed to touch(%s): %s\n", nomedia, strerror(errno));fuse_setup
+            return -ENOENT;
+        }
+    }
+    if (parent_node->perm == PERM_ANDROID && !strcasecmp(name, "obb")) {
+        char nomedia[PATH_MAX];
+        snprintf(nomedia, PATH_MAX, "%s/.nomedia", fuse->global->obb_path);
+        if (touch(nomedia, 0664) != 0) {
+            ERROR("Failed to touch(%s): %s\n", nomedia, strerror(errno));
+            return -ENOENT;
+        }
+    }
+    // 6 构造回包
+    return fuse_reply_entry(fuse, hdr->unique, parent_node, name, actual_name, child_path);
+}
+
+ ```
+
+
+ handle_mkdir 创建文件夹分为6步：
+
+1、 lookup_node_and_path_by_id_locked函数: 找到要创建的文件夹父节点，也就是source_path对应的目录节点。
+
+2、 父节点不存在或者要创建的文件路径太长 返回-ENOENT。
+
+3、check_caller_access_to_name 进一步检查权限。
+
+4、使用mkdir 在source_path 目录下真正创建目录。
+
+5、如果创建的目录是/Android/obb 或者/Android/data文件夹，创建.nomedia文件，禁止media provider扫描。
+
+6、 fuse_reply_entry构造回包。
+
+我们按照上面6步往下看
+```
+static struct node* lookup_node_and_path_by_id_locked(struct fuse* fuse, __u64 nid,
+       char* buf, size_t bufsize)
+{
+   struct node* node = lookup_node_by_id_locked(fuse, nid);
+   if (node && get_node_path_locked(node, buf, bufsize) < 0) {
+       node = NULL;
+   }
+   return node;
+}
+
+static struct node *lookup_node_by_id_locked(struct fuse *fuse, __u64 nid)
+{
+   if (nid == FUSE_ROOT_ID) {
+       return &fuse->global->root;
+   } else {
+       return id_to_ptr(nid);
+   }
+}
+
+static inline void *id_to_ptr(__u64 nid)
+{
+   return (void *) (uintptr_t) nid;
+}
+
+```
+ lookup_node_and_path_by_id_locked 函数有限调用lookup_node_by_id_locked函数根据nid获取node节点，也就是lookup_node_by_id_locked函数所做的工作， lookup_node_by_id_locked函数会判断如果nid是FUSE_ROOT_ID，对应的node节点就是fuse->global->root，也即是source_path根目录对应的节点。 如果nid不是FUSE_ROOT_ID，那么他就是一个node指针，通过id_to_ptr函数进行强制转换为node数据结构。 get_node_path_locked函数则根据node结构找到对应的source_path 路径。
+
+ ```
+ 315 /* Gets the absolute path to a node into the provided buffer.
+316  *
+317  * Populates 'buf' with the path and returns the length of the path on success,
+318  * or returns -1 if the path is too long for the provided buffer.
+319  */
+320 static ssize_t get_node_path_locked(struct node* node, char* buf, size_t bufsize) {
+321     const char* name;
+322     size_t namelen;
+323     if (node->graft_path) {
+324         name = node->graft_path;
+325         namelen = node->graft_pathlen;
+326     } else if (node->actual_name) {
+327         name = node->actual_name;
+328         namelen = node->namelen;
+329     } else {
+330         name = node->name;
+331         namelen = node->namelen;
+332     }
+333
+334     if (bufsize < namelen + 1) {
+335         return -1;
+336     }
+337
+338     ssize_t pathlen = 0;
+339     if (node->parent && node->graft_path == NULL) {
+340         pathlen = get_node_path_locked(node->parent, buf, bufsize - namelen - 1);
+341         if (pathlen < 0) {
+342             return -1;
+343         }
+344         buf[pathlen++] = '/';
+345     }
+346
+347     memcpy(buf + pathlen, name, namelen + 1); /* include trailing \0 */
+348     return pathlen + namelen;
+349 }
+
+ ```
+
+ 通过node获取真实路径的过程主要是从node->graft_path 或者node->actual_name 或者node->name选择一个作为路径。 在sdcard的run函数中有一句话 global.root.name = strdup(source_path); ，所以如果是root节点就是对应的目录就是source_path,其他节点将对应root节点下的子目录树下的节点。node->graft_path 主要是为了实现跨用户共享目录，也就是Android/obb目录的特点，后面讲obb目录的时候再来详细说明。 actual_name则是因为Android希望外置存储不区分大小写，但是source_path可能是一个支持大小写的文件系统。所以这里name为一个用户传过来的节点名称，而node->actual_name代表source_path上的文件的真实名称。 339行-347行，主要用于将找到绝对路径，所以顺着node节点向上寻找，来填充路径，由于node->graft_path 本上就是一个绝对路径，所以不需要向上寻找。
+
+找到父节点之后就是判断父节点的可用性，这里有一个find_file_within函数，用于判断父节点是否可用:
+
+```
+static char* find_file_within(const char* path, const char* name,
+        char* buf, size_t bufsize, int search)
+{
+    size_t pathlen = strlen(path);
+    size_t namelen = strlen(name);
+    size_t childlen = pathlen + namelen + 1;
+    char* actual;
+
+    if (bufsize <= childlen) {
+        return NULL;
+    }
+
+    memcpy(buf, path, pathlen);
+    buf[pathlen] = '/';
+    actual = buf + pathlen + 1;
+    memcpy(actual, name, namelen + 1);
+
+    if (search && access(buf, F_OK)) {
+        struct dirent* entry;
+        DIR* dir = opendir(path);
+        if (!dir) {
+            ERROR("opendir %s failed: %s\n", path, strerror(errno));
+            return actual;
+        }
+        while ((entry = readdir(dir))) {
+            if (!strcasecmp(entry->d_name, name)) {
+                /* we have a match - replace the name, don't need to copy the null again */
+                memcpy(actual, entry->d_name, namelen);
+                break;
+            }
+        }
+        closedir(dir);
+    }
+    return actual;
+}
+
+```
+ 这里首先判断文件要创建的文件路径长度是否合法，不合法返回NULL， 如果合法，在来看下能否找到actual_name。actual_name作为返回值返回。
+
+```
+/* Kernel has already enforced everything we returned through
+ * derive_permissions_locked(), so this is used to lock down access
+ * even further, such as enforcing that apps hold sdcard_rw. */
+static bool check_caller_access_to_name(struct fuse* fuse,
+        const struct fuse_in_header *hdr, const struct node* parent_node,
+        const char* name, int mode) {
+    /* Always block security-sensitive files at root */
+    if (parent_node && parent_node->perm == PERM_ROOT) {
+        if (!strcasecmp(name, "autorun.inf")
+                || !strcasecmp(name, ".android_secure")
+                || !strcasecmp(name, "android_secure")) {
+            return false;
+        }
+    }
+
+    /* Root always has access; access for any other UIDs should always
+     * be controlled through packages.list. */
+    if (hdr->uid == 0) {
+        return true;
+    }
+
+    /* No extra permissions to enforce */
+    return true;
+}
+
+```
+
+check_caller_access_to_name这一步主要判断是否要操作autorun.inf， .android_secure， android_secure这三个文件， 由于这三个文件比较敏感，禁止任何程程序通过fuse去读写。 其他的一律放行。最后比较值得看的函数就是 fuse_reply_entry构造回包函数了。
+```
+static int fuse_reply_entry(struct fuse* fuse, __u64 unique,
+        struct node* parent, const char* name, const char* actual_name,
+        const char* path)
+{
+    struct node* node;
+    struct fuse_entry_out out;
+    struct stat s;
+
+    if (lstat(path, &s) < 0) {
+        return -errno;
+    }
+
+    pthread_mutex_lock(&fuse->global->lock);
+    //1 创建新节点
+    node = acquire_or_create_child_locked(fuse, parent, name, actual_name);
+    if (!node) {
+        pthread_mutex_unlock(&fuse->global->lock);
+        return -ENOMEM;
+    }
+    memset(&out, 0, sizeof(out));
+    // 2 设置新节点属性
+    attr_from_stat(fuse, &out.attr, &s, node);
+    out.attr_valid = 10;
+    out.entry_valid = 10;
+    out.nodeid = node->nid;
+    out.generation = node->gen;
+    pthread_mutex_unlock(&fuse->global->lock);
+    // 3 返回数据给fuse driver
+    fuse_reply(fuse, unique, &out, sizeof(out));
+    return NO_STATUS;
+}
+
+```
+
+fuse_reply_entry 函数也是分三步来构造请求:
+
+1、 acquire_or_create_child_locked 为新创建的目录构造node节点。
+
+2、attr_from_stat 设置属性节点。
+
+3、构造回包。
+
+我们详细看下:
+
+```
+static struct node* acquire_or_create_child_locked(
+        struct fuse* fuse, struct node* parent,
+        const char* name, const char* actual_name)
+{
+    struct node* child = lookup_child_by_name_locked(parent, name);
+    if (child) {
+        acquire_node_locked(child);
+    } else {
+        child = create_node_locked(fuse, parent, name, actual_name);
+    }
+    return child;
+}
+
+static void acquire_node_locked(struct node* node)
+{
+    node->refcount++;
+    TRACE("ACQUIRE %p (%s) rc=%d\n", node, node->name, node->refcount);
+}
+
+```
+
+如果node已经存在，引用计数加1， 不存在则调用create_node_locked来创建。
+
+```
+struct node *create_node_locked(struct fuse* fuse,
+        struct node *parent, const char *name, const char* actual_name)
+{
+    struct node *node;
+    size_t namelen = strlen(name);
+
+    // Detect overflows in the inode counter. "4 billion nodes should be enough
+    // for everybody".
+    if (fuse->global->inode_ctr == 0) { // inode number溢出，返回NULL
+        ERROR("No more inode numbers available");
+        return NULL;
+    }
+
+    node = calloc(1, sizeof(struct node)); // 申请node内存
+    if (!node) {
+        return NULL;
+    }
+    node->name = malloc(namelen + 1); // 设置名字
+    if (!node->name) {
+        free(node);
+        return NULL;
+    }
+    memcpy(node->name, name, namelen + 1);
+    if (strcmp(name, actual_name)) { // 设置 actual
+        node->actual_name = malloc(namelen + 1);
+        if (!node->actual_name) {
+            free(node->name);
+            free(node);
+            return NULL;
+        }
+        memcpy(node->actual_name, actual_name, namelen + 1);
+    }
+    node->namelen = namelen;
+    node->nid = ptr_to_id(node); // 将指针强转为nid
+    node->ino = fuse->global->inode_ctr++; //分配inode号
+    node->gen = fuse->global->next_generation++;
+
+    node->deleted = false;
+
+    derive_permissions_locked(fuse, parent, node); // 设置权限
+    acquire_node_locked(node); //引用计数加1
+    add_node_to_parent_locked(node, parent); // 设置父子关系。
+    return node;
+}
+
+```
+
+node的创建也比较简单，基本都当注释写在代码上了，这其中有derive_permissions_locked函数用于设置node节点的权限，是Android fuse daemon权限管理的核心。分析derive_permissions_locked函数之前我们先来看下另外一个函数， 在sdcard启动过程中run函数最后调用了 watch_package_list(&global)函数，我们先来分析这个函数。
+
+
+```
+static const char* const kPackagesListFile = "/data/system/packages.list";
+
+static void watch_package_list(struct fuse_global* global) {
+    struct inotify_event *event;
+    char event_buf[512];
+
+    int nfd = inotify_init();
+    if (nfd < 0) {
+        ERROR("inotify_init failed: %s\n", strerror(errno));
+        return;
+    }
+
+    bool active = false;
+    while (1) {
+        if (!active) {
+            // 使用inotify观察/data/system/packages.list文件删除事件，当安装或者卸载应用后，该文件就会重建。
+            int res = inotify_add_watch(nfd, kPackagesListFile, IN_DELETE_SELF);
+            if (res == -1) {
+                if (errno == ENOENT || errno == EACCES) {
+                    /* Framework may not have created yet, sleep and retry */
+                    ERROR("missing packages.list; retrying\n");
+                    sleep(3);
+                    continue;
+                } else {
+                    ERROR("inotify_add_watch failed: %s\n", strerror(errno));
+                    return;
+                }
+            }
+
+            /* Watch above will tell us about any future changes, so
+             * read the current state. */
+            if (read_package_list(global) == -1) { // 读取新的/data/system/packages.list文件
+                ERROR("read_package_list failed: %s\n", strerror(errno));
+                return;
+            }
+            active = true;
+        }
+
+        int event_pos = 0;
+        int res = read(nfd, event_buf, sizeof(event_buf));
+        if (res < (int) sizeof(*event)) {
+            if (errno == EINTR)
+                continue;
+            ERROR("failed to read inotify event: %s\n", strerror(errno));
+            return;
+        }
+
+        while (res >= (int) sizeof(*event)) {
+            int event_size;
+            event = (struct inotify_event *) (event_buf + event_pos);
+
+            TRACE("inotify event: %08x\n", event->mask);
+            if ((event->mask & IN_IGNORED) == IN_IGNORED) {
+                /* Previously watched file was deleted, probably due to move
+                 * that swapped in new data; re-arm the watch and read. */
+                active = false;
+            }
+
+            event_size = sizeof(*event) + event->len;
+            res -= event_size;
+            event_pos += event_size;
+        }
+    }
+}
+
+```
+
+这个函数虽然很长，但是核心逻辑就是通过inotify机制观察/data/system/packages.list文件变化，当文件变化后进行读取。大部分逻辑都是处理inotify的，最主要的是read_package_list函数。
+```
+static int read_package_list(struct fuse_global* global) {
+    pthread_mutex_lock(&global->lock);
+    // 1 删除global->package_to_appid这个hashmap中的所有项目，这个map中存储了报名和uid的对应关心
+    hashmapForEach(global->package_to_appid, remove_str_to_int, global->package_to_appid);
+
+    // 2 打开/data/system/packages.list文件
+    FILE* file = fopen(kPackagesListFile, "r");
+    if (!file) {
+        ERROR("failed to open package list: %s\n", strerror(errno));
+        pthread_mutex_unlock(&global->lock);
+        return -1;
+    }
+
+    char buf[512];
+    while (fgets(buf, sizeof(buf), file) != NULL) {
+        char package_name[512];
+        int appid;
+        char gids[512];
+
+        if (sscanf(buf, "%s %d %*d %*s %*s %s", package_name, &appid, gids) == 3) {
+            char* package_name_dup = strdup(package_name); // 3 解析后添加到hashmap
+            hashmapPut(global->package_to_appid, package_name_dup, (void*) (uintptr_t) appid);
+        }
+    }
+
+    TRACE("read_package_list: found %zu packages\n",
+            hashmapSize(global->package_to_appid));
+    fclose(file);
+
+    // 4 更新权限
+    /* Regenerate ownership details using newly loaded mapping */
+    derive_permissions_recursive_locked(global->fuse_default, &global->root);
+
+    pthread_mutex_unlock(&global->lock);
+    return 0;
+}
+
+```
+read_package_list 函数读取packages.list文件，然后把package_name 和uid的关系保存在global->package_to_appid这个hashmap中，最后调用derive_permissions_recursive_locked 来更新已创建的节点权限（以打开的文件权限）。
+
+```
+static void derive_permissions_recursive_locked(struct fuse* fuse, struct node *parent) {
+    struct node *node;
+    for (node = parent->child; node; node = node->next) {
+        derive_permissions_locked(fuse, parent, node);
+        if (node->child) {
+            derive_permissions_recursive_locked(fuse, node);
+        }
+    }
+}
+
+```
+derive_permissions_recursive_locked目录就是递归的遍历打开的节点，然后调用derive_permissions_locked来更新节点的权限，这里我们又回到了derive_permissions_locked函数，derive_permissions_locked的函数主要的目的就是将${user_id}/Android/data|media|obb|/${packagename}目录的及其子目录的属主设置为 ${packagename}应用程序的uid，这样它就不需要申请读写外置存储权限来进行读写操作了。
+
+```
+static void derive_permissions_locked(struct fuse* fuse, struct node *parent,
+        struct node *node) {
+    appid_t appid;
+
+    /* By default, each node inherits from its parent */
+    node->perm = PERM_INHERIT; // 权限默认集成父目录
+    node->userid = parent->userid; // userid默认继承
+    node->uid = parent->uid; //uid默认继承。root节点的uid为 AID_SDCARD_RW
+    node->under_android = parent->under_android; // under_android默认集成
+
+    /* Derive custom permissions based on parent and current node */
+    switch (parent->perm) {
+    case PERM_INHERIT: // 继承父目录的权限
+        /* Already inherited above */
+        break;
+    case PERM_PRE_ROOT:  // 根目录下的文件节点权限设置为PERM_ROOT （ 一般为\${userid} 目录）
+        /* Legacy internal layout places users at top level */
+        node->perm = PERM_ROOT;
+        node->userid = strtoul(node->name, NULL, 10);
+        break;
+    case PERM_ROOT: // \${userid} 目录下的文件权限
+        /* Assume masked off by default. */
+        if (!strcasecmp(node->name, "Android")) {  // 如果是Android目录，设置权限为PERM_ANDROID，并设置node->under_android = true，表示是Android目录，或者Android目录下的子目录
+            /* App-specific directories inside; let anyone traverse */
+            node->perm = PERM_ANDROID;
+            node->under_android = true;
+        } // 其他目录继承父目录权限
+        break;
+    case PERM_ANDROID: // Android目录下
+        if (!strcasecmp(node->name, "data")) { // data目录下的目录权限为 PERM_ANDROID_DATA
+            /* App-specific directories inside; let anyone traverse */
+            node->perm = PERM_ANDROID_DATA;
+        } else if (!strcasecmp(node->name, "obb")) {  // obb目录下的目录权限为 PERM_ANDROID_OBB
+            /* App-specific directories inside; let anyone traverse */
+            node->perm = PERM_ANDROID_OBB;
+            /* Single OBB directory is always shared */
+            // obb目录下的目录权限为 graft_path有值且为绝对路径，可以参考下run里面对 fuse->global->obb_path的设置
+            node->graft_path = fuse->global->obb_path;
+            node->graft_pathlen = strlen(fuse->global->obb_path);
+        } else if (!strcasecmp(node->name, "media")) { // media目录权限为PERM_ANDROID_MEDIA
+            /* App-specific directories inside; let anyone traverse */
+            node->perm = PERM_ANDROID_MEDIA;
+        }
+        break;
+    case PERM_ANDROID_DATA:
+    case PERM_ANDROID_OBB:
+    case PERM_ANDROID_MEDIA:
+         // ${user_id}/Android/data|media|obb|下 ${packagename}目录的下文件的uid都设置成应用的uid
+        appid = (appid_t) (uintptr_t) hashmapGet(fuse->global->package_to_appid, node->name);
+        if (appid != 0) {
+            node->uid = multiuser_get_uid(parent->userid, appid);
+        }
+        break;
+    }
+}
+
+
+```
+
+derive_permissions_locked函数分析通过注释写到了代码中，主要实现的功能就是 ${user_id}/Android/data|media|obb|下 p a c k a g e n a m e 目 录 及 其 子 目 录 u i d 设 置 成 应 用 对 应 的 u i d 。 这 样 应 用 程 序 就 可 以 对 属 于 自 己 的 {packagename}目录及其子目录uid设置成应用对应的uid。这样应用程序就可以对属于自己的 packagename目录及其子目录uid设置成应用对应的uid。这样应用程序就可以对属于自己的{user_id}/Android/data|media|obb|下 ${packagename}进行随意的操作了。
+
+我们回过头来再来看attr_from_stat函数。该函数主要实现 表格1-1中 的权限管理
+
+```
+static void attr_from_stat(struct fuse* fuse, struct fuse_attr *attr,
+        const struct stat *s, const struct node* node) {
+    // 1 基本属性从 文件的stat中获取
+    attr->ino = node->ino;
+    attr->size = s->st_size;
+    attr->blocks = s->st_blocks;
+    attr->atime = s->st_atim.tv_sec;
+    attr->mtime = s->st_mtim.tv_sec;
+    attr->ctime = s->st_ctim.tv_sec;
+    attr->atimensec = s->st_atim.tv_nsec;
+    attr->mtimensec = s->st_mtim.tv_nsec;
+    attr->ctimensec = s->st_ctim.tv_nsec;
+    attr->mode = s->st_mode;
+    attr->nlink = s->st_nlink;
+
+    attr->uid = node->uid;  // uid设置为node的uid，这个uid在derive_permissions_locked函数中设置。
+
+    if (fuse->gid == AID_SDCARD_RW) {
+        /* As an optimization, certain trusted system components only run
+         * as owner but operate across all users. Since we're now handing
+         * out the sdcard_rw GID only to trusted apps, we're okay relaxing
+         * the user boundary enforcement for the default view. The UIDs
+         * assigned to app directories are still multiuser aware. */
+        attr->gid = AID_SDCARD_RW;
+    } else {
+        attr->gid = multiuser_get_uid(node->userid, fuse->gid);
+    }
+
+    int visible_mode = 0775 & ~fuse->mask;
+    if (node->perm == PERM_PRE_ROOT) { //多用户模式下根目录设置为711权限模式，也就是属主可读写（也就是只有该用户可读写）
+        /* Top of multi-user view should always be visible to ensure
+         * secondary users can traverse inside. */
+        visible_mode = 0711;
+    } else if (node->under_android) { // Android 目录禁止其他用户读权
+        /* Block "other" access to Android directories, since only apps
+         * belonging to a specific user should be in there; we still
+         * leave +x open for the default view. */
+        if (fuse->gid == AID_SDCARD_RW) {
+            visible_mode = visible_mode & ~0006;
+        } else {
+            visible_mode = visible_mode & ~0007;
+        }
+    }
+    int owner_mode = s->st_mode & 0700; // 最终还要取实际文件的属主权限来做位与，因为sdcard程序的属主如果不能操作source_path对应的文件， 文件的读写操作也是无法完成的。
+    int filtered_mode = visible_mode & (owner_mode | (owner_mode >> 3) | (owner_mode >> 6));
+    attr->mode = (attr->mode & S_IFMT) | filtered_mode;
+}
+
+```

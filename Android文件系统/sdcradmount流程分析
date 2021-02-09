@@ -1,0 +1,107 @@
+# MountUserFuse
+
+1.
+system/vold/model/EmulatedVolume.cpp
+```
+status_t EmulatedVolume::doMount() {
+setInternalPath(mRawPath);
+setPath(StringPrintf("/storage/%s", label.c_str()));
+
+if (fs_prepare_dir(mSdcardFsDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+    fs_prepare_dir(mSdcardFsRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+    fs_prepare_dir(mSdcardFsWrite.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+    fs_prepare_dir(mSdcardFsFull.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+    PLOG(ERROR) << getId() << " failed to create mount points";
+    return -errno;
+}
+
+```
+
+1. 创建如下目录 ,设uid和 gid 为root root
+
+```
+/mnt/runtime/default/emulated
+/mnt/runtime/read/emulated
+/mnt/runtime/write/emulated
+/mnt/runtime/full/emulated
+
+```
+
+并且设置mRawPath为 /data/media.
+
+
+2. Executing sdcardfs
+```
+if (execl(kSdcardFsPath, kSdcardFsPath,
+                   "-u", "1023", // AID_MEDIA_RW
+                   "-g", "1023", // AID_MEDIA_RW
+                   "-m",
+                   "-w",
+                   "-G",
+                   "-i",
+                   "-o",
+                   mRawPath.c_str(),
+                   label.c_str(),
+                   NULL)
+```
+
+  2.1. run_sdcardfs
+  ```
+  static void run_sdcardfs(const std::string& source_path, const std::string& label, uid_t uid,
+                         gid_t gid, userid_t userid, bool multi_user, bool full_write,
+                         bool derive_gid, bool default_normal, bool unshared_obb, bool use_esdfs) {
+    std::string dest_path_default = "/mnt/runtime/default/" + label;
+    std::string dest_path_read = "/mnt/runtime/read/" + label;
+    std::string dest_path_write = "/mnt/runtime/write/" + label;
+    std::string dest_path_full = "/mnt/runtime/full/" + label;
+
+    umask(0);
+    if (multi_user) {
+        // Multi-user storage is fully isolated per user, so "other"
+        // permissions are completely masked off.
+        if (!sdcardfs_setup(source_path, dest_path_default, uid, gid, multi_user, userid,
+                            AID_SDCARD_RW, 0000, derive_gid, default_normal, unshared_obb,
+                            use_esdfs) ||
+            !sdcardfs_setup_secondary(dest_path_default, source_path, dest_path_read, uid, gid,
+                                      multi_user, userid, AID_EVERYBODY, 0000, derive_gid,
+                                      default_normal, unshared_obb, use_esdfs) ||
+            !sdcardfs_setup_secondary(dest_path_default, source_path, dest_path_write, uid, gid,
+                                      multi_user, userid, AID_EVERYBODY, full_write ? 0000 : 0000,
+                                      derive_gid, default_normal, unshared_obb, use_esdfs) ||
+            !sdcardfs_setup_secondary(dest_path_default, source_path, dest_path_full, uid, gid,
+                                      multi_user, userid, AID_EVERYBODY, 0000, derive_gid,
+                                      default_normal, unshared_obb, use_esdfs)) {
+            LOG(FATAL) << "failed to sdcardfs_setup";
+        }
+    ```
+    把/data/media mount 到 /mnt/runtime/default/emulated 目录
+    并且bind mount剩余  /mnt/runtime/read/emulated目录
+
+
+
+3. MountUserFuse
+ 准备 fuse目录           /mnt/user/0 和 /mnt/user/0/emulated
+ 准备 pass_through_path  /mnt/pass_through/0 和 /mnt/pass_through/0/emulated .
+
+ 把 /mnt/user/0/self/primary   link 到 /storage/emulated/0
+  把 /mnt/pass_through/0/primary  link 到 /storage/emulated/0
+
+  把/mnt/user/0/emulated mount到/dev/fuse
+  bind mount /mnt/runtime/full/emulated to /mnt/pass_through/0/emulated
+
+
+
+4. mountFuseBindMounts ....
+01-27 20:06:40.258   631   634 I vold    : Bind mounting /mnt/runtime/default/emulated/9876/Android/data on /mnt/user/9876/emulated/9876/Android/data
+01-27 20:06:40.258   631   634 I vold    : Bind mounted /mnt/runtime/default/emulated/9876/Android/data on /mnt/user/9876/emulated/9876/Android/data
+01-27 20:06:40.258   631   634 I vold    : Bind mounting /mnt/runtime/default/emulated/9876/Android/obb on /mnt/user/9876/emulated/9876/Android/obb
+01-27 20:06:40.259   631   634 I vold    : Bind mounted /mnt/runtime/default/emulated/9876/Android/obb on /mnt/user/9876/emulated/9876/Android/obb
+01-27 20:06:40.259   631   634 I vold    : Bind mounting /mnt/runtime/write/emulated/9876/Android/obb on /mnt/installer/9876/emulated/9876/Android/obb
+01-27 20:06:40.259   631   634 I vold    : Bind mounted /mnt/runtime/write/emulated/9876/Android/obb on /mnt/installer/9876/emulated/9876/Android/obb
+
+
+
+
+app
+
+/mnt/user/0

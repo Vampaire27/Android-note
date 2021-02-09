@@ -7,3 +7,924 @@ out/target/product/coral/obj/PACKAGING/target_files_intermediates/aosp_coral-tar
 
 
 ./build/tools/releasetools/ota_from_target_files.py -k build/make/target/product/security/testkey -p build/host/ -i /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012101.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-target_files-BN012102.zip /home/huzhongyang/code/android11_init/out/target/OTA_NEW/aosp_coral-BN012101-BN012102.zip
+
+
+
+cat recovery.log
+[    0.000447] recovery filesystem table
+[    0.000476] =========================
+[    0.000477]   0 /system  ext4 system_a 0
+[    0.000478]   1 /system_ext  ext4 system_ext_a 0
+[    0.000479]   2 /vendor  ext4 vendor_a 0
+[    0.000480]   3 /product  ext4 product_a 0
+[    0.000481]   4 /metadata  ext4 /dev/block/by-name/metadata 0
+[    0.000482]   5 /misc  emmc /dev/block/bootdevice/by-name/misc 0
+[    0.000483]   6 /data  f2fs /dev/block/bootdevice/by-name/userdata 0
+[    0.000484]   7 auto  vfat /devices/platform/soc/a600000.ssusb/a600000.dwc3* 0
+[    0.000484]   8 none  swap /dev/block/zram0 0
+[    0.000485]   9 /tmp  ramdisk ramdisk 0
+[    0.000486]
+[    0.001763] I:Boot command: boot-recovery
+[    0.003239] Loading make_device from librecovery_ui_ext.so
+[    0.004687] I:Brightness: 127 (50%)
+[    0.288987]           erasing_text: en (489 x 48 @ 714)
+[    0.289019]        no_command_text: en (560 x 48 @ 714)
+[    0.295620]             error_text: en (472 x 48 @ 714)
+[    0.296333]   cancel_wipe_data_text: en (315 x 48 @ 714)
+[    0.299718]   factory_data_reset_text: en (816 x 48 @ 714)
+[    0.302061]         try_again_text: en (457 x 48 @ 714)
+[    0.310402]   wipe_data_confirmation_text: en (1151 x 96 @ 1414)
+[    0.328771]   wipe_data_menu_header_text: en (1429 x 144 @ 2450)
+[    0.656185] I:Starting recovery (pid 537) on Mon Jul 13 16:04:02 1970
+[    0.656198]
+[    0.656213] I:locale is [en-US]
+[    0.657197] SELinux: Loaded file_contexts
+[    0.668184] stage is []
+[    0.668196] reason is []
+[    0.672294]        installing_text: en (1054 x 48 @ 714)
+[    0.681711] Command: "/system/bin/recovery"
+[    0.681731]
+[    0.681869] ro.boot.bootreason=reboot,recovery
+[    0.682058] dalvik.vm.minidebuginfo=true
+[    0.682071] dalvik.vm.dex2oat-minidebuginfo=true
+[    0.682083] dalvik.vm.dex2oat-max-image-block-size=524288
+[    0.682095] dalvik.vm.dex2oat-resolve-startup-strings=true
+[    0.682107] dalvik.vm.dex2oat-updatable-bcp-packages-file=/system/etc/updatable-bcp-packages.txt
+[    0.682120] debug.sf.hw=1
+[    0.682133] debug.sf.late.sf.duration=10500000
+[    0.682144] debug.sf.late.app.duration=20500000
+[    0.682157] debug.sf.early.sf.duration=16000000
+[    0.682168] debug.sf.early.app.duration=16500000
+[    0.682181] debug.sf.earlyGl.sf.duration=13500000
+[    0.682192] debug.sf.earlyGl.app.duration=21000000
+[    0.682204] debug.sf.enable_gl_backpressure=1
+[    0.682216] debug.sf.enable_egl_image_tracker=1
+[    0.682228] debug.sf.use_phase_offsets_as_durations=1
+[    0.682240] debug.media.codec2=2
+[    0.682252] debug.atrace.tags.enableflags=0
+[    0.682264] debug.gralloc.enable_fb_ubwc=1
+[    0.682285] debug.stagefright.ccodec=4
+[    0.682297] debug.stagefright.c2inputsurface=-1
+[    0.682309] debug.stagefright.omx_default_rank=512
+[    0.682337] mm.enable.qcom_parser=13631487
+[    0.682349] mm.enable.smoothstreaming=true
+[    0.682361] ro.lmk.log_stats=true
+[    0.682373] ro.qti.sdk.sensors.gestures=false
+[    0.682385] ro.qti.sensors.wu=false
+[    0.682397] ro.qti.sensors.amd=false
+[    0.682409] ro.qti.sensors.cmc=false
+[    0.682421] ro.qti.sensors.rmd=false
+[    0.682433] ro.qti.sensors.facing=false
+[    0.682444] ro.qti.sensors.dev_ori=true
+[    0.682456] ro.qti.sensors.pedometer=false
+[    0.682468] ro.qti.sensors.scrn_ortn=false
+[    0.682480] ro.qti.sensors.step_counter=false
+[    0.682492] ro.qti.sensors.step_detector=false
+[    0.682504] ro.sys.sdcardfs=1
+[    0.682516] ro.wifi.channels=
+[    0.682528] ro.allow.mock.location=0
+[    0.682540] ro.build.flavor=aosp_coral-userdebug
+[    0.682552] ro.build.version.all_codenames=REL
+[    0.682564] ro.build.version.preview_sdk_fingerprint=REL
+[    0.682576] ro.build.version.min_supported_target_sdk=23
+[    0.682588] ro.build.characteristics=nosdcard
+[    0.682599] ro.iorapd.enable=true
+[    0.682612] ro.system.build.id=RP1A.200720.009
+[    0.682624] ro.system.build.date=Wed Jan 20 10:21:05 CST 2021
+[    0.682636] ro.system.build.date.utc=1611109265
+[    0.682648] ro.system.build.tags=test-keys
+[    0.682659] ro.system.build.type=userdebug
+[    0.682671] ro.system.build.version.sdk=30
+[    0.682689] ro.system.build.version.release=11
+[    0.682701] ro.system.build.version.incremental=BN012102
+[    0.682713] ro.system.build.version.release_or_codename=11
+[    0.682725] ro.system.build.fingerprint=Android/aosp_coral/coral:11/RP1A.200720.009/BN012102:userdebug/test-keys
+[    0.682737] ro.treble.enabled=true
+[    0.682749] ro.product.build.id=RP1A.200720.009
+[    0.682761] ro.product.build.date=Wed Jan 20 10:21:05 CST 2021
+[    0.682773] ro.product.build.date.utc=1611109265
+[    0.682785] ro.product.build.tags=test-keys
+[    0.682796] ro.product.build.type=userdebug
+[    0.682808] ro.product.build.version.sdk=30
+[    0.682820] ro.product.build.version.release=11
+[    0.682832] ro.product.build.version.incremental=BN012102
+[    0.682844] ro.product.build.version.release_or_codename=11
+[    0.682855] ro.product.build.fingerprint=Android/aosp_coral/coral:11/RP1A.200720.009/BN012102:userdebug/test-keys
+[    0.682867] ro.product.locale=en-US
+[    0.682879] ro.product.system.name=mainline
+[    0.682891] ro.product.system.brand=Android
+[    0.682903] ro.product.system.model=mainline
+[    0.682915] ro.product.system.device=generic
+[    0.682926] ro.product.system.manufacturer=Android
+[    0.682939] ro.product.product.name=aosp_coral
+[    0.682950] ro.product.product.brand=Android
+[    0.682962] ro.product.product.model=AOSP on coral
+[    0.682974] ro.product.product.device=coral
+[    0.682986] ro.product.product.manufacturer=Google
+[    0.682998] ro.product.system_ext.name=aosp_coral
+[    0.683009] ro.product.system_ext.brand=Android
+[    0.683021] ro.product.system_ext.model=AOSP on coral
+[    0.683033] ro.product.system_ext.device=coral
+[    0.683045] ro.product.system_ext.manufacturer=Google
+[    0.683057] ro.recovery.ui.margin_height=165
+[    0.683069] ro.system_ext.build.id=RP1A.200720.009
+[    0.683080] ro.system_ext.build.date=Wed Jan 20 10:21:05 CST 2021
+[    0.683092] ro.system_ext.build.date.utc=1611109265
+[    0.683104] ro.system_ext.build.tags=test-keys
+[    0.683116] ro.system_ext.build.type=userdebug
+[    0.683128] ro.system_ext.build.version.sdk=30
+[    0.683139] ro.system_ext.build.version.release=11
+[    0.683151] ro.system_ext.build.version.incremental=BN012102
+[    0.683163] ro.system_ext.build.version.release_or_codename=11
+[    0.683175] ro.system_ext.build.fingerprint=Android/aosp_coral/coral:11/RP1A.200720.009/BN012102:userdebug/test-keys
+[    0.683187] ro.postinstall.fstab.prefix=/product
+[    0.683199] ro.thermal_warmreset=true
+[    0.683211] ro.actionable_compatible_property.enabled=true
+[    0.683222] mmp.enable.3g2=true
+[    0.683235] init.svc.adbd=running
+[    0.683247] init.svc.charger=running
+[    0.683258] init.svc.ueventd=running
+[    0.683270] init.svc.recovery=running
+[    0.683282] init.svc.fastbootd=stopped
+[    0.683294] vidc.enc.dcvs.extra-buff-count=2
+[    0.683306] vidc.enc.disable.pq=1
+[    0.683318] media.stagefright.enable-aac=true
+[    0.683330] media.stagefright.enable-qcp=true
+[    0.683341] media.stagefright.enable-http=true
+[    0.683353] media.stagefright.enable-scan=true
+[    0.683365] media.stagefright.enable-player=true
+[    0.683377] media.aac_51_output_enabled=true
+[    0.683389] pinner.pin_camera=false
+[    0.683401] persist.mm.enable.prefetch=true
+[    0.683413] persist.data.df.agg.dl_pkt=10
+[    0.683424] persist.data.df.agg.dl_size=4096
+[    0.683436] persist.data.df.dl_mode=5
+[    0.683448] persist.data.df.ul_mode=5
+[    0.683460] persist.data.df.dev_name=rmnet_usb0
+[    0.683472] persist.data.df.iwlan_mux=9
+[    0.683484] persist.data.df.mux_count=8
+[    0.683496] persist.data.wda.enable=true
+[    0.683508] persist.data.mode=concurrent
+[    0.683519] persist.data.netmgrd.qos.enable=true
+[    0.683532] persist.rild.nitz_plmn=
+[    0.683543] persist.rild.nitz_long_ons_0=
+[    0.683555] persist.rild.nitz_long_ons_1=
+[    0.683567] persist.rild.nitz_long_ons_2=
+[    0.683579] persist.rild.nitz_long_ons_3=
+[    0.683590] persist.rild.nitz_short_ons_0=
+[    0.683602] persist.rild.nitz_short_ons_1=
+[    0.683614] persist.rild.nitz_short_ons_2=
+[    0.683628] persist.rild.nitz_short_ons_3=
+[    0.683639] persist.rmnet.data.enable=true
+[    0.683651] persist.timed.enable=true
+[    0.683663] persist.fuse_sdcard=true
+[    0.683675] masterclear.allow_retain_esim_profiles_after_fdr=true
+[    0.683687] DEVICE_PROVISIONED=1
+[    0.683810] ro.config.ringtone=Ring_Synth_04.ogg
+[    0.683822] ro.config.alarm_alert=Alarm_Classic.ogg
+[    0.683834] ro.config.media_vol_steps=25
+[    0.683846] ro.config.notification_sound=pixiedust.ogg
+[    0.683859] ro.boot.cid=00000000
+[    0.683871] ro.boot.flash.locked=0
+[    0.683883] ro.boot.memcg=1
+[    0.683895] ro.boot.vbmeta.size=6720
+[    0.683907] ro.boot.vbmeta.digest=aa0f5c2813e9a6ec2f772ba71d1272a5459dc07a2ec239b967cfaea1aa862c16
+[    0.683919] ro.boot.vbmeta.hash_alg=sha256
+[    0.683930] ro.boot.vbmeta.avb_version=1.1
+[    0.683942] ro.boot.vbmeta.device_state=unlocked
+[    0.683954] ro.boot.dtb_idx=0
+[    0.683966] ro.boot.baseband=sdm
+[    0.683978] ro.boot.boottime=0BLE:57,1BLL:32,1BLE:579,2BLL:155,2BLE:1006,SW:10298,KL:0,KD:91,ODT:224,AVB:79
+[    0.683990] ro.boot.cdt_hwid=0x05052800
+[    0.684002] ro.boot.ddr_info=Hynix
+[    0.684014] ro.boot.ddr_size=6GB
+[    0.684026] ro.boot.dtbo_idx=10
+[    0.684038] ro.boot.hardware=coral
+[    0.684050] ro.boot.hardware.coo=CN
+[    0.684062] ro.boot.hardware.ddr=6GB,Hynix,LPDDR4X
+[    0.684073] ro.boot.hardware.sku=G020J
+[    0.684085] ro.boot.hardware.ufs=64GB,SKHynix
+[    0.684097] ro.boot.hardware.dsds=0
+[    0.684109] ro.boot.hardware.color=BLK
+[    0.684121] ro.boot.hardware.radio.subtype=0
+[    0.684133] ro.boot.revision=MP1.0
+[    0.684145] ro.boot.dp_info_a=enabled(not-in-list)
+[    0.684157] ro.boot.dp_info_b=enabled(not-in-list)
+[    0.684168] ro.boot.keymaster=1
+[    0.684180] ro.boot.blockchain=disabled
+[    0.684192] ro.boot.bootdevice=1d84000.ufshc
+[    0.684204] ro.boot.bootloader=c2f2-0.2-5799621
+[    0.684215] ro.boot.veritymode=enforcing
+[    0.684227] ro.boot.avb_version=1.1
+[    0.684239] ro.boot.secure_boot=PRODUCTION
+[    0.684251] ro.boot.boot_devices=soc/1d84000.ufshc
+[    0.684263] ro.boot.verifiedbootstate=orange
+[    0.684275] ro.build.id=RP1A.200720.009
+[    0.684287] ro.build.date=Wed Jan 20 10:21:05 CST 2021
+[    0.684299] ro.build.date.utc=1611109265
+[    0.684311] ro.build.host=huzhongyang-HP-EliteDesk-800-G5-TWR
+[    0.684322] ro.build.tags=test-keys
+[    0.684334] ro.build.type=userdebug
+[    0.684346] ro.build.user=huzhongyang
+[    0.684358] ro.build.display.id=aosp_coral-userdebug 11 RP1A.200720.009 BN012102 test-keys
+[    0.684370] ro.build.product=coral
+[    0.684382] ro.build.version.sdk=30
+[    0.684393] ro.build.version.base_os=
+[    0.684405] ro.build.version.release=11
+[    0.684417] ro.build.version.codename=REL
+[    0.684429] ro.build.version.incremental=BN012102
+[    0.684441] ro.build.version.preview_sdk=0
+[    0.684453] ro.build.version.security_patch=2020-09-05
+[    0.684464] ro.build.version.release_or_codename=11
+[    0.684476] ro.build.description=aosp_coral-userdebug 11 RP1A.200720.009 BN012102 test-keys
+[    0.684488] ro.product.cpu.abi=arm64-v8a
+[    0.684500] ro.product.cpu.abilist=arm64-v8a,armeabi-v7a,armeabi
+[    0.684512] ro.product.name=aosp_coral
+[    0.684524] ro.product.brand=Android
+[    0.684536] ro.product.model=AOSP on coral
+[    0.684548] ro.product.device=coral
+[    0.684559] ro.product.manufacturer=Google
+[    0.684571] ro.baseband=sdm
+[    0.684583] ro.bootmode=unknown
+[    0.684595] ro.hardware=coral
+[    0.684607] ro.revision=MP1.0
+[    0.684619] ro.bootloader=c2f2-0.2-5799621
+[    0.684631] ro.debuggable=1
+[    0.684642] ro.property_service.version=2
+[    0.684672] sys.usb.state=adb
+[    0.684684] sys.usb.controller=a600000.dwc3
+[    0.684696] persist.sys.sf.color_mode=9
+[    0.684708] persist.sys.sf.native_mode=2
+[    0.684720] persist.sys.sf.color_saturation=1.0
+[    0.684732] persist.sys.dalvik.vm.lib.2=libart.so
+[    0.684759] ro.crypto.volume.filenames_mode=aes-256-cts
+[    0.684772] af.fast_track_multiplier=1
+[    0.684784] ro.sf.lcd_density=560
+[    0.684795] ro.com.android.dataroaming=true
+[    0.684807] ro.zram.first_wb_delay_mins=180
+[    0.684821] ro.zram.mark_idle_delay_mins=60
+[    0.684833] ro.zram.periodic_wb_delay_hours=24
+[    0.684845] ro.audio.monitorRotation=true
+[    0.684857] ro.minui.pixel_format=RGBX_8888
+[    0.684869] ro.zygote=zygote64_32
+[    0.684881] ro.opengles.version=196610
+[    0.684892] ro.telephony.default_network=10
+[    0.684904] ro.telephony.default_cdma_sub=0
+[    0.684916] ro.cp_system_other_odex=1
+[    0.684928] ro.oem_unlock_supported=1
+[    0.684940] ro.control_privapp_permissions=enforce
+[    0.684951] keyguard.no_require_sim=true
+[    0.684963] telephony.active_modems.max_count=2
+[    0.684975] telephony.lteOnCdmaDevice=1
+[    0.684987] tombstoned.max_tombstone_count=50
+[    0.685050] ro.config.low_ram=false
+[    0.685062] ro.config.vc_call_vol_steps=7
+[    0.685089] ro.dalvik.vm.native.bridge=0
+[    0.685102] dalvik.vm.isa.arm.variant=cortex-a76
+[    0.685114] dalvik.vm.isa.arm.features=default
+[    0.685125] dalvik.vm.isa.arm64.variant=cortex-a76
+[    0.685137] dalvik.vm.isa.arm64.features=default
+[    0.685149] dalvik.vm.dexopt.secondary=true
+[    0.685161] dalvik.vm.usejit=true
+[    0.685173] dalvik.vm.heapsize=512m
+[    0.685185] dalvik.vm.lockprof.threshold=500
+[    0.685197] dalvik.vm.dex2oat64.enabled=true
+[    0.685209] dalvik.vm.dex2oat-Xms=64m
+[    0.685220] dalvik.vm.dex2oat-Xmx=512m
+[    0.685232] dalvik.vm.heapmaxfree=32m
+[    0.685244] dalvik.vm.heapminfree=8m
+[    0.685256] dalvik.vm.heapstartsize=16m
+[    0.685268] dalvik.vm.appimageformat=lz4
+[    0.685279] dalvik.vm.usejitprofiles=true
+[    0.685291] dalvik.vm.heapgrowthlimit=256m
+[    0.685303] dalvik.vm.image-dex2oat-Xms=64m
+[    0.685315] dalvik.vm.image-dex2oat-Xmx=64m
+[    0.685327] dalvik.vm.heaptargetutilization=0.5
+[    0.685339] ro.frp.pst=/dev/block/bootdevice/by-name/frp
+[    0.685351] ro.odm.build.date=Wed Jan 20 10:21:05 CST 2021
+[    0.685363] ro.odm.build.date.utc=1611109265
+[    0.685375] ro.odm.build.version.incremental=BN012102
+[    0.685387] ro.odm.build.fingerprint=Android/aosp_coral/coral:11/RP1A.200720.009/BN012102:userdebug/test-keys
+[    0.685398] ro.apex.updatable=true
+[    0.685410] ro.boot.slot_suffix=_a
+[    0.685422] ro.boot.dynamic_partitions=true
+[    0.685434] ro.hwui.use_vulkan=
+[    0.685446] ro.board.platform=msmnile
+[    0.685458] ro.build.ab_update=true
+[    0.685470] ro.vendor.build.date=Wed Jan 20 10:21:05 CST 2021
+[    0.685481] ro.vendor.build.date.utc=1611109265
+[    0.685493] ro.vendor.build.version.incremental=BN012102
+[    0.685505] ro.vendor.build.fingerprint=Android/aosp_coral/coral:11/RP1A.200720.009/BN012102:userdebug/test-keys
+[    0.685517] ro.carrier=unknown
+[    0.685529] ro.product.cpu.abilist32=armeabi-v7a,armeabi
+[    0.685541] ro.product.cpu.abilist64=arm64-v8a
+[    0.685553] ro.product.odm.name=aosp_coral
+[    0.685565] ro.product.odm.brand=Android
+[    0.685576] ro.product.odm.model=AOSP on coral
+[    0.685588] ro.product.odm.device=coral
+[    0.685606] ro.product.odm.manufacturer=Google
+[    0.685618] ro.product.board=coral
+[    0.685630] ro.product.vendor.name=aosp_coral
+[    0.685642] ro.product.vendor.brand=Android
+[    0.685654] ro.product.vendor.model=AOSP on coral
+[    0.685666] ro.product.vendor.device=coral
+[    0.685678] ro.product.vendor.manufacturer=Google
+[    0.685689] ro.product.first_api_level=29
+[    0.685701] ro.hardware.keystore_desede=true
+[    0.685713] ro.bootimage.build.date=Wed Jan 20 10:21:05 CST 2021
+[    0.685725] ro.bootimage.build.date.utc=1611109265
+[    0.685737] ro.bootimage.build.fingerprint=Android/aosp_coral/coral:11/RP1A.200720.009/BN012102:userdebug/test-keys
+[    0.685749] ro.surface_flinger.has_HDR_display=true
+[    0.685761] ro.surface_flinger.set_idle_timer_ms=80
+[    0.685772] ro.surface_flinger.protected_contents=true
+[    0.685784] ro.surface_flinger.set_touch_timer_ms=200
+[    0.685796] ro.surface_flinger.use_color_management=true
+[    0.685808] ro.surface_flinger.has_wide_color_display=true
+[    0.685820] ro.surface_flinger.support_kernel_idle_timer=true
+[    0.685832] ro.surface_flinger.wcg_composition_dataspace=143261696
+[    0.685846] ro.surface_flinger.set_display_power_timer_ms=1000
+[    0.685858] ro.surface_flinger.use_content_detection_for_refresh_rate=true
+[    0.685870] aaudio.mmap_policy=2
+[    0.685881] aaudio.hw_burst_min_usec=2000
+[    0.685893] aaudio.mmap_exclusive_policy=2
+[    0.685905] persist.rcs.supported=1
+[    0.685943] sys.usb.ffs.ready=1
+[    0.685971] ro.build.fingerprint=Android/aosp_coral/coral:11/RP1A.200720.009/BN012102:userdebug/test-keys
+[    0.686002] pm.dexopt.boot=verify
+[    0.686014] pm.dexopt.ab-ota=speed-profile
+[    0.686026] pm.dexopt.shared=speed
+[    0.686038] pm.dexopt.install=speed-profile
+[    0.686050] pm.dexopt.inactive=verify
+[    0.686062] pm.dexopt.bg-dexopt=speed-profile
+[    0.686074] pm.dexopt.first-boot=quicken
+[    0.686110] ro.secure=1
+[    0.686141] sys.usb.config=adb
+[    0.686153] sys.usb.configfs=1
+[    0.686233] ro.gsid.image_running=0
+[    0.686245] gsid.image_installed=0
+[    0.686316] log.tag.stats_log=I
+[    0.686343] ro.logd.size=1M
+[    0.686355] ro.logd.size.stats=64K
+[    0.686469] persist.debug.dalvik.vm.core_platform_api_policy=just-warn
+[    0.686519] ro.boot.hardware.platform=sm8150
+[    0.686554] persist.radio.reboot_on_modem_change=false
+[    0.686600] ro.boot.serialno=99121FFBA006NJ
+[    0.686612] ro.serialno=99121FFBA006NJ
+[    0.686639] security.perf_harden=1
+[    0.686710] net.bt.name=Android
+[    0.686723] persist.sys.usb.config=adb
+[    0.686734] persist.sys.disable_rescue=true
+[    0.686861] ro.odm.build.id=RP1A.200720.009
+[    0.686873] ro.odm.build.tags=test-keys
+[    0.686885] ro.odm.build.type=userdebug
+[    0.686897] ro.odm.build.version.sdk=30
+[    0.686909] ro.odm.build.version.release=11
+[    0.686921] ro.odm.build.version.release_or_codename=11
+[    0.686933] ro.odm.product.cpu.abilist=arm64-v8a,armeabi-v7a,armeabi
+[    0.686944] ro.odm.product.cpu.abilist32=armeabi-v7a,armeabi
+[    0.686956] ro.odm.product.cpu.abilist64=arm64-v8a
+[    0.686968] ro.vendor.bt.bdaddr_path=/proc/device-tree/chosen/cdt/cdb2/bt_addr
+[    0.686980] ro.vendor.build.id=RP1A.200720.009
+[    0.686992] ro.vendor.build.svn=27
+[    0.687004] ro.vendor.build.tags=test-keys
+[    0.687016] ro.vendor.build.version.sdk=30
+[    0.687028] ro.vendor.build.version.release=11
+[    0.687039] ro.vendor.build.version.release_or_codename=11
+[    0.687051] ro.vendor.display.foss=1
+[    0.687063] ro.vendor.display.paneltype=2
+[    0.687075] ro.vendor.display.sensortype=2
+[    0.687087] ro.vendor.product.cpu.abilist=arm64-v8a,armeabi-v7a,armeabi
+[    0.687098] ro.vendor.product.cpu.abilist32=armeabi-v7a,armeabi
+[    0.687110] ro.vendor.product.cpu.abilist64=arm64-v8a
+[    0.687123] vendor.qc2.venc.avgqp.enable=1
+[    0.687134] vendor.qcom.bluetooth.soc=cherokee
+[    0.687146] vendor.rild.libpath=/vendor/lib64/libril-qc-hal-qmi.so
+[    0.687158] vendor.skip.init=0
+[    0.687170] vendor.audio.capture.enforce_legacy_copp_sr=true
+[    0.687182] vendor.audio.feature.hfp.enable=true
+[    0.687195] vendor.audio.feature.snd_mon.enable=true
+[    0.687206] vendor.audio.feature.audiozoom.enable=true
+[    0.687218] vendor.audio.feature.hwdep_cal.enable=true
+[    0.687230] vendor.audio.feature.spkr_prot.enable=true
+[    0.687242] vendor.audio.feature.maxx_audio.enable=true
+[    0.687254] vendor.audio.feature.usb_offload.enable=true
+[    0.687266] vendor.audio.feature.a2dp_offload.enable=true
+[    0.687277] vendor.audio.feature.external_dsp.enable=true
+[    0.687289] vendor.audio.feature.incall_music.enable=true
+[    0.687301] vendor.audio.feature.external_speaker.enable=true
+[    0.687313] vendor.audio.feature.concurrent_capture.enable=false
+[    0.687325] vendor.audio.feature.multi_voice_session.enable=true
+[    0.687337] vendor.audio.offload.buffer.size.kb=256
+[    0.687348] vendor.audio.offload.gapless.enabled=true
+[    0.687360] vendor.audio.mic_break=true
+[    0.687372] vendor.media.omx=0
+[    0.687384] vendor.display.foss.config=1
+[    0.687396] vendor.display.foss.config_path=/vendor/etc/FOSSConfig.xml
+[    0.687408] vendor.display.qdcm.mode_combine=1
+[    0.687420] vendor.display.defer_fps_frame_count=2
+[    0.687434] vendor.display.primary_vsyncs_rate_change=2
+[    0.687446] persist.vendor.bt.aac_frm_ctl.enabled=true
+[    0.687458] persist.vendor.usb.usbradio.config=diag
+[    0.687470] persist.vendor.data.mode=concurrent
+[    0.687482] persist.vendor.data.iwlan.enable=true
+[    0.687494] persist.vendor.debug.sensors.accel_cal=1
+[    0.687506] persist.vendor.iwlan.logging.logcat=true
+[    0.687517] persist.vendor.tcpdump.log.br_num=5
+[    0.687529] persist.vendor.audio_hal.dsp_bit_width_enforce_mode=24
+[    0.687651] ro.virtual_ab.enabled=true
+[    0.687664] ro.virtual_ab.retrofit=true
+[    0.687691] ro.vndk.version=30
+[    0.687703] ro.product.vndk.version=30
+[    0.687744]
+[  100.568936]
+[  100.568947]
+[  100.568948] Now send the package you want to apply
+[  100.568950] to the device with "adb sideload <filename>"...
+[  100.593416] minadbd I 07-13 16:05:43   576   577 usb_ffs.cpp:275] opening control endpoint /dev/usb-ffs/adb/ep0
+[  100.594141] minadbd I 07-13 16:05:43   576   577 usb.cpp:181] UsbFfsConnection constructed
+[  100.594586] minadbd I 07-13 16:05:43   576   578 usb.cpp:288] UsbFfs-monitor thread spawned
+[  100.595829] minadbd I 07-13 16:05:43   576   578 usb.cpp:327] USB event: FUNCTIONFS_BIND
+[  101.132028] minadbd I 07-13 16:05:44   576   578 usb.cpp:327] USB event: FUNCTIONFS_ENABLE
+[  101.132894] minadbd I 07-13 16:05:44   576   580 usb.cpp:434] UsbFfs-worker thread spawned
+[  101.686098] minadbd I 07-13 16:05:44   576   576 adb.cpp:118] UsbFfs: already offline
+[  101.686214] minadbd I 07-13 16:05:44   576   576 adb.cpp:331] authentication not required
+[  106.998977] minadbd I 07-13 16:05:49   576   581 minadbd_services.cpp:110] sideload-host file size 105211, block size 65536
+[  108.001203] unknown fuse request opcode 2016
+[  108.028083] W:Failed to read /sys/class/thermal/thermal_zone68/temp: Invalid argument
+[  108.028210] W:Failed to read /sys/class/thermal/thermal_zone67/temp: Invalid argument
+[  108.028311] W:Failed to read /sys/class/thermal/thermal_zone66/temp: Invalid argument
+[  108.028410] W:Failed to read /sys/class/thermal/thermal_zone65/temp: Invalid argument
+[  108.028511] W:Failed to read /sys/class/thermal/thermal_zone64/temp: Invalid argument
+[  108.028609] W:Failed to read /sys/class/thermal/thermal_zone63/temp: Invalid argument
+[  108.028709] W:Failed to read /sys/class/thermal/thermal_zone62/temp: Invalid argument
+[  108.035212] I:current maximum temperature: 75000
+[  108.035241] Supported API: 3
+[  108.055423] Finding update package...
+[  108.086321] I:Update package id: /sideload/package.zip
+[  108.187050] I:1 key(s) loaded from /system/etc/security/otacerts.zip
+[  108.187078] Verifying update package...
+[  108.255298] I:comment is 1738 bytes; signature is 1720 bytes from end
+[  108.320114] I:signature (offset: 19443, length: 6b2): 308206ae06092a864886f70d010702a082069f3082069b020101310b300906052b0e03021a0500300b06092a864886f70d010701a08204ac308204a830820390a003020102020900936eacbe07f201df300d06092a864886f70d0101050500308194310b3009060355040613025553311330110603550408130a43616c69666f726e6961311630140603550407130d4d6f756e7461696e20566965773110300e060355040a1307416e64726f69643110300e060355040b1307416e64726f69643110300e06035504031307416e64726f69643122302006092a864886f70d0109011613616e64726f696440616e64726f69642e636f6d301e170d3038303232393031333334365a170d3335303731373031333334365a308194310b3009060355040613025553311330110603550408130a43616c69666f726e6961311630140603550407130d4d6f756e7461696e20566965773110300e060355040a1307416e64726f69643110300e060355040b1307416e64726f69643110300e06035504031307416e64726f69643122302006092a864886f70d0109011613616e64726f696440616e64726f69642e636f6d30820120300d06092a864886f70d01010105000382010d00308201080282010100d6931904dec60b24b1edc762e0d9d8253e3ecd6ceb1de2ff068ca8e8bca8cd6bd3786ea70aa76ce60ebb0f993559ffd93e77a943e7e83d4b64b8e4fea2d3e656f1e267a81bbfb230b578c20443be4c7218b846f5211586f038a14e89c2be387f8ebecf8fcac3da1ee330c9ea93d0a7c3dc4af350220d50080732e0809717ee6a053359e6a694ec2cb3f284a0a466c87a94d83b31093a67372e2f6412c06e6d42f15818dffe0381cc0cd444da6cddc3b82458194801b32564134fbfde98c9287748dbf5676a540d8154c8bbca07b9e247553311c46b9af76fdeeccc8e69e7c8a2d08e782620943f99727d3c04fe72991d99df9bae38a0b2177fa31d5b6afee91f020103a381fc3081f9301d0603551d0e04160414485900563d272c46ae118605a47419ac09ca8c113081c90603551d230481c13081be8014485900563d272c46ae118605a47419ac09ca8c11a1819aa48197308194310b3009060355040613025553311330110603550408130a43616c69666f726e6961311630140603550407130d4d6f756e7461696e20566965773110300e060355040a1307416e64726f69643110300e060355040b1307416e64726f69643110300e06035504031307416e64726f69643122302006092a864886f70d0109011613616e64726f696440616e64726f69642e636f6d820900936eacbe07f201df300c0603551d13040530030101ff300d06092a864886f70d010105050003820101007aaf968ceb50c441055118d0daabaf015b8a765a27a715a2c2b44f221415ffdace03095abfa42df70708726c2069e5c36eddae0400be29452c084bc27eb6a17eac9dbe182c204eb15311f455d824b656dbe4dc2240912d7586fe88951d01a8feb5ae5a4260535df83431052422468c36e22c2a5ef994d61dd7306ae4c9f6951ba3c12f1d1914ddc61f1a62da2df827f603fea5603b2c540dbd7c019c36bab29a4271c117df523cdbc5f3817a49e0efa60cbd7f74177e7a4f193d43f4220772666e4c4d83e1bd5a86087cf34f2dec21e245ca6c2bb016e683638050d2c430eea7c26a1c49d3760a58ab7f1a82cc938b4831384324bd0401fa12163a50570e684d318201ca308201c60201013081a2308194310b3009060355040613025553311330110603550408130a43616c69666f726e6961311630140603550407130d4d6f756e7461696e20566965773110300e060355040a1307416e64726f69643110300e060355040b1307416e64726f69643110300e06035504031307416e64726f69643122302006092a864886f70d0109011613616e64726f696440616e64726f69642e636f6d020900936eacbe07f201df300906052b0e03021a0500300d06092a864886f70d0101010500048201009aa9fa2d301565e95bf21f93e0a3d9698897936a8eeaa86d90d140d6edf2c27c1a42855d6ddb271bc19fdb63e3d540f8f1d636d7d1d0ab90cfe62d5353d3b9671b48f0bb3ef7068203c61803c24cffeb88cac6daf65805562678836c5d393967b266b623a5500307725a4700fb5be92bdf56ae82d42acf21ed834da52c1c25d87f21dcf94a283994dc4ba5fb7e3e2b43a809e8a0f378ad15a16c677808508d217ebc815e6a695b465f1352f37220d42e9382742bf11a6b7830af782b33cfd2c1da132d9707a5cb141a0b681a9b270f1ee2353f5c8f73b3bde83b6501b560ecc454f2cee5bbb5c7ff93e3edbb53a2c29e95e0fd481c3f8ea9cad7949fcd59cb4b
+[  108.320277] I:whole-file signature verified against RSA key 0
+[  108.320326] Update package verification took 0.1 s (result 0).
+[  108.353265] Installing update...
+[  108.404979] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:sideload_main.cc(190)] Update Engine Sideloading starting
+[  108.408438] cutils-trace E 07-13 16:05:51   582   582 Error opening trace file: No such file or directory (2)
+[  108.408509] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:boot_control_android.cc(70)] Loaded boot control hidl hal.
+[  108.408700] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.408706] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.408709] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.408710] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.408711] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.408713] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:update_attempter_android.cc(162)] Skip ScheduleCleanupPreviousUpdate in sideload because ApplyPayload will call it later.
+[  108.408753] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.408780] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.408876] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:update_attempter_android.cc(280)] Using this install plan:
+[  108.408909] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:install_plan.cc(91)] InstallPlan: new_update, version: , source_slot: A, target_slot: B, url: file:///sideload/package.zip, payload: (size: 100657, metadata_size: 59397, metadata signature: , hash: 4AD7C49B40FF6A0C02744EA4BFE65B57D29C483BE1A4EF305ED4CE2963BED2A3, payload type: unknown), hash_checks_mandatory: true, powerwash_required: false, switch_slot_on_reboot: true, run_post_install: true, is_rollback: false, write_verity: true
+[  108.408975] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:metrics_utils.cc(363)] Number of Reboots during current update attempt = 0
+[  108.408981] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:metrics_utils.cc(371)] Payload Attempt Number = 1
+[  108.409019] __bionic_open_tzdata: couldn't find any tzdata when looking for GMT!
+[  108.409060] __bionic_open_tzdata: couldn't find any tzdata when looking for posixrules!
+[  108.409107] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:metrics_utils.cc(388)] Update Monotonic Timestamp Start = 1/1/1970 0:01:49 GMT
+[  108.409135] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:metrics_utils.cc(397)] Update Boot Timestamp Start = 1/1/1970 0:01:49 GMT
+[  108.409160] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:update_attempter_android.cc(648)] Scheduling an action processor start.
+[  108.409197] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(51)] ActionProcessor: starting UpdateBootFlagsAction
+[  108.409222] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:update_boot_flags_action.cc(45)] Marking booted slot as good.
+[  108.410415] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.410437] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.410456] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.410485] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.410506] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.410526] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 384 to offset 8192
+[  108.412426] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.412448] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.412467] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.412493] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.412514] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.412533] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.413034] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.413055] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.413074] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.413100] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.413120] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.413139] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.413597] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.413618] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.413638] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.413663] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.413683] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.413702] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.414168] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.414193] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.414212] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.414237] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.414258] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.414277] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.414745] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.414767] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.414786] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.414812] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.414833] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.414852] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.415325] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.415347] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.415366] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.415391] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.415412] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.415431] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.416437] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.416459] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.416478] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.416504] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.416524] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.416543] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.416997] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.417019] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.417038] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.417063] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.417083] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.417103] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.417555] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.417576] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.417596] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.417620] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.417641] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.417661] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.418126] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.418147] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.418167] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.418191] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.418215] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.418234] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.418862] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.418883] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.418903] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.418938] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.418960] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.418979] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 1920 to offset 8192
+[  108.420034] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.420056] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.420075] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.420101] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.420121] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.420141] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 384 to offset 8192
+[  108.421892] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.421914] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.421933] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.421958] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.421979] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.421998] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 1920 to offset 8192
+[  108.422487] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.422509] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.422529] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.422554] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.422575] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.422594] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 1920 to offset 8192
+[  108.422800] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(116)] ActionProcessor: finished UpdateBootFlagsAction with code ErrorCode::kSuccess
+[  108.422837] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(143)] ActionProcessor: starting CleanupPreviousUpdateAction
+[  108.422862] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:cleanup_previous_update_action.cc(82)] Starting/resuming CleanupPreviousUpdateAction
+[  108.422887] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:cleanup_previous_update_action.cc(137)] Boot completed, waiting on markBootSuccessful()
+[  108.423394] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:352] [libfs_mgr]superblock s_max_mnt_count:65535,/dev/block/by-name/metadata
+[  108.425167] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:209] [libfs_mgr]check_fs(): mount(/dev/block/by-name/metadata,/metadata,ext4)=0: Success
+[  108.426038] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:217] [libfs_mgr]check_fs(): unmount(/metadata) succeeded
+[  108.426095] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:238] [libfs_mgr]Not running /system/bin/e2fsck on /dev/block/sda11 (executable not in system image)
+[  108.426645] libc: Unable to set property "ro.boottime.init.fsck.metadata" to "2": error code: 0x18
+[  108.427705] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:806] [libfs_mgr]__mount(source=/dev/block/by-name/metadata,target=/metadata,type=ext4)=0: Success
+[  108.427960] libc: Unable to set property "ro.boottime.init.mount.metadata" to "1": error code: 0x18
+[  108.428388] update_engine_sideload W 07-13 16:05:51   582   582 snapshot.cpp:192] Cannot read /metadata/ota/snapshot-boot: No such file or directory
+[  108.428412] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1516] Not booting from new slot. Will not mount snapshots.
+[  108.428442] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:cleanup_previous_update_action.cc(185)] Snapshot devices are not created
+[  108.428475] update_engine_sideload I 07-13 16:05:51   582   582 snapshot_stats.cpp:37] Read merge statistics file failed: No such file or directory
+[  108.430157] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:cleanup_previous_update_action.cc(206)] Waiting for any previous merge request to complete. This can take up to several minutes.
+[  108.430367] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:cleanup_previous_update_action.cc(240)] Previous update has not been completed, not cleaning up
+[  108.431664] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:cleanup_previous_update_action.cc(390)] Skip reporting merge stats in recovery.
+[  108.433945] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(116)] ActionProcessor: finished CleanupPreviousUpdateAction with code ErrorCode::kSuccess
+[  108.433973] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(143)] ActionProcessor: starting InstallPlanAction
+[  108.434002] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(116)] ActionProcessor: finished InstallPlanAction with code ErrorCode::kSuccess
+[  108.434027] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(143)] ActionProcessor: starting DownloadAction
+[  108.434061] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:install_plan.cc(91)] InstallPlan: new_update, version: , source_slot: A, target_slot: B, url: file:///sideload/package.zip, payload: (size: 100657, metadata_size: 59397, metadata signature: , hash: 4AD7C49B40FF6A0C02744EA4BFE65B57D29C483BE1A4EF305ED4CE2963BED2A3, payload type: unknown), hash_checks_mandatory: true, powerwash_required: false, switch_slot_on_reboot: true, run_post_install: true, is_rollback: false, write_verity: true
+[  108.434086] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:download_action.cc(199)] Marking new slot as unbootable
+[  108.434620] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.434642] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.434661] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.434690] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.434711] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.434731] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 384 to offset 8192
+[  108.436507] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.436528] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.436548] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.436573] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.436594] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.436614] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.437106] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.437132] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.437151] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.437176] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.437196] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.437215] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.437660] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.437681] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.437701] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.437725] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.437746] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.437765] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.438218] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.438239] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.438259] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.438284] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.438304] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.438323] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.438772] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.438793] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.438813] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.438838] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.438858] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.438877] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.439349] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.439370] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.439390] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.439415] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.439436] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.439455] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.440460] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.440482] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.440501] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.440526] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.440546] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.440565] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.441026] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.441048] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.441067] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.441092] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.441115] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.441135] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.441593] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.441614] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.441633] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.441658] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.441679] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.441698] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.442155] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.442176] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.442195] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.442221] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.442242] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.442272] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 5376 to offset 8192
+[  108.442840] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.442861] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.442881] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.442906] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.442927] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.442946] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 1920 to offset 8192
+[  108.443999] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.444020] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.444040] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.444065] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.444086] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.444105] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 384 to offset 8192
+[  108.445852] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.445874] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.445893] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.445919] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.445939] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.445958] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 1920 to offset 8192
+[  108.446444] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary GPT header
+[  108.446466] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Block size is : 4096
+[  108.446485] gpt-utils I 07-13 16:05:51   582   582 gpt_set_header: Writing back header to offset 4096
+[  108.446510] gpt-utils I 07-13 16:05:51   582   582 gpt_disk_commit: Writing back primary partition array
+[  108.446531] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr : Block size is 4096
+[  108.446550] gpt-utils I 07-13 16:05:51   582   582 gpt_set_pentry_arr: Writing partition entry array of size 1920 to offset 8192
+[  108.446751] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:multi_range_http_fetcher.cc(45)] starting first transfer
+[  108.446782] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:multi_range_http_fetcher.cc(74)] starting transfer of range 1209+100657
+[  108.446902] unknown fuse request opcode 2016
+[  108.450175] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(209)] Completed 0/? operations, 16384/100657 bytes downloaded (16%), overall progress 8%
+[  108.467561] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(209)] Completed 0/? operations, 32768/100657 bytes downloaded (32%), overall progress 16%
+[  108.467568] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(209)] Completed 0/? operations, 49152/100657 bytes downloaded (48%), overall progress 24%
+[  108.467569] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(209)] Completed 0/? operations, 65536/100657 bytes downloaded (65%), overall progress 32%
+[  108.467570] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(520)] Manifest size in payload matches expected value from Omaha
+[  108.467572] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(1693)] Verifying using certificates: /system/etc/security/otacerts.zip
+[  108.467573] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:payload_verifier.cc(102)] signature blob size = 267
+[  108.467574] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:payload_verifier.cc(118)] Truncating the signature to its unpadded size: 256.
+[  108.467575] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:payload_verifier.cc(129)] Verified correct signature 1 out of 1 signatures.
+[  108.467575] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:payload_metadata.cc(224)] Metadata hash signature matches value in Omaha response.
+[  108.467576] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(1728)] Detected a 'delta' payload.
+[  108.467578] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(985)] Preparing partitions for new update. last hash = , new hash = StfEm0D/agwCdE6kv+ZbV9KcSDvhpO8wXtTOKWO+0qM=LAh8nqPqBG7Oev/AlXnO54Rk4XH+6kgFgeFh0+ifar4=
+[  108.468234] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:352] [libfs_mgr]superblock s_max_mnt_count:65535,/dev/block/by-name/metadata
+[  108.470880] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:209] [libfs_mgr]check_fs(): mount(/dev/block/by-name/metadata,/metadata,ext4)=0: Success
+[  108.471753] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:217] [libfs_mgr]check_fs(): unmount(/metadata) succeeded
+[  108.471758] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:238] [libfs_mgr]Not running /system/bin/e2fsck on /dev/block/sda11 (executable not in system image)
+[  108.472097] libc: Unable to set property "ro.boottime.init.fsck.metadata" to "3": error code: 0x18
+[  108.474697] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr.cpp:806] [libfs_mgr]__mount(source=/dev/block/by-name/metadata,target=/metadata,type=ext4)=0: Success
+[  108.474936] libc: Unable to set property "ro.boottime.init.mount.metadata" to "2": error code: 0x18
+[  108.475331] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(676)] Erasing AVB footer of system_other partition before update.
+[  108.475335] update_engine_sideload E 07-13 16:05:51   582   582 fs_mgr_fstab.cpp:677] [libfs_mgr]ReadFstabFromFile(): cannot open file: '/product/etc/fstab.postinstall': No such file or directory
+[  108.475337] update_engine_sideload W 07-13 16:05:51   582   582 [WARNING:dynamic_partition_control_android.cc(550)] Cannot read fstab from /product/etc/fstab.postinstall: No such file or directory (2)
+[  108.475338] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(577)] AVB is not enabled on system_other. Skip erasing.
+[  108.475662] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:172] Update has been initiated, now canceling
+[  108.475671] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:224] Removing all update state.
+[  108.475863] update_engine_sideload W 07-13 16:05:51   582   582 snapshot.cpp:192] Cannot read /metadata/ota/snapshot-boot: No such file or directory
+[  108.475867] update_engine_sideload W 07-13 16:05:51   582   582 snapshot.cpp:1336] Failed to get flashing status
+[  108.475869] update_engine_sideload W 07-13 16:05:51   582   582 snapshot.cpp:192] Cannot read /metadata/ota/snapshot-boot: No such file or directory
+[  108.476334] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_ext_b
+[  108.476339] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot system_ext_b in recovery.
+[  108.476340] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot vendor_b
+[  108.476341] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot vendor_b in recovery.
+[  108.476342] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot product_b
+[  108.476343] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot product_b in recovery.
+[  108.476344] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_b
+[  108.476345] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot system_b in recovery.
+[  108.484579] update_engine_sideload I 07-13 16:05:51   582   582 partition_cow_creator.cpp:214] Remaining free space for COW: 7656177664 bytes
+[  108.484585] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2294] For partition system_b, device size = 836968448, snapshot size = 836968448, cow partition size = 15958016, cow file size = 0
+[  108.484586] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot system_b in recovery.
+[  108.487616] update_engine_sideload I 07-13 16:05:51   582   582 builder.cpp:1031] [liblp]Partition system_b-cow will resize from 0 bytes to 15958016 bytes
+[  108.487621] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2354] Successfully created snapshot partition for system_b
+[  108.487623] update_engine_sideload I 07-13 16:05:51   582   582 partition_cow_creator.cpp:214] Remaining free space for COW: 7639924736 bytes
+[  108.487624] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2294] For partition vendor_b, device size = 909520896, snapshot size = 909520896, cow partition size = 17317888, cow file size = 0
+[  108.487624] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot vendor_b in recovery.
+[  108.490294] update_engine_sideload I 07-13 16:05:51   582   582 builder.cpp:1031] [liblp]Partition vendor_b-cow will resize from 0 bytes to 17317888 bytes
+[  108.490299] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2354] Successfully created snapshot partition for vendor_b
+[  108.490301] update_engine_sideload I 07-13 16:05:51   582   582 partition_cow_creator.cpp:214] Remaining free space for COW: 7622098944 bytes
+[  108.490302] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2294] For partition product_b, device size = 239693824, snapshot size = 239693824, cow partition size = 4636672, cow file size = 0
+[  108.490302] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot product_b in recovery.
+[  108.492770] update_engine_sideload I 07-13 16:05:51   582   582 builder.cpp:1031] [liblp]Partition product_b-cow will resize from 0 bytes to 4636672 bytes
+[  108.492795] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2354] Successfully created snapshot partition for product_b
+[  108.492823] update_engine_sideload I 07-13 16:05:51   582   582 partition_cow_creator.cpp:214] Remaining free space for COW: 7617380352 bytes
+[  108.492933] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2294] For partition system_ext_b, device size = 111599616, snapshot size = 111599616, cow partition size = 2207744, cow file size = 0
+[  108.492961] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:538] Skipping delete of snapshot system_ext_b in recovery.
+[  108.495411] update_engine_sideload I 07-13 16:05:51   582   582 builder.cpp:1031] [liblp]Partition system_ext_b-cow will resize from 0 bytes to 2207744 bytes
+[  108.495436] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2354] Successfully created snapshot partition for system_ext_b
+[  108.495458] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2357] Allocating CoW images.
+[  108.495480] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2366] Successfully created snapshot for product_b
+[  108.495503] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2366] Successfully created snapshot for system_b
+[  108.495525] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2366] Successfully created snapshot for system_ext_b
+[  108.495547] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2366] Successfully created snapshot for vendor_b
+[  108.495586] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_b
+[  108.497724] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for system_b at /dev/block/dm-0
+[  108.497777] update_engine_sideload I 07-13 16:05:51   582   582 utility.cpp:117] Zero-filling COW device: /dev/block/dm-0
+[  108.505682] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot vendor_b
+[  108.527073] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for vendor_b at /dev/block/dm-0
+[  108.527121] update_engine_sideload I 07-13 16:05:51   582   582 utility.cpp:117] Zero-filling COW device: /dev/block/dm-0
+[  108.539173] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot product_b
+[  108.560638] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for product_b at /dev/block/dm-0
+[  108.560717] update_engine_sideload I 07-13 16:05:51   582   582 utility.cpp:117] Zero-filling COW device: /dev/block/dm-0
+[  108.572557] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_ext_b
+[  108.594759] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for system_ext_b at /dev/block/dm-0
+[  108.594846] update_engine_sideload I 07-13 16:05:51   582   582 utility.cpp:117] Zero-filling COW device: /dev/block/dm-0
+[  108.601297] update_engine_sideload I 07-13 16:05:51   582   582 writer.cpp:397] [liblp]Updated logical partition table at slot 1 on device super
+[  108.601366] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:2234] Successfully created all snapshots for target slot _b
+[  108.601468] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(1002)] PreparePartitionsForUpdate done.
+[  108.604197] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.604243] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] boot_a is not in super partition metadata.
+[  108.604882] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.605948] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.605991] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] boot_b is not in super partition metadata.
+[  108.606636] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.607670] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.607718] update_engine_sideload W 07-13 16:05:51   582   582 [WARNING:dynamic_partition_control_android.cc(953)] system_a is at current slot but it is not mapped. Now try to map it.
+[  108.632492] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition system_a on device /dev/block/dm-0
+[  108.632526] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped system_a to device mapper (force_writable = 0); device path at /dev/block/dm-0
+[  108.633627] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.633713] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_b
+[  108.657483] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition system_b-base on device /dev/block/dm-1
+[  108.679653] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for system_b at /dev/block/dm-2
+[  108.685132] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1722] Mapped system_b as snapshot device at /dev/block/dm-3
+[  108.685152] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped system_b to device mapper (force_writable = 1); device path at /dev/block/dm-3
+[  108.685672] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.685683] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] vbmeta_a is not in super partition metadata.
+[  108.685780] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.686005] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.686012] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] vbmeta_b is not in super partition metadata.
+[  108.686095] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.686296] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.686302] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] dtbo_a is not in super partition metadata.
+[  108.686388] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.686586] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.686592] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] dtbo_b is not in super partition metadata.
+[  108.686677] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.686877] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.686886] update_engine_sideload W 07-13 16:05:51   582   582 [WARNING:dynamic_partition_control_android.cc(953)] product_a is at current slot but it is not mapped. Now try to map it.
+[  108.707654] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition product_a on device /dev/block/dm-4
+[  108.707691] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped product_a to device mapper (force_writable = 0); device path at /dev/block/dm-4
+[  108.708001] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.708047] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot product_b
+[  108.729132] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition product_b-base on device /dev/block/dm-5
+[  108.750439] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for product_b at /dev/block/dm-6
+[  108.755341] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1722] Mapped product_b as snapshot device at /dev/block/dm-7
+[  108.755630] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped product_b to device mapper (force_writable = 1); device path at /dev/block/dm-7
+[  108.755860] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.755865] update_engine_sideload W 07-13 16:05:51   582   582 [WARNING:dynamic_partition_control_android.cc(953)] system_ext_a is at current slot but it is not mapped. Now try to map it.
+[  108.777603] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition system_ext_a on device /dev/block/dm-8
+[  108.777619] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped system_ext_a to device mapper (force_writable = 0); device path at /dev/block/dm-8
+[  108.777623] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.777628] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_ext_b
+[  108.798654] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition system_ext_b-base on device /dev/block/dm-9
+[  108.819914] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for system_ext_b at /dev/block/dm-10
+[  108.842285] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1722] Mapped system_ext_b as snapshot device at /dev/block/dm-11
+[  108.842341] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped system_ext_b to device mapper (force_writable = 1); device path at /dev/block/dm-11
+[  108.842690] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.842717] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] vbmeta_system_a is not in super partition metadata.
+[  108.842847] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.843098] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.843131] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(938)] vbmeta_system_b is not in super partition metadata.
+[  108.843254] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.843502] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot A in /dev/block/bootdevice/by-name/super
+[  108.843533] update_engine_sideload W 07-13 16:05:51   582   582 [WARNING:dynamic_partition_control_android.cc(953)] vendor_a is at current slot but it is not mapped. Now try to map it.
+[  108.864928] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition vendor_a on device /dev/block/dm-12
+[  108.864995] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped vendor_a to device mapper (force_writable = 0); device path at /dev/block/dm-12
+[  108.865860] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(319)] Loaded metadata from slot B in /dev/block/bootdevice/by-name/super
+[  108.865953] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot vendor_b
+[  108.887298] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:247] [libfs_mgr]Created logical partition vendor_b-base on device /dev/block/dm-13
+[  108.908566] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1819] Mapped COW device for vendor_b at /dev/block/dm-14
+[  108.931363] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1722] Mapped vendor_b as snapshot device at /dev/block/dm-15
+[  108.931449] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(173)] Succesfully mapped vendor_b to device mapper (force_writable = 1); device path at /dev/block/dm-15
+[  108.931515] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old boot sha256: SIGnawgh0qVXGu+MiJ9w9DkTDXDggqAD2EnzSCK/e/c= size: 67108864
+[  108.931557] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new boot sha256: I3sh4K6sUJAi1gotMHvmUowZzjseptqEh++G8DOqfnA= size: 67108864
+[  108.931600] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old system sha256: w5uo/UywIdUBqWX5EjEBjbCBXY7p05vO7a1jfuYSi7M= size: 836968448
+[  108.931642] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new system sha256: k2q+92rOWtW0t8iZIY2guxTTk8U8jlFbb8DVOt4tb/I= size: 836968448
+[  108.931684] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old vbmeta sha256: AH36OjFe6pM2UKWdgXkUUFCPJkRgZ9Ka+d2IGmBaJTs= size: 8192
+[  108.931727] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new vbmeta sha256: l/vvoE4CrpdWgDjFI5IFKJdtAr5GZeFOeMbX3g+0p9g= size: 8192
+[  108.931770] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old dtbo sha256: 9YBcetKHtdrMlWOnM4ACyGX3g8G6moLxxMjR4Kff/7s= size: 8388608
+[  108.931812] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new dtbo sha256: EJXTeQ7+lYcT4vrXdJBRy8sqm2VFhhKyLJJaKsV3H+s= size: 8388608
+[  108.931855] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old product sha256: Q0mYW1/1malyPDy2x6c7cbSRIVyaPGCZqd9622DwYVM= size: 239693824
+[  108.931897] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new product sha256: jKYMxvyT/FIctbo4I7r7l9W47WuDMgaGwEVhFbxV+i0= size: 239693824
+[  108.931941] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old system_ext sha256: AWhup6ciYA/+zKLij+l8iF/cYIYHB7g6B7AZPQDRKVM= size: 111599616
+[  108.931996] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new system_ext sha256: X/ImCBIM3gTB27Utij1IKikBM4GDP1ozZ8b9H0sw6T8= size: 111599616
+[  108.932039] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old vbmeta_system sha256: CQ+hFHVMu+EldRrzH8R84PDffvYRRdd/fCl9OT7t8rU= size: 4096
+[  108.932080] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new vbmeta_system sha256: 6/7DMnNspLsYKI/Z4r45EzinqU37RwYzKLnwHfZrJK8= size: 4096
+[  108.932123] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo old vendor sha256: a+KF9dqSAQckegElnA6xVo4rsNcnCwwyteRah/xxJqc= size: 909520896
+[  108.932163] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(451)] PartitionInfo new vendor sha256: a+KF9dqSAQckegElnA6xVo4rsNcnCwwyteRah/xxJqc= size: 909520896
+[  108.932415] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(385)] Opening /dev/block/bootdevice/by-name/boot_b partition without O_DSYNC
+[  108.933807] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(128)] Caching writes.
+[  108.933872] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(397)] Applying 30 operations to partition "boot"
+[  108.933919] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(657)] Starting to apply update payload operations
+[  108.938567] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:delta_performer.cc(431)] Unable to open ECC source partition boot on slot A, file /dev/block/bootdevice/by-name/boot_a: Permission denied (13)
+[  108.938620] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:delta_performer.cc(1158)] The hash of the source data on disk for this operation doesn't match the expected value. This could mean that the delta update payload was targeted for another version, or that the source partition was modified after it was installed, for example, by mounting a filesystem.
+[  108.938661] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:delta_performer.cc(1163)] Expected:   sha256|hex = 319053D8A865CB8D0D838D81EECC58770F455C85C851D8C180B1A91CFAAB2DE0
+[  108.938700] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:delta_performer.cc(1166)] Calculated: sha256|hex = BC0753784D0CDC18C83BF76232427A90A0E49C34D1289CCB65B37DC5930711B9
+[  108.938746] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:delta_performer.cc(1177)] Operation source (offset:size) in blocks: 0:1,8321:1
+[  108.938794] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:delta_performer.cc(1498)] source_fd != nullptr failed.
+[  108.938897] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:delta_performer.cc(297)] Failed to perform BROTLI_BSDIFF operation 0, which is the operation 0 in partition "boot"
+[  108.938961] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:download_action.cc(336)] Error ErrorCode::kDownloadStateInitializationError (20) in DeltaPerformer's Write method when processing the received payload -- Terminating processing
+[  108.939274] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(314)] Discarding 194 unused downloaded bytes
+[  108.939417] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:multi_range_http_fetcher.cc(177)] Received transfer terminated.
+[  108.939458] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:multi_range_http_fetcher.cc(129)] TransferEnded w/ code 200
+[  108.939496] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:multi_range_http_fetcher.cc(131)] Terminating.
+[  108.944668] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(116)] ActionProcessor: finished DownloadAction with code ErrorCode::kDownloadStateInitializationError
+[  108.944719] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:action_processor.cc(121)] ActionProcessor: Aborting processing due to failure.
+[  108.944766] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:update_attempter_android.cc(522)] Processing Done.
+[  108.944823] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.944861] update_engine_sideload E 07-13 16:05:51   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  108.944897] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:delta_performer.cc(1997)] Resetting recorded hash for prepared partitions.
+[  108.944938] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:update_attempter_android.cc(546)] Resetting update progress.
+[  108.944992] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(263)] Destroying [product_a, product_b, system_a, system_b, system_ext_a, system_ext_b, vendor_a, vendor_b] from device mapper
+[  108.952512] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition product_a
+[  108.952608] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot product_a
+[  108.952663] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped product_a from device mapper.
+[  108.965929] update_engine_sideload I 07-13 16:05:51   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition product_b
+[  109.005720] update_engine_sideload I 07-13 16:05:51   582   582 snapshot.cpp:1746] Successfully unmapped snapshot product_b
+[  109.005785] update_engine_sideload I 07-13 16:05:51   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped product_b from device mapper.
+[  109.019343] update_engine_sideload I 07-13 16:05:52   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition system_a
+[  109.019424] update_engine_sideload I 07-13 16:05:52   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_a
+[  109.019476] update_engine_sideload I 07-13 16:05:52   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped system_a from device mapper.
+[  109.025712] update_engine_sideload I 07-13 16:05:52   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition system_b
+[  109.052518] update_engine_sideload I 07-13 16:05:52   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_b
+[  109.052577] update_engine_sideload I 07-13 16:05:52   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped system_b from device mapper.
+[  109.072588] update_engine_sideload I 07-13 16:05:52   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition system_ext_a
+[  109.072663] update_engine_sideload I 07-13 16:05:52   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_ext_a
+[  109.072713] update_engine_sideload I 07-13 16:05:52   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped system_ext_a from device mapper.
+[  109.079269] update_engine_sideload I 07-13 16:05:52   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition system_ext_b
+[  109.102528] update_engine_sideload I 07-13 16:05:52   582   582 snapshot.cpp:1746] Successfully unmapped snapshot system_ext_b
+[  109.102584] update_engine_sideload I 07-13 16:05:52   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped system_ext_b from device mapper.
+[  109.142472] update_engine_sideload I 07-13 16:05:52   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition vendor_a
+[  109.142543] update_engine_sideload I 07-13 16:05:52   582   582 snapshot.cpp:1746] Successfully unmapped snapshot vendor_a
+[  109.142592] update_engine_sideload I 07-13 16:05:52   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped vendor_a from device mapper.
+[  109.169149] update_engine_sideload I 07-13 16:05:52   582   582 fs_mgr_dm_linear.cpp:274] [libfs_mgr]Unmapped logical partition vendor_b
+[  109.215938] update_engine_sideload I 07-13 16:05:52   582   582 snapshot.cpp:1746] Successfully unmapped snapshot vendor_b
+[  109.215995] update_engine_sideload I 07-13 16:05:52   582   582 [INFO:dynamic_partition_control_android.cc(249)] Successfully unmapped vendor_b from device mapper.
+[  109.221598] update_engine_sideload E 07-13 16:05:52   582   582 [ERROR:prefs.cc(85)] storage_->DeleteKey(key) failed.
+[  109.274575] E:Error in /sideload/package.zip (status 1)
+[  109.337843]
+[  109.428393] W:Failed to read /sys/class/thermal/thermal_zone68/temp: Invalid argument
+[  109.428437] W:Failed to read /sys/class/thermal/thermal_zone67/temp: Invalid argument
+[  109.428476] W:Failed to read /sys/class/thermal/thermal_zone66/temp: Invalid argument
+[  109.428514] W:Failed to read /sys/class/thermal/thermal_zone65/temp: Invalid argument
+[  109.428552] W:Failed to read /sys/class/thermal/thermal_zone64/temp: Invalid argument
+[  109.428591] W:Failed to read /sys/class/thermal/thermal_zone63/temp: Invalid argument
+[  109.428630] W:Failed to read /sys/class/thermal/thermal_zone62/temp: Invalid argument
+[  109.434775] I:current maximum temperature: 75000
+[  109.434864] I:/sideload/package.zip
+[  109.434869] 0
+[  109.434870] time_total: 1
+[  109.434871] retry: 0
+[  109.434872] source_build: BN012102
+[  109.434873] target_build: BN012103
+[  109.434874] temperature_start: 75000
+[  109.434875] temperature_end: 75000
+[  109.434876] temperature_max: 75000
+[  109.434877]
+[  109.435097] I:Command 0 finished with 0
+[  109.554672] I:Socket has been closed
+[  109.588936]
+[  109.588949] Install from ADB completed with status 1.
+[  109.704112] Installation aborted.
+[  230.093246] I:Brightness: 63 (25%)

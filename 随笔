@@ -19,3 +19,51 @@
 
 
 821.5 MB (821,494,040
+
+//begin huzy3 add for app doubleOpen function 20201225
+controllers.add(new DoubleUserDataPreferenceController(context, parent));
+//end
+
+/code/android11_init/build/make
+
+HAS_BUILD_NUMBER := true
++#hzy_ota
++BN_VERSION_FILE := vendor/build_number.txt
++BUILD_NUMBER := $(file <$(BN_VERSION_FILE))
+
+
+
+代码下载命令（gerritadmin用自己的名字代替）：
+git clone http://10.58.144.11:8080/repo
+sudo cp ./repo/repo /usr/bin/
+mkdir tsinghua_android11 &&cd tsinghua_android11
+s
+ 	zone_android-11.0.0_r1
+repo init -u ssh://huzy3@10.58.144.11:29418/manifest -b tsinghua_aosp -m TAG_android-11.0.0_r1.xml
+repo sync -j8
+
+
+repo init -u ssh://huzy3@10.58.144.11:29418/manifest  -b zone_android-11.0.0_r1  -m branch_dev.xml
+
+bycomp 下载
+
+https://blog.csdn.net/xrh003/article/details/78698853?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromBaidu-1.control&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromBaidu-1.control
+
+
+https://www.scootersoftware.com/download.php
+
+
+
+
+sudo sed -i "s/keexjEP3t4Mue23hrnuPtY4TdcsqNiJL-5174TsUdLmJSIXKfG2NGPwBL6vnRPddT7tH29qpkneX63DO9ECSPE9rzY1zhThHERg8lHM9IBFT+rVuiY823aQJuqzxCKIE1bcDqM4wgW01FH6oCBP1G4ub01xmb4BGSUG6ZrjxWHJyNLyIlGvOhoY2HAYzEtzYGwxFZn2JZ66o4RONkXjX0DF9EzsdUef3UAS+JQ+fCYReLawdjEe6tXCv88GKaaPKWxCeaUL9PejICQgRQOLGOZtZQkLgAelrOtehxz5ANOOqCaJgy2mJLQVLM5SJ9Dli909c5ybvEhVmIC0dc9dWH+/N9KmiLVlKMU7RJqnE+WXEEPI1SgglmfmLc1yVH7dqBb9ehOoKG9UE+HAE1YvH1XX2XVGeEqYUY-Tsk7YBTz0WpSpoYyPgx6Iki5KLtQ5G-aKP9eysnkuOAkrvHU8bLbGtZteGwJarev03PhfCioJL4OSqsmQGEvDbHFEbNl1qJtdwEriR+VNZts9vNNLk7UGfeNwIiqpxjk4Mn09nmSd8FhM4ifvcaIbNCRoMPGl6KU12iseSe+w+1kFsLhX+OhQM8WXcWV10cGqBzQE9OqOLUcg9n0krrR3KrohstS9smTwEx9olyLYppvC0p5i7dAx2deWvM1ZxKNs0BvcXGukR+/g" BCompare
+
+
+
+d
+
+
+ALOGE("hzy  duplicate layer name changing %s ",name);
+
+
+
+git push origin HEAD:refs/for/branch_dev

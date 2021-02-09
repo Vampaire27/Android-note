@@ -24,7 +24,7 @@
 ```
 3.备份ota全包,并根据需要是否需要是否上传后台
   ```
-      out/target/product/coral/aosp_coral-ota-BN012101.zip
+      out/target/product/coral/aosp_coral-ota-BX10860D0101.zip
                                    |        |         |
                                 产品型号    ota       软件版本号
 
@@ -33,7 +33,7 @@
 4. 备份target file用于后续制作差分包
    ```
 
-      out/target/product/coral/obj/PACKAGING/target_files_intermediates/aosp_coral-target_files-BN012101.zip
+      out/target/product/coral/obj/PACKAGING/target_files_intermediates/aosp_coral-target_files-BX10860D0101.zip
                                                                              |          |           |
                                                                           产品型号    target_files   软件版本号
 ```
@@ -47,7 +47,7 @@
           --block \
           -p out/host/linux-x86 \
           -k build/target/product/security/testkey \
-          -i ./aosp_coral-target_files--BN012101.zip ./aosp_coral-target_files--BN012102.zip
+          -i ./aosp_coral-target_files--BX10860D0101.zip ./aosp_coral-target_files--BX10860D0101.zip
           ./aosp_coral-BN012101-BN012102.zip
 ```
 ```
@@ -61,7 +61,7 @@
 
   集成组在编译之后,生成的差分包名称如下:
 
-      aosp_coral-BN012101-BN012102.zip
+      aosp_coral-BX10860D0101-BX10860D0102.zip
           |          |        |
        产品型号     原版本号   目标版本号
 
@@ -73,9 +73,10 @@
  品牌名称,产品型号,软件版本号 相关信息存放在设备的属性值中,如下:
 
 ```
+
   品牌名称: ro.product.brand  =   BN
   产品型号: ro.product.name = aosp_coral
-  软件版本号: ro.build.version.incremental = BN012102
+  软件版本号: ro.build.version.incremental = BX10860D0101
 
 ```
 

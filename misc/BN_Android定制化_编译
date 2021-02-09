@@ -1,0 +1,98 @@
+# 版本号
+系统版本号定义长度为12位如: BX1086550101
+
+ ```
+第[1] 位固定为B.
+
+第[2-3] 表示项目代号 如:X1
+
+第[3-5] 表示地区 如:086
+
+第[6-7] 预留缺省 如:55
+
+第[8-11] 表示版本 如:0101
+
+```
+
+# 目录结构
+vendor下面添加目录结构如下:
+
+![](image/2021-02-04-1451.png)
+
+* vendor/bn/app
+      此目录用来放置源码app.
+
+      如: vendor/bn/app/BN_MMITest/
+
+* vendor/bn/products/coral
+
+  ```
+  存放具体项目相关的文件
+
+  如: vendor/bn/products/coral/app 存放三方独立app.
+     目前Tmake.sh 从 ftp://ftpdown:ftpdown@10.58.144.14:35021/release_apk/自动下载.
+
+     vendor/bn/products/coral/configs
+     存放项目配置文件如:
+          build_number.txt
+          otherapks.yml
+
+  ```
+
+* vendor/bn/script/
+```
+  存放定制化编译脚本如:
+
+  vendor/bn/script/Tmake.sh
+  ```
+
+# 编译命令
+./Tmake.sh -t aosp_coral -v userdebug
+
+```
+usage() {
+    cat <<USAGE
+
+Usage:
+    bash $0  [OPTIONS]
+
+Description:
+    Builds Android tree for given TARGET_PRODUCT, Default add otherapks to build
+
+OPTIONS:
+    -c, --clean_build
+        Clean build - build from scratch by removing entire out dir
+
+    -h, --help
+        Display this help message
+
+    -i, --image
+        Specify image to be build/re-build (bootimg/sysimg/usrimg/all Default: all)
+
+    -j, --jobs
+        Specifies the number of jobs to run simultaneously (Default: CPU core Number)
+
+    -k, --kernel_defconf
+        Specify defconf file to be used for compiling Kernel
+
+    -l, --log_file
+        Log file to store build logs (Default: time.log)
+
+    -m, --module
+        Module to be build (make e.g.:snod clean clobber)
+
+    -p, --project
+        Project to be build (mmm e.g.:packages/app/Settings)
+
+    -t, --target
+        target to be build
+
+    -u, --update-api
+        Update APIs
+
+    -v, --build_variant
+        Build variant (Default: eng)
+
+USAGE
+}
+```

@@ -1,0 +1,93 @@
+# 1. sdcardfs是什么？
+
+sdcardfs最初由三星开发，从Android8.0开始google开始接管sdcardfs用来替换原本的FUSE文件系统。(以下代码基于android 9.0的sdcardfs）
+
+它跟sdcard(TF卡)没有关系，并不是一个磁盘文件系统。主要的功能是管理android提供的/sdcard这个目录，/sdcard这个目录被android作为"外部"存储，相对于/data分区的内部存储，它只是一个软件层次上的隔离，内部存储和外部存储可能实际都是保存在同一个userdata分区下。
+
+sdcardfs并不是传统的磁盘文件系统，它实际是一个栈式文件系统，也可以叫wrap包装文件系统，它可以把系统调用发送的各种命令参数传递到底层文件系统中。
+
+它的作用和原来的FUSE文件系统一样，可以让anroid接管对sdcardfs下的目录文件的访问权限控制，实现对各自app独立授权。
+
+# 2. sdcardf的工作方式
+
+sdcardfs是栈是文件系统，它可以在原有的文件系统，如磁盘文件系统的基础上工作。底层文件系统的其中一个目录可以作为它的根目录，起到一个包装的效果。
+
+例如，ext4目录下的/data/media被sdcardfs给包装起来，向sdcardfs发起的任何读写等操作都会被转发到底层对应的ext4文件系统。因此sdcardfs的文件内容完全依赖底层文件系统提供。而转发的过程中可以做出如鉴权的工作，发挥原本底层文件系统无法简单实现的功能。
+
+![](image/20191011221939383.png)
+
+3. sdcardfs是如何实现的
+
+下面以一次read过程为例来阐述sdcardfs大概是如何实现的。
+
+但是首先看看如果不通过sdcardfs，而直接read ext4文件系统/data/media下的某个文件譬如test.txt，这个过程是怎么做到的。
+
+一次read操作之前，需要open打开/data/media/test.txt文件句柄，之后读取内容，最后需要close关闭文件句柄。
+```
+以下是open的简化步骤：
+
+    构建文件对应的目录缓存struct dentry对象。（里面包含了文件的名称test.txt）
+    通过父目录(/data/media)的inode_operations的lookup操作来查找与dentry对应的struct inode，也就是文件test.txt的inode。把inode保存到dentry对象里面
+    把test.txt文件所在的vfs mount对象 + 第2步的 dentry对象组合生成一个struct path对象，vfs mount代表文件系统和dentry 代表文件系统下的一个路径，两者构造了一个全局唯一路径。
+    生成一个新的struct file对象，把第3步的path对象保存在其中。file对象代表进程的一个打开文件句柄，通过句柄fd数组能找到对应的file对象。
+
+read的简化步骤：
+
+    通过句柄fd找到对应的file对象
+    通过file对象操作对应inode的file_operation里面的read方法，读取对应的文件内容后返回给用户程序
+
+close的简化步骤：
+
+    通过句柄fd找到对应的file对象
+    减少其inode对象，dentry对象的引用计数，释放掉path对象。
+    释放掉file对象。
+```
+
+这其中有几个关键点数据结构，struct dentry, struct inode, struct path, struct file是操作这个文件必不可少的内容，意味着要想read操作正常完成，这几个数据结构对应的对象必须构建成功。也即是要读/data/media/test.txt这个文件的话，上面四个结构体对象必须构建成功。
+
+此时我们把sdcardfs加进来，通过向sdcardfs的/sdcard/test.txt发起读操作来间接向/data/media/test.txt发起读操作。
+
+但是在访问/sdcard/test.txt的时候，事实上也是文件系统读操作，同样也需要构建出上面的四个对象。这个时候的栈式文件系统的思想就被体现出来了，也就是顶层sdcardfs文件的这四个数据结构，需要和底层文件系统的四个数据结构有关联关系。
+
+假设他们之间没有关联关系的话，在read系统调用操作时，传递的fd能帮助找到/sdcard/test.txt的file对象，但是通过file对象不会立刻知道操作的是底层/data/media/test.txt文件，也就不能立刻能发起read操作。如果顶层sdcarfs的file对象能包含底层file对象的话，则可以迅速的获取对象，取得read操作方法，立刻发起调用。
+
+他们之间的关联结构如下图所示：
+![](image/20191011222645270.PNG)
+
+
+
+```
+以下是open的步骤：（蓝色部分是因为sdcardfs的加入的新增内容）
+
+1. 构建文件对应的目录缓存struct dentry对象。（里面包含了文件的名称test.txt）（此时open的是/sdcard/test.txt文件，dentry是属于sdcardfs的)
+
+通过父目录(/sdcard)的inode_operations的lookup操作来查找与dentry对应的struct inode，也就是文件test.txt的inode。(此时希望找到/sdcard/test.txt的inode，但是前提是要找到/data/media/test.txt的inode，以此为基础构建sdcardfs的inode）
+
+2.1 于是sdcardfs_lookup操作先找到底层ext4对应文件的dentry和path对象，叫lower_dentry和lower_path，因为有名称，通过vfs_path_lookup还是很容易找到的。因为文件是存在的，因此在vfs_path_lookup的时候，lower_dentry里面也包含了/data/media/test.txt这个文件的lower_inode。
+
+
+2.2 有了底层的这个三个结构体之后，可以直接通过__sdcardfs_interpose把sdcardfs的inode创建出来，并且sdcardfs inode和lower_inode关联。把ext4的lower_path和dentry也关联起来。最后把自己的sdcardfs的inode和dentry通过d_splice_alias关联好。至此只剩下file结构体没有关联
+
+
+3. 把test.txt文件所在的vfsmount对象 + 第2步的dentry对象组合生成一个strutc path对象(这个是sdcardfs的path)，vfsmount代表文件系统和dentry代表文件系统下的一个路径，两者构造了一个全局唯一路径。
+
+
+4. 生成一个新的struct file对象，把第3步的path对象保存在其中。file对象代表进程的一个打开文件句柄，通过句柄fd数组能找到对应的file对象。
+4.1 在返回之前，vfs会有机会调用sdcardfs提供的file_operation的open函数，sdcardfs_open。在这里会从file里面提取到dentry，然后拿到底层lower_path对象，通过dentry_open生成底层ext4层的lower_file对象。因为sdcardfs的file对象都已经通过参数传递过来了，只需要sdcardfs_set_lower_file操作就可以把sdcardfs和ext4的file对象关联在一起。
+于是所有四个对象全部按照上面图标的形式连接完毕。
+
+接下来看read的步骤
+1. 通过句柄fd找到对应的file对象
+2. 通过file对象操作对应inode的file_operation里面的read方法，
+2.1 通过sdcardfs的file对象直接找到ext4的lower_file，然后调用file里面的inode file_operation的read操作。lower_file->f_op->read_iter
+     读取对应的文件内容后返回给用户程序
+至此通过sdcardfs发生的read操作，被迅速的传递到了底层ext4文件系统的read操作，中间没有经过像FUSE的用户态内核态的复杂切换，只是通过函数调用就完成了。提高了操作性能。
+
+最后看close的步骤：
+close主要用于释放资源，正是因为sdcardfs把底层的结构体对象都关联过来了，因此释放操作不能只有vfs自动完成，sdcardfs_file_release负责完成file对象的释放，同时释放lower_file的引用计数。lower_file释放的fput操作里面，会同时对dentry完成dput操作。如果dput需要成功释放dentry对象的话，inode的引用计数也会通过input减少。
+```
+
+# 4. 总结
+
+
+通过sdcardfs的一个读操作，了解到sdcardfs的工作原理主要是主要完成的是重要结构体的构建，关联底层文件系统的重要结构体。同时讲上层传递过来的操作和参数向底层文件系统转发，做一个中间人的角色。其他sdcardfs的操作可以此类推。由于转发的效率高，没有用户态和内核态的切换，因此比FUSE文件系统性能更好。

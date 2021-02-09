@@ -1,1 +1,509 @@
-https://blog.csdn.net/scnutiger/article/details/102511583?utm_medium=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.control&depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.control
+
+ sdcardfs如果没有独特的权限控制，只是转发用户态的参数和操作给底层文件系统就没有其存在的意义了。所以接下来关注sdcardfs是如何做到权限控制的。
+
+# 1. linux的UGO文件权限生成
+
+sdcardfs需要给vfs呈现linux标准的文件权限，即UGO（用户，组，other）权限。同时忽略掉底层文件系统的权限，以达到接管的效果。
+
+首先从inode_operations getattr上看其实如何构造文件权限的。
+
+```
+static int sdcardfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
+		 struct kstat *stat)
+{
+	...
+	err = sdcardfs_fillattr(mnt, d_inode(dentry), &lower_stat, stat);
+	...
+}
+
+static int sdcardfs_fillattr(struct vfsmount *mnt, struct inode *inode,
+				struct kstat *lower_stat, struct kstat *stat)
+{
+	...
+	stat->mode = (inode->i_mode  & S_IFMT) | get_mode(mnt, info, top);
+	stat->nlink = inode->i_nlink;
+	stat->uid = make_kuid(&init_user_ns, top->d_uid);
+	stat->gid = make_kgid(&init_user_ns, get_gid(mnt, sb, top));
+	...
+}
+```
+
+大部分的文件都返回一个一致的mode，uid和gid。无论底层文件系统文件的权限是什么，都返回了同样的UGO。
+
+文件权限mode来至于一个get_mode的实现，用户uid取决于top->d_uid，而组gid来自get_gid的实现
+
+```
+static inline int get_mode(struct vfsmount *mnt,
+		struct sdcardfs_inode_info *info,
+		struct sdcardfs_inode_data *data)
+{
+	int owner_mode;
+	int filtered_mode;
+	struct sdcardfs_vfsmount_options *opts = mnt->data;
+	int visible_mode = 0775 & ~opts->mask;
+
+	...
+	filtered_mode = visible_mode & (owner_mode | (owner_mode >> 3) | (owner_mode >> 6));
+	return filtered_mode;
+}
+```
+
+get_mode的内容最重要的是0775 & ~opts->mask。这个opts->mask来至于挂载参数比如：
+
+/data/media on /storage/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=1015,multiuser,mask=6,derive_gid,default_normal,reserved=20MB)
+
+挂载参数mask是6。因此大部分文件都是呈现为 0775 & ~6 变成0771
+
+```
+a70s:/sdcard $ ls -l
+total 120
+drwxrwx--x 2 root sdcard_rw 4096 2019-01-01 08:02 Alarms
+drwxrwx--x 3 root sdcard_rw 4096 2019-01-01 08:02 Android
+drwxrwx--x 2 root sdcard_rw 4096 2019-01-01 08:02 DCIM
+drwxrwx--x 3 root sdcard_rw 4096 2019-01-01 08:06 Documents
+drwxrwx--x 2 root sdcard_rw 4096 2019-01-01 08:02 Download
+drwxrwx--x 2 root sdcard_rw 4096 2019-01-01 08:02 Movies
+```
+
+然后top->d_uid来至于最早挂载文件系统的时候，sdcardfs_read_super
+
+```
+static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
+		const char *dev_name, void *raw_data, int silent)
+{
+	...
+	if (sb_info->options.multiuser) {
+		setup_derived_state(d_inode(sb->s_root), PERM_PRE_ROOT,
+				sb_info->options.fs_user_id, AID_ROOT);
+		snprintf(sb_info->obbpath_s, PATH_MAX, "%s/obb", dev_name);
+	}
+	...
+}
+void setup_derived_state(struct inode *inode, perm_t perm, userid_t userid,
+					uid_t uid)
+{
+	...
+	info->data->d_uid = uid;
+	...
+}
+```
+
+
+得到的结果是AID_ROOT，因此是得到的uid是root用户
+
+而gid的值，由get_gid返回。
+
+```
+static inline int get_gid(struct vfsmount *mnt,
+		struct super_block *sb,
+		struct sdcardfs_inode_data *data)
+{
+	...
+
+	if (vfsopts->gid == AID_SDCARD_RW && !sbi->options.default_normal)
+		/* As an optimization, certain trusted system components only run
+		 * as owner but operate across all users. Since we're now handing
+		 * out the sdcard_rw GID only to trusted apps, we're okay relaxing
+		 * the user boundary enforcement for the default view. The UIDs
+		 * assigned to app directories are still multiuser aware.
+		 */
+		return AID_SDCARD_RW;
+	else
+		return multiuser_get_uid(data->userid, vfsopts->gid);
+}
+
+```
+
+如果挂载参数vfsopts->gid不是AID_SDCARD_RW，1015的话，直接用vfsopts->gid来构造gid的值。vfsopts->gid来至于挂载参数gid
+/data/media on /storage/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=1015,multiuser,mask=6,derive_gid,default_normal,reserved=20MB)
+
+这里是1015，因此文件组就是sdcard_rw
+
+在判断文件权限的环境，sdcardfs重写了inode_operation的permission方法，以上面同样的方法构造了一个临时虚拟inode，来做文件判断
+
+
+```
+static int sdcardfs_permission(struct vfsmount *mnt, struct inode *inode, int mask)
+{
+	...
+	copy_attrs(&tmp, inode);
+	tmp.i_uid = make_kuid(&init_user_ns, top->d_uid);
+	tmp.i_gid = make_kgid(&init_user_ns, get_gid(mnt, inode->i_sb, top));
+	tmp.i_mode = (inode->i_mode & S_IFMT)
+			| get_mode(mnt, SDCARDFS_I(inode), top);
+	...
+	err = generic_permission(&tmp, mask);
+
+	return err;
+
+}
+```
+
+由此我们基本可以了解到，sdcardfs文件inode权限的表现和判断是通过临时在运行时生成的，并没有直接使用inode结构体mode uid和gid。如果采用了的话则完全不需要实现getattr，permission函数，直接由vfs层完成工作即可。
+
+
+# 2. 为什么要运行时构建文件权限？
+
+从前面的android5.0 sd卡访问权限简单分析的文章可以了解到，当时的sdcardfs对app写权限的控制，是通过运行时检查hash表里面对应的app id是否拥有写权限组，来授予的。它的局限在于，需要每次写操作时通过查表检查才能鉴权。并且package manger service的packagelist文件必须要提前准备好，导致产生某些时序问题，而且packagelist需要收到持续的监听，当发生变化的时候，要同步更新sdcardfs的hash表。
+
+造成这样的问题的主要原因是，linux UGO本身具有局限性，一个文件只有一个gid，只能安排一种权限。如果gid授予了读写权限，但是android的某个app只开放了读权限，此时app加入gid和不加入gid都无法满足需求。加入的话就有读写权限，不加入的话则读写都没有。因此功能上的缺陷导致sdcardfs只能另辟蹊径。
+
+而解决5.0时代sdcardfs缺陷的方法，可以通过将底层文件系统的目录挂载多次来解决。不同的挂载可以给予不同的参数，由于上面第一节的分析可以看到，不同的挂载参数可以构建出不同的文件权限，因此同样一个目录通过挂载多份，就可以达到开发不同权限的目录。
+
+例如9.0手机上面实际的挂载情况
+```
+/data/media on /mnt/runtime/default/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=1015,multiuser,mask=6,derive_gid,default_normal,reserved=20MB)
+/data/media on /mnt/runtime/read/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=23,derive_gid,default_normal,reserved=20MB)
+/data/media on /mnt/runtime/write/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=7,derive_gid,default_normal,reserved=20MB)
+```
+
+/mnt/runtime/read/emulated和/mnt/runtime/write/emulated的gid都是9997，9997代表everyone，属于9997 gid的app都能访问这两个目录
+但是权限mask不一样，/mnt/runtime/read/emulated目录的mask是23，mode变成750，everyone组只有读没有写权限，
+而/mnt/runtime/write/emulated目录的mask则是7，mode会变成770，everyone组于是读写权限都具备。
+
+于是简单一个想法是可以通过app启动时，动态挂载sdcardfs，根据android权限授予的不同，挂载不同的参数，几乎所有app都拥有everyone这个gid组，因此可以达到一个动态权限授予的结果。而避免了hash表查表这种操作。
+
+但是直接通过new mount的办法并不是很现实，使用多个sdcardfs并不是没有开销的，最大的问题是需要消耗内存。原本直接访问/data/media这种目录就需要一组结构体对象，具体可以参考前文。套上一个sdcardfs之后，结构体消耗加倍。如果为每个app都挂载一次sdcardfs的话，耗费的内存不计其数。
+
+因此sdcardfs通过bind mount的方式解决。即通过一个已经挂载好了的sdcardfs，通过bind的方式连接到一个新的目录，然后remount修改新bind之后的挂载点的挂载参数，如此只需要维持一个少量内存的挂载参数消耗，即可以解决问题。但是带了的结果是，inode的权限位，uid和gid需要通过挂载参数来动态生成，因为不同的bind mount的挂载点，inode是同一个inode，只有挂载参数的部分是又区别的。不通过运行时构造inode的权限位，无法区分不同挂载点的差异。
+
+下面看bind mount带来的差异点。bind mount之后，挂载点opt对象重新被创建一份
+```
+static void *sdcardfs_clone_mnt_data(void *data)
+{
+	struct sdcardfs_vfsmount_options *opt = kmalloc(sizeof(struct sdcardfs_vfsmount_options), GFP_KERNEL);
+	struct sdcardfs_vfsmount_options *old = data;
+
+	if (!opt)
+		return NULL;
+	opt->gid = old->gid;
+	opt->mask = old->mask;
+	return opt;
+}
+```
+
+
+然后通过remount fs操作来修改新的挂载点参数
+```
+static int sdcardfs_remount_fs2(struct vfsmount *mnt, struct super_block *sb,
+						int *flags, char *options)
+{
+	...
+	pr_info("Remount options were %s\n", options);
+	err = parse_options_remount(sb, options, *flags & MS_SILENT ? 1 : 0,
+			mnt->data);
+
+	return err;
+}
+```
+
+结果就是，只有/mnt/runtime/default/emulated是第一次的新挂载点，后面的/mnt/runtime/read/emulated和/mnt/runtime/write/emulated是通过bind mount方式构建出来。
+
+```
+/data/media on /mnt/runtime/default/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=1015,multiuser,mask=6,derive_gid,default_normal,reserved=20MB)
+/data/media on /mnt/runtime/read/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=23,derive_gid,default_normal,reserved=20MB)
+/data/media on /mnt/runtime/write/emulated type sdcardfs (rw,nosuid,nodev,noexec,noatime,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=7,derive_gid,default_normal,reserved=20MB)
+```
+
+
+# 3. android层的挂载操作
+
+init最初创建了void进程，emluated sdcard最初是在vold进程里面挂载的，由于init和void相互共享了挂载点，用的是同一个mnt名称空间，因此后续adb shell进程看到的挂载点情况也就是vold的挂载情况。
+
+在开机初始化的时候，emluated volume会被初始化起来，代表了内部sdcard。EmluatedVolume.cpp的doMount方法被执行。
+
+```
+status_t EmulatedVolume::doMount() {
+    ...
+
+    mFuseDefault = StringPrintf("/mnt/runtime/default/%s", label.c_str());
+    mFuseRead = StringPrintf("/mnt/runtime/read/%s", label.c_str());
+    mFuseWrite = StringPrintf("/mnt/runtime/write/%s", label.c_str());
+
+    setInternalPath(mRawPath);
+    setPath(StringPrintf("/storage/%s", label.c_str()));
+
+    if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << getId() << " failed to create mount points";
+        return -errno;
+    }
+
+    dev_t before = GetDevice(mFuseWrite);
+
+    if (!(mFusePid = fork())) {
+        if (execl(kFusePath, kFusePath,
+                "-u", "1023", // AID_MEDIA_RW
+                "-g", "1023", // AID_MEDIA_RW
+                "-m",
+                "-w",
+                "-G",
+                "-i",
+                "-r",
+                mRawPath.c_str(),
+                label.c_str(),
+                NULL)) {
+            PLOG(ERROR) << "Failed to exec";
+        }
+
+        LOG(ERROR) << "FUSE exiting";
+        _exit(1);
+    }
+
+    ...
+
+    LOG(VERBOSE) << "EmulatedVolume::doMount()--";
+    return OK;
+}
+```
+
+s_prepare_dir确保了这几个挂载点路径被生成出来，接下来执行的是一个kFusePath的二进制程序。
+
+```
+static const char* kFusePath = "/system/bin/sdcard";
+```
+
+
+执行sdcard这个二进制程序之后，跑到main函数里面的run_sdcardfs方法
+```
+static void run_sdcardfs(const std::string& source_path, const std::string& label, uid_t uid,
+                         gid_t gid, userid_t userid, bool multi_user, bool full_write,
+                         bool derive_gid, bool default_normal, bool use_esdfs) {
+    std::string dest_path_default = "/mnt/runtime/default/" + label;
+    std::string dest_path_read = "/mnt/runtime/read/" + label;
+    std::string dest_path_write = "/mnt/runtime/write/" + label;
+
+    ...
+
+    if (multi_user) {
+        // Multi-user storage is fully isolated per user, so "other"
+        // permissions are completely masked off.
+        if (!sdcardfs_setup(source_path, dest_path_default, uid, gid, multi_user, userid,
+                            AID_SDCARD_RW, 0006, derive_gid, default_normal, use_esdfs) ||
+            !sdcardfs_setup_secondary(dest_path_default, source_path, dest_path_read, uid, gid,
+                                      multi_user, userid, AID_EVERYBODY, 0027, derive_gid,
+                                      default_normal, use_esdfs) ||
+            !sdcardfs_setup_secondary(dest_path_default, source_path, dest_path_write, uid, gid,
+                                      multi_user, userid, AID_EVERYBODY, full_write ? 0007 : 0027,
+                                      derive_gid, default_normal, use_esdfs)) {
+            LOG(FATAL_WITHOUT_ABORT) << "failed to sdcardfs_setup";
+            panic();
+        }
+    } else {
+    ...
+
+    exit(0);
+}
+```
+
+对第一个挂载点/mnt/runtime/default/，执行的是sdcardfs_setup，另外两个是sdcardfs_setup_secondary
+/mnt/runtime/default/用的是vold传递过的参数，而后来两个改写了gid为AID_EVERYBODY即前面的9997，另外mask也做了修改，变成了0027和0007，八进制
+
+sdcardfs_setup就是一个普通的new mount操作。
+```
+
+static bool sdcardfs_setup(const std::string& source_path, const std::string& dest_path,
+                           uid_t fsuid, gid_t fsgid, bool multi_user, userid_t userid, gid_t gid,
+                           mode_t mask, bool derive_gid, bool default_normal, bool use_esdfs) {
+    // Try several attempts, each time with one less option, to gracefully
+    // handle older kernels that aren't updated yet.
+   	...
+        if (mount(source_path.c_str(), dest_path.c_str(), use_esdfs ? "esdfs" : "sdcardfs",
+                  MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, opts.c_str()) == -1) {
+            PLOG(WARNING) << "Failed to mount sdcardfs with options " << opts;
+            stlog("failed to mount sdcardfs %s -> %s with options %s: %s",
+                    source_path.c_str(), dest_path.c_str(), opts.c_str(),
+                    strerror(errno));
+        } else {
+        ...
+    return false;
+}
+```
+而sdcardfs_setup_secondary，则是一个bind和remount操作
+```
+static bool sdcardfs_setup_secondary(const std::string& default_path, const std::string& source_path,
+                                     const std::string& dest_path, uid_t fsuid, gid_t fsgid,
+                                     bool multi_user, userid_t userid, gid_t gid, mode_t mask,
+                                     bool derive_gid, bool default_normal, bool use_esdfs) {
+    ...
+    } else {
+        return sdcardfs_setup_bind_remount(default_path, dest_path, gid, mask);
+    }
+}
+
+static bool sdcardfs_setup_bind_remount(const std::string& source_path, const std::string& dest_path,
+                                        gid_t gid, mode_t mask) {
+    std::string opts = android::base::StringPrintf("mask=%d,gid=%d", mask, gid);
+
+    if (mount(source_path.c_str(), dest_path.c_str(), nullptr,
+            MS_BIND, nullptr) != 0) {
+        PLOG(ERROR) << "failed to bind mount sdcardfs filesystem";
+        stlog("failed to bind mount %s -> %s: %s", source_path.c_str(),
+			dest_path.c_str(), strerror(errno));
+        return false;
+    }
+
+    if (mount(source_path.c_str(), dest_path.c_str(), "none",
+            MS_REMOUNT | MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, opts.c_str()) != 0) {
+        PLOG(ERROR) << "failed to mount sdcardfs filesystem";
+        stlog("failed to remount %s with %s: %s", dest_path.c_str(),
+			opts.c_str(), strerror(errno));
+        if (umount2(dest_path.c_str(), MNT_DETACH))
+            PLOG(WARNING) << "Failed to unmount bind";
+        return false;
+    }
+
+    return true;
+}
+```
+
+以上几个挂载点都是share mount挂载点，意味着以此fork出来的新进程共享挂载信息。但是要做到app独立授予不同的权限，还需要控制app使用哪个挂载点，
+
+比如app不允许读写使用/mnt/runtime/default
+
+允许读使用/mnt/runtime/read
+
+允许读写使用/mnt/runtime/write
+
+这主要是通过zygote fork的时候，创建子mnt命名空间来实现，因此不同的进程可以有不同的挂载点呈现 ，通过cat /proc/pid/mountinfo可以看到其差异内容
+
+```
+cat /proc/9587/mountinfo
+2541 2535 0:34 / /mnt/runtime/default/emulated rw,nosuid,nodev,noexec,noatime master:37 - sdcardfs /data/media rw,fsuid=1023,fsgid=1023,gid=1015,multiuser,mask=6,derive_gid,default_normal,r
+eserved=20MB
+2542 2535 0:34 / /mnt/runtime/read/emulated rw,nosuid,nodev,noexec,noatime master:37 - sdcardfs /data/media rw,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=23,derive_gid,default_normal,res
+erved=20MB
+2543 2535 0:34 / /mnt/runtime/write/emulated rw,nosuid,nodev,noexec,noatime master:37 - sdcardfs /data/media rw,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=7,derive_gid,default_normal,res
+erved=20MB
+```
+master代表是从挂载点，挂载信息不会传递到主mnt命名空间。
+而init进程的情况，挂点是share，代表主mnt命名空间。
+
+```
+cat /proc/1/mountinfo
+210 22 0:34 / /mnt/runtime/default/emulated rw,nosuid,nodev,noexec,noatime shared:37 - sdcardfs /data/media rw,fsuid=1023,fsgid=1023,gid=1015,multiuser,mask=6,derive_gid,default_normal,rese
+rved=20MB
+217 22 0:34 / /mnt/runtime/read/emulated rw,nosuid,nodev,noexec,noatime shared:37 - sdcardfs /data/media rw,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=23,derive_gid,default_normal,reserv
+ed=20MB
+222 22 0:34 / /mnt/runtime/write/emulated rw,nosuid,nodev,noexec,noatime shared:37 - sdcardfs /data/media rw,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=7,derive_gid,default_normal,reserv
+ed=20MB
+```
+而zygote在fork app进程的时候执行了MountEmulatedStorage
+
+```
+static pid_t ForkAndSpecializeCommon(JNIEnv* env, uid_t uid, gid_t gid, jintArray javaGids,
+                                     jint runtime_flags, jobjectArray javaRlimits,
+                                     jlong permittedCapabilities, jlong effectiveCapabilities,
+                                     jint mount_external,
+                                     jstring java_se_info, jint space, jint accessInfo, jstring java_se_name,
+                                     bool is_system_server, jintArray fdsToClose,
+                                     jintArray fdsToIgnore, bool is_child_zygote,
+                                     jstring instructionSet, jstring dataDir) {
+
+  ...
+    if (!MountEmulatedStorage(uid, mount_external, use_native_bridge, mountKnoxPoint, &isVoldStorageMounted, accessInfo, &error_msg)) {
+
+      ALOGW("Failed to mount emulated storage: %s (%s)", error_msg.c_str(), strerror(errno));
+
+      if (errno == ENOTCONN || errno == EROFS) {
+
+        // When device is actively encrypting, we get ENOTCONN here
+
+        // since FUSE was mounted before the framework restarted.
+
+        // When encrypted device is booting, we get EROFS since
+
+        // FUSE hasn't been created yet by init.
+
+        // In either case, continue without external storage.
+
+      } else {
+
+        fail_fn(error_msg);
+
+      }
+
+    }
+```
+根据android属于的不同权限mount_mode来选择某一个挂载点
+
+```
+static bool MountEmulatedStorage(uid_t uid, jint mount_mode,
+        bool force_mount_namespace, jint mountKnoxPoint, int *isVoldStorageMounted, int accessInfo, std::string* error_msg) {
+
+    // See storage config details at http://source.android.com/tech/storage/
+
+
+    String8 storageSource;
+
+    if (mount_mode == MOUNT_EXTERNAL_DEFAULT) {
+
+        storageSource = "/mnt/runtime/default";
+
+    } else if (mount_mode == MOUNT_EXTERNAL_READ) {
+
+        storageSource = "/mnt/runtime/read";
+
+    } else if (mount_mode == MOUNT_EXTERNAL_WRITE) {
+
+        storageSource = "/mnt/runtime/write";
+
+    } else if (!force_mount_namespace) {
+
+        // Sane default of no storage visible
+
+        return true;
+
+    }
+
+
+    // Create a second private mount namespace for our process
+
+    if (unshare(CLONE_NEWNS) == -1) {
+
+        *error_msg = CREATE_ERROR("Failed to unshare(): %s", strerror(errno));
+
+        return false;
+
+    }
+
+
+    // Handle force_mount_namespace with MOUNT_EXTERNAL_NONE.
+
+    if (mount_mode == MOUNT_EXTERNAL_NONE) {
+
+        return true;
+
+    }
+
+
+    // Mount user-specific symlink helper into place
+
+    userid_t user_id = multiuser_get_user_id(uid);
+
+
+
+
+    if (TEMP_FAILURE_RETRY(mount(storageSource.string(), "/storage",
+
+            NULL, MS_BIND | MS_REC | MS_SLAVE, NULL)) == -1) {
+
+        *error_msg = CREATE_ERROR("Failed to mount %s to /storage: %s",
+
+                                  storageSource.string(),
+
+                                  strerror(errno));
+
+        return false;
+
+    }
+```
+
+最后通过mount bind的方法挂载到/storage目录上面，变成新挂载点
+
+```
+2559 2558 0:34 / /storage/emulated rw,nosuid,nodev,noexec,noatime master:37 - sdcardfs /data/media rw,fsuid=1023,fsgid=1023,gid=9997,multiuser,mask=7,derive_gid,default_normal,reserved=20MB
+```
+
+后续app访问的目录实际变成了访问/storage/emulated，而/storage/emulated是又选择的挂载到不同读写权限的sdcardfs挂载点，完成了不同权限的控制。

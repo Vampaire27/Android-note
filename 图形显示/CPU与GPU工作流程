@@ -1,0 +1,181 @@
+# GPU由来
+
+    CPU的任务繁多，做逻辑计算，还要做内存管理、显示操作，因此在实际运算(浮点运算)的时候性能会大打折扣，在没有GPU的时代，不能显示复杂的图形，其运算速度远跟不上今天复杂三维游戏的要求。即使CUP的工作频率超过2GHZ或更高，对它绘制图形提高也不大。这时GPU的设计就出来了。
+
+# CPU和GPU架构
+
+黄色的Control： 控制器，用于协调控制整个CPU的运行，包括取出指令、控制其他模块的运行等；
+绿色的ALU(Arithmetic Logic Unit)： 算术逻辑单元，用于进行数学、逻辑运算；
+橙色的Cache： 缓存，用于存储信息。
+橙色的DRAM： RAM，用于存储信息。
+从结构图可以看出，CPU的控制器较为复杂，而ALU数量较少。因此CPU擅长各种复杂的逻辑运算，但不擅长数学尤其浮点运算。
+
+
+![](image/2021-02-04 09-54-32.png)
+
+
+![](image/4027460-5e0f88d5c112d404.png)
+
+
+* CPU: 中央处理器,它集成了运算,缓冲,控制等单元,包括绘图功能.CPU将对象处理为多维图形,纹理(Bitmaps、Drawables等都是一起打包到统一的纹理).
+
+* GPU:一个类似于CPU的专门用来处理Graphics的处理器, 作用用来帮助加快格栅化操作,当然,也有相应的缓存数据(例如缓存已经光栅化过的bitmap等)机制。
+
+* OpenGL ES：是手持嵌入式设备的3D API,跨平台的、功能完善的2D和3D图形应用程序接口API,有一套固定渲染管线流程. 附相关OpenGL渲染流程资料
+
+* DisplayList： 在Android把XML布局文件转换成GPU能够识别并绘制的对象。这个操作是在DisplayList的帮助下完成的。DisplayList持有所有将要交给GPU绘制到屏幕上的数据信息。
+
+* 垂直同步VSYNC:  让显卡的运算和显示器刷新率一致以稳定输出的画面质量。它告知GPU在载入新帧之前，要等待屏幕绘制完成前一帧。
+
+* Refresh Rate:屏幕一秒内刷新屏幕的次数,由硬件决定,例如60Hz.
+
+* Frame Rate:GPU一秒绘制操作的帧数,单位是30fps,
+
+
+# XML加载过程
+![](image/4027460-d632ea304cfc017f.png)
+
+
+![](image/4027460-530d5079a0535940.png)
+
+
+# 栅格化
+ 将向量图形格式表示的图像转换成位图以用于显示器，即把button、textview等组件拆分到不同的像素上进行显示。这是一个很费时的操作，GPU的引入就是为了加快栅格化的操作。
+
+![](image/4027460-16db6a4f9d25c58f.png)
+
+
+# 60HZ刷新频率由来
+
+* 12fps： 由于人类的眼睛的特殊生理结构，如果所看到的画面帧率高于每秒10-12帧的时候，就会认为是连惯的
+* 24fps：有声电影的拍摄及播放帧率均为每秒24帧，对一般人而言已算可接受
+* 30fps：早期的高动态电子游戏，帧率少于每秒30帧的话就会显得不连贯，这是因为没有动态模糊使流畅度降低
+* 60fps：在与手机交换过程中，如果触摸及反馈 60帧以下人是能感觉出来的。60帧以上不能察觉变化。当低于60帧时感觉画面卡顿和迟滞现象
+
+Android系统每隔16ms发出VSYNC信号(1000ms/60=16.66ms)，触发对UI进行渲染，如果每次渲染都成功这样能够达到流畅画面所需要的60fps,为了能够实现60fps，这意味着计算渲染的大多数操作都必须在16ms内完成。
+
+# Android系统的绘制原理
+  Android中每个界面都是大大小小的View组成,对于应用里的每个view都会经过老三部：measure，layout，draw.然后就由主线程传给CPU进行计算纹理,再通过OpenGL ES接口调用GPU进行栅格化处理,再通过跨进程通信机制把需要显示的数据传到SurfaceFlinger，通过它将栅格化的信息交给硬件合成器合成后输出到显示屏.
+
+# 开启硬件加速：
+![](image/4027460-16343aabecb84b59.png)
+
+>PS:Androd3.0开始支持硬件加速，到Android4.0默认开启硬件加速.
+
+ 绘制任务由应用发起，最终通过系统层绘制到硬件屏幕上，也就是说应用进程绘制后，通过跨进程通信机制把需要显示的数据传到系统层，由系统层中的SurfaceFlinger服务绘制到屏幕上；
+
+
+# 应用层
+ 一个Android应用程序窗口里面包含了很多UI元素，这些UI元素是以树形结构来组织的，即它们存在着父子关系，其中，子UI元素位于父UI元素里面，如下图：
+
+![](image/14021861-27131aecec3d1e5a.png)
+
+在绘制一个Android应用程序窗口的UI之前，我们首先要确定它里面的各个子UI元素在父UI元素里面的大小以及位置。确定各个子UI元素在父UI元素里面的大小以及位置的过程又称为测量过程和布局过程。Android每个View绘制的三个核心步骤：通过Measure和Layout确定当前需要绘制View的大小和位置，通过绘制到surface，在Android系统绘制源码是在ViewRootImpl的performTraversals方法开始的，通过该方法会执行Measure和layout和draw方法；Measure和layout都是递归获取View的大小和位置，都是以深度为优先级，可以看出层级越深元素越多，耗时也就越长；
+测量、布局没有太多要说的，这里要着重说一下绘制。
+
+Android目前有两种绘制模型：基于软件的绘制模型和硬件加速的绘制模型（从Android 3.0开始全面支持）。
+* 基于软件的绘制模型下，CPU主导绘图，视图按照两个步骤绘制
+
+1. 让View层次结构失效;
+
+2. 绘制View层次结构；
+
+当应用程序需要更新它的部分UI时，都会调用内容发生改变的View对象的invalidate()方法。无效（invalidation）消息请求会在View对象层次结构中传递，以便计算出需要重绘的屏幕区域（脏区）。然后，Android系统会在View层次结构中绘制所有的跟脏区相交的区域。不幸的是，这种方法有两个缺点：
+
+1. 绘制了不需要重绘的视图（与脏区域相交的区域）；
+2. 掩盖了一些应用的bug（由于会重绘与脏区域相交的区域）；
+
+>注意：在View对象的属性发生变化时，如背景色或TextView对象中的文本等，Android系统会自动的调用该View对象的invalidate()方法。
+
+* 基于硬件加速的绘制模式下，GPU主导绘图，绘制按照三个步骤绘制：
+1. 让View层次结构失效
+2. 记录、更新显示列表
+3. 绘制显示列表
+
+这种模式下，Android系统依然会使用invalidate()方法和draw()方法来请求屏幕更新和展现View对象。但Android系统并不是立即执行绘制命令，而是首先把这些View的绘制函数作为绘制指令记录一个显示列表中，然后再读取显示列表中的绘制指令调用OpenGL相关函数完成实际绘制。另一个优化是，Android系统只需要针对由invalidate()方法调用所标记的View对象的脏区进行记录和更新显示列表。没有失效的View对象则能重放先前显示列表记录的绘制指令来进行简单的重绘工作。使用显示列表的目的是，把视图的各种绘制函数翻译成绘制指令保存起来，对于没有发生改变的视图把原先保存的操作指令重新读取出来重放一次就可以了，提高了视图的显示速度。而对于需要重绘的View，则更新显示列表，以便下次重用，然后再调用OpenGL完成绘制。硬件加速提高了Android系统显示和刷新的速度，但它也不是万能的，它有三个缺陷：
+
+* 耗电：GPU功耗比CPU高；
+
+* 兼容问题：某些接口或者函数不支持硬件加速；
+
+* 内存大：使用OpenGL接口至少需要8MB内存；
+
+所以是否使用硬件加速需要考虑接口是否支持，通过结合产品形态，如TV版本不需要考虑功耗问题，TV屏幕大，使用硬件加速实现更好的显示效果；
+
+# 系统层：
+
+真正把需要显示器的数据渲染到屏幕上，是通过系统级进程汇总的SurfaceFlinger服务来实现的，SurfaceFlinger主要工作：
+
+（1）响应客户端事件，创建Layer，与客户端Surface建立连接；
+
+（2）接收客户端数据及属性，修改Layer属性，如尺寸、颜色、透明度等；
+
+（3）将创建的layer内容刷新到屏幕上；
+
+（4）维持layer序列，并对Layer最终输出做出裁剪计算；
+
+既然是两个不同进程，那么肯定需要跨进程通信机制来实现数据传输，Android显示系统使用匿名共享内存：SharedClient，每个应用和SurfaceFlinger之间都会创建一个SharedClient，如下图所示，在每个SharedClient中，最多会创建31个SharedBufferStack，每个Surface对应一个SharedBufferStack，也就是一个Window；一个SharedClient对应一个Android应用程序，而一个Android应用程序可能包含多个窗口，即Surface，也就是说SharedClient包含的是SharedBufferStack集合，因为最多可以创建31个SharedBufferStack,也就意味着一个Android应用最多可以还包含31个窗口，同时每个SharedBufferStack中又包含两个（低于4.1版本）或者三个（4.1及以上版本）缓冲区，即显示刷新机制中双缓冲和三重缓冲机制；
+![](image/14021861-182b52efd8539ad0.png)
+
+最后总结起来显示整体流程分为三个模块：应用层绘制到缓存区，SurfaceFlinger把缓存区数据渲染到屏幕，由于是两个不同的进程，所以Android使用匿名共享内存SharedClient缓存需要显示的数据来达到目的；SurfaceFlinger把缓存区的数据渲染到屏幕主要是驱动层的事情。
+梳理如下：
+
+    每个Surface对应的BufferQueue内部都有两个Graphic Buffer ，一个用于绘制一个用于显示.我们会把内容先绘制到离屏缓 冲区(OffScreen Buffer)，在需要显示时，才把离屏缓冲区的内容通过SwapBuffer驱动复制到Front Graphic Buffer中. Android4.1加入了Tripple Buffer。
+    这样SurfaceFlinge就拿到了某个Surface最终要显示的内容，但是同一时间我们可能会有多个Surface.这里面可能是不同 应用的Surface，也可能是同一个应用里面类似SurefaceView和TextureView，它们都会有自己单独的Surface.
+    这时SurfaceFlinger把所有Surface要显示的内容统一交给Hareware Composer，它会根据位置、Z-Order顺序等信息合 成为最终屏幕需要显示的内容，而这个内容会交给系统的帧缓冲区Frame Buffer来显示(Frame Buffer是非常底层的，可以 理解为屏幕显示的抽象).
+
+Android是如何将view绘制到屏幕？
+大致流程如下：
+
+（1）首先应用主线里里的每个view都会经过老三部：measure，layout，draw.然后TextView,Button等等控件通过CPU计算转换为内存中的polygons（多边图形）和texture(纹理)。
+
+（2）其次，CPU通过OpenGL的接口将纹理数据传递给GPU渲染处理,由于图形API不允许CPU直接与GPU通信，而是通过中间图形驱动层来连接两部分，驱动层维护了一个队列，CPU把display list添加到队列中，GPU从这个队列去除数据进行绘制，最终在屏幕上显示出来；在这个过程中，每个View都有一个DisplayList,由DisplayList这个结构负责保存绘制用到的所有信息,在Displaylist无需重新创建或改变的情况下,GPU可以直接使用这里的数据进行渲染.当View中的某些可见组件，那么之前的DisplayList就无法继续使用了，我们需要回头重新创建一个DisplayList并且重新执行渲染指令并更新到屏幕上。而不是像软件绘制那样需要向上递归。这样可以大大减少绘图的操作数量，因而提高了渲染效率.
+
+（3）最后，GPU对图形数据进行渲染，通过匿名共享内存：SharedClient把需要显示的数据传到SurfaceFlinger；一个SharedClient对应一个Android应用程序，一个SharedClient可以创建31个SharedBufferStack；每个SharedBufferStack对应一个Surface，也就是一个Window；每个SharedBufferStack包含的BufferQueue内部都有三个Graphic Buffer，两个用于绘制一个用于显示.我们会把内容先绘制到一个后置缓冲区(OffScreen Buffer或者Back Buffer)，在另外一个绘制下一帧；在需要显示时，才把离屏缓冲区的内容通过SwapBuffer驱动复制到Front Graphic Buffer中， 通过它将栅格化的信息交给SurfaceFlinger，SurfaceFlinger通过创建维护Layer再交给Hareware Composer，它会根据Layer中的位置、Z-Order顺序等信息合成为最终屏幕需要显示的内容，而这个内容会交给系统的帧缓冲区Frame Buffer来显示(Frame Buffer是非常底层的，可以 理解为屏幕显示的抽象).
+
+（4）垂直同步VSYNC 60fps: 让显卡的运算和显示器刷新率一致以稳定输出的画面质量。它告知GPU在载入新帧之前，要等待屏幕绘制完成前一帧。如果下一帧周期到是屏幕前一帧没有绘制结束，后置缓冲区不能清空，多出来的一个后置缓冲区就可以用来绘制。
+
+名词解释：
+DisplayList：DisplayList持有所有将要交给GPU绘制到屏幕上的数据信息。
+
+# 显示刷新机制
+Android系统一直在不断的优化、更新，但直到4.0版本发布，有关UI显示不流畅的问题仍未得到根本解决；从Android4.1版本开始，Android对显示系统进行了重构，引入了三个核心元素：VSYNC, Tripple Buffer和Choreographer。VSYNC是Vertical Synchronized的缩写，是一种定时中断；Tripple Buffer是显示数据的缓冲区；Choreographer起调度作用，将绘制工作统一到VSYNC的某个时间点上，使应用的绘制工作有序进行。
+
+# 名词解释：
+双缓冲：显示内容的数据内存，双缓冲意味着要使用两个缓冲区（SharedBufferStack中），其中一个称为Front Buffer，另外一个称为Back Buffer。UI总是先在Back Buffer中绘制，然后再和Front Buffer交换，渲染到显示设备中。
+
+三缓冲：即Triple Buffer。一个前置缓冲区和两个后置缓冲区，利用CPU/GPU的空闲时间准备数据，用于弥补在VSYNC+双缓冲配合使用的缺陷（一前一后）；
+
+VSYNC：当双缓冲的介绍了解到，只有当另外一个buffer准备好之后，才能去刷新，这就需要CPU以主动查询方式来保证数据是否准备好，因为这种机制效率很低，引入VSYNC，一旦受到VSYNC定时中断，CPU就开始处理各帧数据；没有VSYNC信号，CPU不知道何时去处理UI绘制，引入VSYNC核心目的就是解决刷新不同步的问题；
+
+Choreographer：收到VSYNC信号时，调用用户设置的回调函数，一种有三种类型的回调：
+
+CALLBACK_INPUT：优先级最高，与输入事件有关；
+
+CALLBACK_ANIMATON:第二优先级，与动画有关；
+
+CALLBACK_TRAVERSAL：最低优先级，与UI控件绘制有关；
+
+View的onclick、onDraw等等都是从Choreographer.doFrame开始执行的；关于Choreographer可以参考Android Choreographer 源码分析，讲的特别好；
+
+那双缓冲机制又是什么呢?
+
+双缓冲机制简单说就是不同的View或者Activity它们都会共用一个Window，
+也就是共用同一个Surface对象. 而每个Surface都会有一个BufferQueue缓存队列，但是这个队列会由SurfaceFlinger管理，通过匿名共享内存机制与App应用
+层交互.
+
+那三级缓冲机制又是什么呢?
+
+简单来说，三缓冲机制就是在双缓冲机制基础上增加了一个Graphic Buffer缓冲区，这样可以最大限度的利用空闲时间.
+如果只有两个Graphic Buffer缓存区A和B， CPU/GPU又绘制过程过⻓，超过了一个VSYNC信号周期，因为缓冲区B中的数据还没有准备完成，所以只能继续展示A缓冲区 的内容，这样缓冲区A和B都分别被显示设备和GPU占用，CPU无法准备下一帧的数据.
+
+RenderNode和RenderThread
+
+在Android 5.0引入了两个比较大的改变.一个是引入了RenderNode的概念，它对DisplayList及一些View显示属性 做了进一步封装.另一个是引入了RenderThread，所有的GL命令执行都放到这个线程上，渲染线程在RenderNode中存有渲 染帧的所有信息，可以做一些属性动画，这样即便主线程有耗时操作的时候也可以保证动画流畅.
+
+HWUI
+hwui主要是android用于2d硬件绘图而加入的一个模块，在hwui之前，android主要是用skia来进行软件绘制，后由于绘制性能等问题，现在android的绘图几乎都是使用了hwui硬件加速绘图。hwui主要则是使用opengles来进行gpu硬件绘图，提升整个系统的绘制性能，主要有以下方式：直接渲染，显示列表渲染，延时渲染列表，分别代表的类为：OpenGLRenderer，DisplayListRenderer，DeferredDisplayList。
+
+Vulkan
+
+Vulkan为Khronos Group推出的下一代跨平台图形开发接口，用于替代历史悠久的OpenGL。Android从7.0(Nougat)开始加入了对其的支持。Vulkan与OpenGL相比，接口更底层，从而使开发者能更直接地控制GPU。由于更好的并行支持，及更小的开销，性能上也有一定的提升。另外层式架构可以帮助减少调试和测试的时间。但是，代价是实现相同的功能更复杂了。原本用OpenGL写个最简单的demo百来行，用vulkan祼写的话没千把行下不来。因此实际使用中需要有utility层来简化接口调用。Android对vulkan的支持主要是提供接口让开发者可以用vulkan开发图形相关应用，尤其是像游戏这样的3D渲染场景。如果有支持vulkan的Android移动设备，开发者就可以利用NDK进行基于vulkan的开发
