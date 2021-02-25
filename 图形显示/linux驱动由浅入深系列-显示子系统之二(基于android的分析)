@@ -5,3 +5,124 @@ https://blog.csdn.net/hexiaolong2009/article/details/83720940
 
 
 http://www.wowotech.net/graphic_subsystem/graphic_subsystem_overview.html
+
+
+https://redspider110.github.io/2019/04/17/0113-android-graphics-display/#%E5%8F%82%E8%80%83%E6%96%87%E6%A1%A3
+
+
+
+
+上一篇文章中介绍了应用层对显示系统的使用，我们操作framebuffer在屏幕上画出了图形。这次我们一起来看一下android中显示子系统各个模块的功能。
+
+android系统显示系统在高通平台上的框图：
+
+
+![](image/55994ba517dc2cb6fcf6d8b0b4959e9b.JPEG)
+
+
+* HWUI
+  UI硬件加速，从Androd 3.0(Honeycomb)开始，Android开始支持hwui。
+
+* OpenGL
+
+  OpenGL（全写Open Graphics Library）是个定义了一个跨编程语言、跨平台的编程接口的规格，它用于三维图象（二维的亦可）。OpenGL是个专业的图形程序接口，是一个功能强大，调用方便的底层图形库。
+
+* OpenGLES
+  OpenGLES(OpenGL for Embedded Systems) 是 OpenGL 三维图形 API 的子集，针对手机、PDA和游戏主机等嵌入式设备而设计。OpenGL ES 是从 OpenGL 裁剪的定制而来的，去除了glBegin/glEnd，四边形（GL_QUADS）、多边形（GL_POLYGONS）等复杂图元等许多非绝对必要的特性。OpenGL- ES 是免授权费的，跨平台的，功能完善的2D和3D图形应用程序接口API，主要针对多种嵌入式系统专门设计。它由精心定义的桌面OpenGL子集组成，创造了软件与图形加速间灵活强大的底层交互接口。 OpenGL ES 包含浮点运算和定点运算系统描述以及 EGL针对便携设备的本地视窗系统规范。
+
+* EGL
+  EGL，它是图形渲染API（如OpenGL ES）与本地平台窗口系统的一层接口，保证了OpenGL ES的平台独立性。EGL提供了若干功能：创建rendering surface、创建graphics context、同步应用程序和本地平台渲染API、提供对显示设备的访问、提供对渲染配置的管理等。
+
+* Adreno Driver
+  高通枭龙GPU的驱动逻辑在HAL的实现部分。
+
+* SurfaceFlinger
+  SurfaceFlinger 是一个独立的android Service， 它接收所有Window的Surface作为输入，根据ZOrder， 透明度，大小，位置等参数，计算出每个Surface在最终合成图像中的位置，然后交由HWComposer或OpenGL生成最终的显示Buffer, 然后显示到特定的显示设备上。
+
+* HWComposer
+  HWComposer 是 Andrid 4.0后推出的新特性，它定义一套HAL层接口，然后各个芯片厂商根据各种硬件特点来实现。它的主要工作是将SurfaceFlinger计算好的Layer的显示参数最终合成到一个显示Buffer上。注意的是，Surface Flinger 并非是HWComposer的唯一输入，有的Surface 不由Android的WindowManager 管理，比如说摄像头的预览输入Buffer， 可以有硬件直接写入，然后作为HWComposer的输入之一与SurfaceFlinger的输出做最后的合成。
+
+* gralloc
+  Android系统在硬件抽象层中提供了一个Gralloc模块，封装了对帧缓冲区的所有访问操作。用户空间的应用程序在使用帧缓冲区之间，首先要加载Gralloc模块，并且获得一个gralloc设备和一个fb设备。有了gralloc设备之后，用户空间中的应用程序就可以申请分配一块图形缓冲区，并且将这块图形缓冲区映射到应用程序的地址空间来，以便可以向里面写入要绘制的画面的内容。最后，用户空间中的应用程序就通过fb设备来将已经准备好了的图形缓冲区渲染到帧缓冲区中去，即将图形缓冲区的内容绘制到显示屏中去。相应地，当用户空间中的应用程序不再需要使用一块图形缓冲区的时候，就可以通过gralloc设备来释放它，并且将它从地址空间中解除映射。
+
+* ION driver
+
+  ION是google在Android4.0 ICS为了解决内存碎片管理而引入的通用内存管理器
+
+* MDSS driver
+
+  MDSS：Multimedia Display Sub-system，主要包括内核中显示相关的驱动。
+
+  mdss_fb.c 顶层IOCTL/native framebuffer接口
+
+  mdss_mdp.c --MDP（Mobile Development Platforms）资源，包括时钟/中断/bus-bw/power
+
+  mdss_mdp_overlay.c--Overlay/DMA 顶层API
+
+  mdss_mdp_ctl.c--将（LM，DSPP，Ping-pong，interface）硬件集群
+
+  mdss_mdp_pipe.c--SRC pipe相关处理
+
+  mdss_mdp_intf_cmd.c/mdss_mdp_intf_video.c/mdss_mdp_intf_writeback.c--MDP面板接口处理
+
+  mdss_mdp_pp.c--后处理相关实现
+
+  mdss_mdp_rotator.c--旋转API（overlay_set, overlay_playinterface）
+
+
+上图再抽象一下，框架更清晰：
+
+![](image/beaea93b1c5fc595ab2a17891dcbc70a.JPEG)
+
+![](image/4bee7ee6c9d51f2af9c70bc0390b2248.png)
+
+
+我们根据上面这个图，由底层往上层来逐步分析整个架构：
+1. Linux内核提供了统一的framebuffer显示驱动，设备节点/dev/graphics/fb*或者/dev/fb*，以fb0表示第一个Monitor，当前实现中只用到了一个显示屏
+2. Android的HAL层提供了Gralloc，分为fb和gralloc两个设备。前者负责打开内核中的framebuffer、初始化配置，以及提供post、setSwapInterval等操作，后者则管理帧缓冲区的分配和释放。上层只能通过Gralloc访问帧缓冲区，这样一来就实现了有序的封装保护
+3. 由于OpenGL ES是一个通用的函数库，在不同的平台系统上需要被“本地化”——即把它与具体平台上的窗口系统建立起关联，这样才能保证它正常工作。从FramebufferNativeWindow这个名称就能判断出来，它就是将OpenGL ES在Android平台上本地化的中介之一。后面我们还会看到应用程序端所使用的另一个“本地窗口”。为OpengGL ES配置本地窗口的是EGL
+
+4. OpenGL或者OpenGL ES 更多的只是一个接口协议，实现上既可以采用软件，也能依托于硬件。这一方面给产品开发带来了灵活性，我们可以根据成本与市场定位来决定具体的硬件设计，从而达到很好的定制需求;另一方面，既然有多种实现的可能，那么OpenGL ES在运行时是如何取舍的呢？这也是EGL的作用之一。它会去读取egl.cfg这个配置文件，然后根据用户的设定来动态加载libagl(软件实现)或者libhgl(硬件实现)。然后上层才可以正常使用各种glXXX接口
+
+5. SurfaceFlinger中持有一个GraphicPlane成员变量mGraphicPlanes来描述“显示屏”;GraphicPlane类中又包含了一个DisplayHardware对象实例(mHw)。具体是在SurfaceFlinger::readyToRun中，完成对它们的创建与初始化。并且DisplayHardware在初始化时还将调用eglInitialize、eglCreateWindowSurface等接口，利用EGL来完成对OpenGLES环境的搭建。其中:
+
+    surface =eglCreateWindowSurface(display, config, mNativeWindow.get(), NULL);
+
+    mNativeWindow 就是一个FramebufferNativeWindow对象。DisplayHardware为OpenGL ES设置了“本地化”所需的窗口
+
+6. 很多模块都可以调用OpenGLES提供的API(这些接口以“gl”为前缀，比如glViewport、glClear、glMatrixMode、glLoadIdentity等等)，包括SurfaceFlinger、DisplayHardware等
+
+7. 与OpenGL ES相关的模块，可以分为如下几类：
+
+Ø  配置类
+
+即帮助OpenGL ES完成配置的，包括EGL、DisplayHardware都可以认为是这一类
+
+Ø  依赖类
+
+也就是OpenGL ES要正常运行起来所依赖的“本地化”的东西，上图中是指FramebufferNativeWindow
+
+Ø  使用类
+
+使用者也可能是配置者，比如DisplayHardware既扮演了“帮助”OpenGL的角色，同时它也是其使用方。另外只要处在与OpenGL ES同一个环境(Context)中的模块，都可以使用它来完成操作，比如SurfaceFlinger
+上述各模块的代码路径如下：
+
+User space
+
+SurfaceTexture–\\frameworks\native\libs\gui
+
+SurfaceFlinger–\\frameworks\native\services\surfaceflinger
+
+Graphics alloc–\\hardware\qcom\display\libgralloc
+
+HWC –\\hardware\qcom\display\sdm\libs\hwc\
+
+SDM –\\hardware\qcom\display\sdm\libs\core\
+
+DSPP (postprocessing) –\\vendor\qcom\proprietary\display\(to be created)
+
+Driver
+
+SDE driver –\\kernel\drivers\video\msm\mdss
+
+LK – \\bootable\bootloader\lk

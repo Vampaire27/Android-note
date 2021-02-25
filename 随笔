@@ -1,3 +1,6 @@
+
+
+
 从今天开始把工作的经验和平时的知识总结放到giuhub上.
 1:以前的笔记都是写在本在上,或者文档上.存在丢失和copy的可能.
 2:现在不是提倡开源吗,希望在这基础上建立一个Android系统 知识库。
@@ -59,7 +62,7 @@ sudo sed -i "s/keexjEP3t4Mue23hrnuPtY4TdcsqNiJL-5174TsUdLmJSIXKfG2NGPwBL6vnRPddT
 
 
 
-d
+===========================================
 
 
 ALOGE("hzy  duplicate layer name changing %s ",name);
@@ -67,3 +70,75 @@ ALOGE("hzy  duplicate layer name changing %s ",name);
 
 
 git push origin HEAD:refs/for/branch_dev
+
+
+diff --git a/Utils.cpp b/Utils.cpp
+index a9b7440..072c0c9 100644
+--- a/Utils.cpp
++++ b/Utils.cpp
+@@ -1481,13 +1481,13 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
+         return -1;
+     }
+
+-    result = PrepareDir(pre_pass_through_path, 0710, AID_ROOT, AID_MEDIA_RW);
++    result = PrepareDir(pre_pass_through_path, 0777, AID_ROOT, AID_MEDIA_RW);
+     if (result != android::OK) {
+         PLOG(ERROR) << "Failed to prepare directory " << pre_pass_through_path;
+         return -1;
+     }
+
+-    result = PrepareDir(pass_through_path, 0710, AID_ROOT, AID_MEDIA_RW);
++    result = PrepareDir(pass_through_path, 0777, AID_ROOT, AID_MEDIA_RW);
+     if (result != android::OK) {
+         PLOG(ERROR) << "Failed to prepare directory " << pass_through_path;
+         return -1;
+diff --git a/model/EmulatedVolume.cpp b/model/EmulatedVolume.cpp
+index db93bc2..e431b77 100644
+--- a/model/EmulatedVolume.cpp
++++ b/model/EmulatedVolume.cpp
+@@ -291,10 +291,10 @@ status_t EmulatedVolume::doMount() {
+     setInternalPath(mRawPath);
+     setPath(StringPrintf("/storage/%s", label.c_str()));
+
+-    if (fs_prepare_dir(mSdcardFsDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+-        fs_prepare_dir(mSdcardFsRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+-        fs_prepare_dir(mSdcardFsWrite.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+-        fs_prepare_dir(mSdcardFsFull.c_str(), 0700, AID_ROOT, AID_ROOT)) {
++    if (fs_prepare_dir(mSdcardFsDefault.c_str(), 0777, AID_ROOT, AID_ROOT) ||
++        fs_prepare_dir(mSdcardFsRead.c_str(), 0777, AID_ROOT, AID_ROOT) ||
++        fs_prepare_dir(mSdcardFsWrite.c_str(), 0777, AID_ROOT, AID_ROOT) ||
++        fs_prepare_dir(mSdcardFsFull.c_str(), 0777, AID_ROOT, AID_ROOT)) {
+         PLOG(ERROR) << getId() << " failed to create mount points";
+         return -errno;
+     }
+
+
+02-22 17:26:23.276  6756  6756 I RenderThread: type=1400 audit(0.0:2163): avc: denied { read } for name="gpu_model" dev="sysfs" ino=64244 scontext=u:r:untrusted_app_29:s0:c99,c256,c660,c806 tcontext=u:object_r:sysfs_msm_subsys:s0 tclass=file permissive=1
+
+02-22 17:26:23.276  6756  6756 I RenderThread: type=1400 audit(0.0:2164): avc: denied { open } for path="/sys/devices/platform/soc/2c00000.qcom,kgsl-3d0/kgsl/kgsl-3d0/gpu_model" dev="sysfs" ino=64244 scontext=u:r:untrusted_app_29:s0:c99,c256,c660,c806 tcontext=u:object_r:sysfs_msm_subsys:s0 tclass=file permissive=1
+02-22 17:26:23.276  6756  6756 I RenderThread: type=1400 audit(0.0:2165): avc: denied { getattr } for path="/sys/devices/platform/soc/2c00000.qcom,kgsl-3d0/kgsl/kgsl-3d0/gpu_model" dev="sysfs" ino=64244 scontext=u:r:untrusted_app_29:s0:c99,c256,c660,c806 tcontext=u:object_r:sysfs_msm_subsys:s0 tclass=file permissive=1
+
+
+# 1920x1080 59.96 Hz (CVT 2.07M9) hsync: 67.16 kHz; pclk: 173.00 MHz
+Modeline "1920x1080_60.00"  173.00  1920 2048 2248 2576  1080 1083 1088 1120 -hsync +vsync
+
+
+cvt 1920 1080
+# 1920x1080 59.96 Hz (CVT 2.07M9) hsync: 67.16 kHz; pclk: 173.00 MHz
+Modeline "1920x1080_60.00"  173.00  1920 2048 2248 2576  1080 1083 1088 1120 -hsync +vsync
+
+sudo xrandr --newmode "1920x1080_60.00"  173.00  1920 2048 2248 2576  1080 1083 1088 1120 -hsync +vsync
+sudo xrandr --addmode default "1920x1080_60.00"
+sudo xrandr --output default --mode "1920x1080_60.00"
+
+https://ywnz.com/linuxjc/3279.html
+
+https://blog.csdn.net/wohu1104/article/details/90574943
+
+
+
+cvt 1920 1080
+
+xrandr --newmode "1920x1080_60.00"  173.00  1920 2048 2248 2576  1080 1083 1088 1120 -hsync +vsync
+xrandr --addmode default "1920x1080_60.00"
+xrandr --output default --mode "1920x1080_60.00"

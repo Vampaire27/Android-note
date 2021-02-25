@@ -129,22 +129,57 @@
 
   >frameworks/base/core/java/android/app/ActivityThread.java
 
+
 ```
+//begin huzy3 add for app doubleOpen function 20201225
+  /**
+   * isCloneApp
+   *
+   * @hide
+   */
+  private boolean isCloneApp(int userId,String auth) {
 
-   public final IContentProvider acquireProvider(
+      if(userId == UserManager.SHADOW_SPACE_USER_ID
+              && "media".equals(auth)){
+          String[] packages;
+          try {
+              int uid = Process.myUid();
+              packages = getPackageManager().getPackagesForUid(uid);
+              Slog.e(TAG, "packages= " + packages[0]  + " acquireProvider " + userId  + " auth = " +auth );
+          }catch (RemoteException ex){
+              throw ex.rethrowFromSystemServer();
+          }
+
+         if (ParsingPackageUtils.isCloneAppForCommon(packages[0])){
+             return  true;
+         }
+
+      }
+      return  false;
+  }
+
+  private boolean isConmonWithPrimaryUser(int userId,String auth) {
+      if(userId == UserManager.SHADOW_SPACE_USER_ID
+              && "settings".equals(auth)){
+          return  true;
+      }
+      return  false;
+  }
+
+//end huzy3 add for app doubleOpen function 20201225
+
+
+@UnsupportedAppUsage
+public final IContentProvider acquireProvider(
         Context c, String auth, int userId, boolean stable) {
-
-    if(userId == UserManager.SHADOW_SPACE_USER_ID &&
-            ("packageName".equals(packages[0])||
-                    "com.android.gallery3d".equals(packages[0])  )){
-        Slog.e(TAG, "hzy acquireProvider change the user to 0 from " + userId);
+  ...
+    //begin huzy3 add for app doubleOpen function 20201225
+    if(isCloneApp(userId,auth) || isConmonWithPrimaryUser(userId, auth)){
         userId = 0;
     }
-
-    final IContentProvider provider = acquireExistingProvider(c, auth, userId, stable);
-    if (provider != null) {
-        return provider;
-    }
+   //end
+   ...
+}
 
 ```
 
@@ -161,9 +196,8 @@
       final int uid = Binder.getCallingUid();
       final int pid = Binder.getCallingPid();
 
-      //hzy_user
-
-      String[] packages = mContext.getPackageManager().getPackagesForUid(uid);
+      //begin huzy3 add for app doubleOpen function 20201225
+     // String[] packages = mContext.getPackageManager().getPackagesForUid(uid);
 
       if(userHandle == UserManager.SHADOW_SPACE_USER_ID){
           userHandle = 0 ;
@@ -171,36 +205,103 @@
           userHandle = handleIncomingUser(uri, pid, uid,
                   Intent.FLAG_GRANT_READ_URI_PERMISSION, true, userHandle);
       }
-
+      //end
   }
 ```
 
 * 4、解决用户交叉访问权限问题
 
+frameworks/base/core/java/android/content/pm/PackageParser.java
+```
+private Package parseBaseApkCommon(Package pkg, Set<String> acceptedTags, Resources res,
+        XmlResourceParser parser, int flags, String[] outError) throws XmlPullParserException,
+        IOException {
+    mParseInstrumentationArgs = null;
+...
+    if (pkg.applicationInfo.usesCompatibilityMode()) {
+        adjustPackageToBeUnresizeableAndUnpipable(pkg);
+    }
+//        //begin huzy3 add for app doubleOpen function 20201225
+    if(ParsingPackageUtils.isCloneAppForCommon(pkg.packageName)) {
+        int index = pkg.requestedPermissions.indexOf(INTERACT_ACROSS_USERS_FULL_PERMISSION);
+        if (index == -1) {
+            pkg.requestedPermissions.add(INTERACT_ACROSS_USERS_FULL_PERMISSION);
+        }
+
+        index = pkg.requestedPermissions.indexOf(INTERACT_ACROSS_USERS_PERMISSION);
+        if (index == -1) {
+            pkg.requestedPermissions.add(INTERACT_ACROSS_USERS_PERMISSION);
+        }
+        Slog.w(TAG, " -add -INTERACT_ACROSS_USERS_FULL_PERMISSION packageNames = " + pkg.packageName);
+    }
+    //end
+
+    return pkg;
+
+}
+```
+
   frameworks/base/core/java/android/content/pm/parsing/ParsingPackageUtils.java
+
+
+  ```
+  //begin huzy3 add for app doubleOpen function 20201225
+  /**
+   * @hide
+   */
+  public static boolean isCloneAppForCommon(String name) {
+      String[] packageNames= {"com.tencent.mm","com.taobao.taobao","com.tencent.mobileqq","com.android.gallery3d"};
+
+      for (String s : packageNames) {
+          if (s.equals(name)){
+              return  true;
+          }
+      }
+      return false;
+  }
+  //end
+
+
+  ```
+
 
 ```
   private ParseResult<ParsingPackage> parseBaseApk(ParseInput input, String apkPath,
           String codePath, Resources res, XmlResourceParser parser, int flags)
           throws XmlPullParserException, IOException, PackageParserException {
           ...
-          final ParseResult<ParsingPackage> result =
-          parseBaseApkTags(input, pkg, manifestArray, res, parser, flags);
-        if (result.isError()) {
-            return result;
-        }
-      //hzy_user
-      if("packageName".equals(pkg.getPackageName())) {
+          final TypedArray manifestArray = res.obtainAttributes(parser, R.styleable.AndroidManifest);
+          try {
+              final boolean isCoreApp =
+                      parser.getAttributeBooleanValue(null, "coreApp", false);
+              final ParsingPackage pkg = mCallback.startParsingPackage(
+                      pkgName, apkPath, codePath, manifestArray, isCoreApp);
+              final ParseResult<ParsingPackage> result =
+                      parseBaseApkTags(input, pkg, manifestArray, res, parser, flags);
+              if (result.isError()) {
+                  return result;
+              }
+              //begin huzy3 add for app doubleOpen function 20201225
+              if(isCloneAppForCommon(pkg.getPackageName())) {
+                  if (!pkg.getRequestedPermissions().contains(INTERACT_ACROSS_USERS_FULL_PERMISSION)) {
+                      pkg.addRequestedPermission(INTERACT_ACROSS_USERS_FULL_PERMISSION.intern());
 
-          if (!pkg.getRequestedPermissions().contains(INTERACT_ACROSS_USERS_FULL_PERMISSION)) {
-              pkg.addRequestedPermission(INTERACT_ACROSS_USERS_FULL_PERMISSION.intern());
-          }
-          if (!pkg.getRequestedPermissions().contains(INTERACT_ACROSS_USERS_PERMISSION)) {
-              pkg.addRequestedPermission(INTERACT_ACROSS_USERS_PERMISSION.intern());
+                      Slog.w(TAG, "add permissions for  "
+                              + INTERACT_ACROSS_USERS_FULL_PERMISSION + " in package: " + pkg.getPackageName() + " at: "
+                              + parser.getPositionDescription());
 
-          }
-      }
+                  }
 
+                  if (!pkg.getRequestedPermissions().contains(INTERACT_ACROSS_USERS_PERMISSION)) {
+
+                      pkg.addRequestedPermission(INTERACT_ACROSS_USERS_PERMISSION.intern());
+                      Slog.w(TAG, "add permissions for "
+                              + INTERACT_ACROSS_USERS_PERMISSION + " in package: " + pkg.getPackageName() + " at: "
+                              + parser.getPositionDescription());
+
+                  }
+              }
+              //end
       ...
   }
 
@@ -212,28 +313,36 @@
           PackageSetting pkgSetting, BasePermission bp, PermissionsState origPermissions) {
 
           ...
-          if (allowed && privilegedPermission &&
-            !vendorPrivilegedPermission && pkg.isVendor()) {
-                Slog.w(TAG, "Permission " + perm + " cannot be granted to privileged vendor apk "
-                 + pkg.getPackageName()
-                 + " because it isn't a 'vendorPrivileged' permission.");
-                allowed = false;
+              if (allowed && privilegedPermission &&
+                      !vendorPrivilegedPermission && pkg.isVendor()) {
+                 Slog.w(TAG, "Permission " + perm + " cannot be granted to privileged vendor apk "
+                         + pkg.getPackageName()
+                         + " because it isn't a 'vendorPrivileged' permission.");
+                 allowed = false;
               }
             }
           }
           if (!allowed) {
+          //begin huzy3 add for app doubleOpen function 20201225
+          if(ParsingPackageUtils.isCloneAppForCommon(pkg.getPackageName())) {
+              if(perm.equals(ParsingPackageUtils.INTERACT_ACROSS_USERS_FULL_PERMISSION) ||
+                      perm.equals(ParsingPackageUtils.INTERACT_ACROSS_USERS_PERMISSION)){
 
-             //hzy_user
-             if("packageName".equals(pkg.getPackageName()))) {
-                 if(perm.equals(ParsingPackageUtils.INTERACT_ACROSS_USERS_FULL_PERMISSION) ||
-                         perm.equals(ParsingPackageUtils.INTERACT_ACROSS_USERS_PERMISSION)){
-                      allowed =true;
-                 }
-             }
+                  Slog.w(TAG, "Permission " + perm + " apk "
+                          + pkg.getPackageName()
+                          + " direct give it .... ");
+                   allowed =true;
+              }
+
           }
+          //end
           ...
   }
 
+```
+
+
+```
 ```
 * 5：解决子帐号访问帐号ContentProvider权限
 
@@ -282,45 +391,34 @@
    }
   ```
 
+
+
+
 * 6.试图解决访问主用户多媒体夹/storage/emulated/0/问题
-   以图库为例错误如下
-   ```
-  01-13 15:33:33.366  4127  4195 W LocalImage: failed to find file to read thumbnail: /storage/emulated/0/DCIM/Camera/IMG_20210113_101232.jpg
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: java.io.FileNotFoundException: /storage/emulated/0/DCIM/Camera/IMG_20210113_101232.jpg: open failed: EPERM (Operation not permitted)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:492)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:160)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at java.io.FileInputStream.<init>(FileInputStream.java:115)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at com.android.gallery3d.data.DecodeUtils.decodeThumbnail(DecodeUtils.java:103)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at com.android.gallery3d.data.LocalImage$LocalImageRequest.onDecodeOriginal(LocalImage.java:214)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at com.android.gallery3d.data.ImageCacheRequest.run(ImageCacheRequest.java:79)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at com.android.gallery3d.data.ImageCacheRequest.run(ImageCacheRequest.java:28)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at com.android.gallery3d.util.ThreadPool$Worker.run(ThreadPool.java:133)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at java.lang.Thread.run(Thread.java:923)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at com.android.gallery3d.util.PriorityThreadFactory$1.run(PriorityThreadFactory.java:44)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: Caused by: android.system.ErrnoException: open failed: EPERM (Operation not permitted)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at libcore.io.Linux.open(Native Method)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at libcore.io.BlockGuardOs.open(BlockGuardOs.java:254)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:166)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at android.app.ActivityThread$AndroidOs.open(ActivityThread.java:7563)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	at libcore.io.IoBridge.open(IoBridge.java:478)
-  01-13 15:33:33.368  4127  4195 W DecodeUtils: 	... 11 more
+
+  6.1  添加selinux 权限检测.
+  system/sepolicy/prebuilts/api/30.0/private/untrusted_app.te
 
    ```
 
-  6.1  关掉selinux 权限检测，问题还是存在，排除selinux影响。
+   #begin huzy3 add for app doubleOpen function 20200222
+   allow untrusted_app mnt_pass_through_file:dir { search getattr };
+   allow untrusted_app mnt_pass_through_file:file { read  };
 
-   ```
-   adb shell setenforce 0
+   allow untrusted_app_29 mnt_pass_through_file:dir { search getattr };
+   allow untrusted_app_29 mnt_pass_through_file:file { read  };
+
+   allow untrusted_app_27 mnt_pass_through_file:dir { search getattr };
+   allow untrusted_app_27 mnt_pass_through_file:file { read  };
+
+   allow untrusted_app_25 mnt_pass_through_file:dir { search getattr };
+   allow untrusted_app_25 mnt_pass_through_file:file { read  };
 
    ```
 
   6.2 Linux DAC权限排查
 
-
-   查看/storage/emulated/0文件夹， 用户root和everybody用户组都具有rw权限如下
+  查看/storage/emulated/0文件夹， 用户root和everybody用户组都具有rw权限如下
 
   ![](./image/2021-01-1315-38-53.png)
 
@@ -338,307 +436,196 @@
     </permission>
   ```
 
-  生效之后,还是不能访问，现在Kernel由google提供，日志偏少,还在继续排查原因。
+  生效之后如下。
 
   ![](./image/2021-01-1315-57-03.png)
 
-  7.键盘共享问题
+  6.3  使用pass_through 方式挂在/storage
 
-   现在子用户无法访问，主用户的键盘，需要在子用户下面安装单独的键盘。这样存在用户体验不一致问题，需要后面解决。
-
-
-
-8 .
-
-
-frameworks/base/core/jni/com_android_internal_os_Zygote.cpp
-在app启动的时候把/mnt/pass_through/9876 直接mount在在 storage 下面
-
-```
-// storage for the given user.
-static void MountEmulatedStorage(uid_t uid, jint mount_mode,
+  frameworks/base/core/jni/com_android_internal_os_Zygote.cpp
+  ```
+  static void MountEmulatedStorage(uid_t uid, jint mount_mode,
         bool force_mount_namespace,
         fail_fn_t fail_fn) {
   // See storage config details at http://source.android.com/tech/storage/
-  ATRACE_CALL();
-  if(user_id == 9876){
-     mount_mode = MOUNT_EXTERNAL_PASS_THROUGH;
-  }
+
+   if (isFuse) {
+    //begin huzy3 add for app doubleOpen function 20201225
+    if(user_id == 9876){
+      const std::string pass_through_source = StringPrintf("/mnt/pass_through/%d", user_id);
+      PrepareDir(pass_through_source, 0711, AID_ROOT, AID_MEDIA_RW, fail_fn);
+      BindMount(pass_through_source, "/storage", fail_fn);
+    //end
+    }else if (mount_mode == MOUNT_EXTERNAL_PASS_THROUGH) {
+      const std::string pass_through_source = StringPrintf("/mnt/pass_through/%d", user_id);
+      PrepareDir(pass_through_source, 0710, AID_ROOT, AID_MEDIA_RW, fail_fn);
+      BindMount(pass_through_source, "/storage", fail_fn);
+  ...
+
+
+
+
+  7.键盘共享问题
+
+  frameworks/base/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java
+
+  ```
+  private InputBindResult startInputOrWindowGainedFocusInternalLocked(
+          @StartInputReason int startInputReason, IInputMethodClient client,
+          @NonNull IBinder windowToken, @StartInputFlags int startInputFlags,
+          @SoftInputModeFlags int softInputMode, int windowFlags, EditorInfo attribute,
+          IInputContext inputContext, @MissingMethodFlags int missingMethods,
+          int unverifiedTargetSdkVersion, @UserIdInt int userId) {
+      if (DEBUG) {
+          Slog.v(TAG, "startInputOrWindowGainedFocusInternalLocked: reason="
+                  + InputMethodDebug.startInputReasonToString(startInputReason)
+                  + " client=" + client.asBinder()
+                  + " inputContext=" + inputContext
+                  + " missingMethods="
+                  + InputConnectionInspector.getMissingMethodFlagsAsString(missingMethods)
+                  + " attribute=" + attribute
+                  + " startInputFlags="
+                  + InputMethodDebug.startInputFlagsToString(startInputFlags)
+                  + " softInputMode=" + InputMethodDebug.softInputModeToString(softInputMode)
+                  + " windowFlags=#" + Integer.toHexString(windowFlags)
+                  + " unverifiedTargetSdkVersion=" + unverifiedTargetSdkVersion);
+      }
+
+
+      if (userId == UserManager.SHADOW_SPACE_USER_ID){//tanttt
+          userId = 0;
+      }
+
+  ```
+
+
 ```
-
-问题gallery可以看到小图,但打不开,camera 现实sdcard没有mount
-
-
-9.
-ContentService.java
-
-public void registerContentObserver(Uri uri, boolean notifyForDescendants,
-        IContentObserver observer, int userHandle, int targetSdkVersion) {
-    if (observer == null || uri == null) {
-        throw new IllegalArgumentException("You must pass a valid uri and observer");
-    }
-
+@GuardedBy("mMethodMap")
+private boolean calledFromValidUserLocked() {
     final int uid = Binder.getCallingUid();
-    final int pid = Binder.getCallingPid();
-    //hzy_user
-
-    String[] packages = mContext.getPackageManager().getPackagesForUid(uid);
-
-    if(userHandle == UserManager.SHADOW_SPACE_USER_ID &&
-            ("com.tencent.mobileqq".equals(packages[0]) || "com.android.gallery3d".equals(packages[0])) ){
-        Slog.d(TAG, " 9876 packages= " + packages[0]  + " hzy registerContentObserver userHandle " + userHandle  + " uri = " +uri);
-        userHandle = 0 ;
-    } else {
-        userHandle = handleIncomingUser(uri, pid, uid,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION, true, userHandle);
+    final int userId = UserHandle.getUserId(uid);
+    if (DEBUG) {
+        Slog.d(TAG, "--- calledFromForegroundUserOrSystemProcess ? "
+                + "calling uid = " + uid + " system uid = " + Process.SYSTEM_UID
+                + " calling userId = " + userId + ", foreground user id = "
+                + mSettings.getCurrentUserId() + ", calling pid = " + Binder.getCallingPid()
+                + InputMethodUtils.getApiCallStack());
+    }
+    if (uid == Process.SYSTEM_UID) {
+        return true;
+    }
+    if (userId == mSettings.getCurrentUserId()) {
+        return true;
     }
 
-
-10.EmulatedVolume.cpp
-
+    if (userId == UserManager.SHADOW_SPACE_USER_ID) {//tanttt
+        return true;
+    }
 
 ```
-status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
-                       const std::string& relative_upper_path, android::base::unique_fd* fuse_fd) {
-    std::string pre_fuse_path(StringPrintf("/mnt/user/%d", user_id));
-    std::string fuse_path(
-            StringPrintf("%s/%s", pre_fuse_path.c_str(), relative_upper_path.c_str()));
 
-    std::string pre_pass_through_path(StringPrintf("/mnt/pass_through/%d", user_id));
-    std::string pass_through_path(
-            StringPrintf("%s/%s", pre_pass_through_path.c_str(), relative_upper_path.c_str()));
+```
 
-
-    std::string pre_pass_through_path_v(StringPrintf("/mnt/pass_through/%d", 0));
-    std::string pass_through_path_v(
-        StringPrintf("%s/%s", pre_pass_through_path_v.c_str(), relative_upper_path.c_str()));
-
-    // Ensure that /mnt/user is 0700. With FUSE, apps don't need access to /mnt/user paths directly.
-    // Without FUSE however, apps need /mnt/user access so /mnt/user in init.rc is 0755 until here
-    auto result = PrepareDir("/mnt/user", 0777, AID_ROOT, AID_MEDIA_RW);
-    if (result != android::OK) {
-        PLOG(ERROR) << "Failed to prepare directory /mnt/user";
-        return -1;
-    }
-  // 准备 fuse目录           /mnt/user/0 和 /mnt/user/0/emulated
-   //  准备 pass_through_path  /mnt/pass_through/0 和 /mnt/pass_through/0/emulated .
-
-
-     LOG(INFO) << "hzy_vold Bind mounting user_id = " << user_id << " pre_fuse_path  =" << pre_fuse_path;
-     LOG(INFO) << "hzy_vold Bind mounting user_id = " << user_id << " fuse_path  =" << fuse_path;
-
-//hzy_vold  pre_fuse_path  =/mnt/user/0
-//fuse_path  =/mnt/user/0/emulated
-
-     LOG(INFO) << "hzy_vold Bind mounting user_id = " << user_id << " pre_pass_through_path  =" << pre_pass_through_path;
-     LOG(INFO) << "hzy_vold Bind mounting user_id = " << user_id << " pass_through_path  =" << pass_through_path;
-
-    // Shell is neither AID_ROOT nor AID_EVERYBODY. Since it equally needs 'execute' access to
-    // /mnt/user/0 to 'adb shell ls /sdcard' for instance, we set the uid bit of /mnt/user/0 to
-    // AID_SHELL. This gives shell access along with apps running as group everybody (user 0 apps)
-    // These bits should be consistent with what is set in zygote in
-    // com_android_internal_os_Zygote#MountEmulatedStorage on volume bind mount during app fork
-    result = PrepareDir(pre_fuse_path, 0777, user_id ? AID_ROOT : AID_SHELL,
-                             multiuser_get_uid(user_id, AID_EVERYBODY));
-    if (result != android::OK) {
-        PLOG(ERROR) << "Failed to prepare directory " << pre_fuse_path;
-        return -1;
+@NonNull
+private InputBindResult startInputOrWindowGainedFocusInternalLocked(
+        @StartInputReason int startInputReason, IInputMethodClient client,
+        @NonNull IBinder windowToken, @StartInputFlags int startInputFlags,
+        @SoftInputModeFlags int softInputMode, int windowFlags, EditorInfo attribute,
+        IInputContext inputContext, @MissingMethodFlags int missingMethods,
+        int unverifiedTargetSdkVersion, @UserIdInt int userId) {
+    if (DEBUG) {
+        Slog.v(TAG, "startInputOrWindowGainedFocusInternalLocked: reason="
+                + InputMethodDebug.startInputReasonToString(startInputReason)
+                + " client=" + client.asBinder()
+                + " inputContext=" + inputContext
+                + " missingMethods="
+                + InputConnectionInspector.getMissingMethodFlagsAsString(missingMethods)
+                + " attribute=" + attribute
+                + " startInputFlags="
+                + InputMethodDebug.startInputFlagsToString(startInputFlags)
+                + " softInputMode=" + InputMethodDebug.softInputModeToString(softInputMode)
+                + " windowFlags=#" + Integer.toHexString(windowFlags)
+                + " unverifiedTargetSdkVersion=" + unverifiedTargetSdkVersion);
     }
 
-    result = PrepareDir(fuse_path, 0700, AID_ROOT, AID_ROOT);
-    if (result != android::OK) {
-        PLOG(ERROR) << "Failed to prepare directory " << fuse_path;
-        return -1;
-    }
-//  准备 pass_through_path  /mnt/pass_through/0 和 /mnt/pass_through/0/emulated .
-    result = PrepareDir(pre_pass_through_path, 0777, AID_ROOT, AID_MEDIA_RW);
-    if (result != android::OK) {
-        PLOG(ERROR) << "Failed to prepare directory " << pre_pass_through_path;
-        return -1;
-    }
 
-    result = PrepareDir(pass_through_path, 0777, AID_ROOT, AID_MEDIA_RW);
-    if (result != android::OK) {
-        PLOG(ERROR) << "Failed to prepare directory " << pass_through_path;
-        return -1;
+    if (userId == UserManager.SHADOW_SPACE_USER_ID){//tanttt
+        userId = 0;
     }
+```
 
-    if (relative_upper_path == "emulated") {
-        std::string linkpath(StringPrintf("/mnt/user/%d/self", user_id));
-        result = PrepareDir(linkpath, 0755, AID_ROOT, AID_ROOT);
-        if (result != android::OK) {
-            PLOG(ERROR) << "Failed to prepare directory " << linkpath;
-            return -1;
-        }
-        linkpath += "/primary";
-        Symlink("/storage/emulated/" + std::to_string(user_id), linkpath);
+  8 . other 修改
 
-        std::string pass_through_linkpath(StringPrintf("/mnt/pass_through/%d/self", user_id));
-        result = PrepareDir(pass_through_linkpath, 0710, AID_ROOT, AID_MEDIA_RW);
-        if (result != android::OK) {
-            PLOG(ERROR) << "Failed to prepare directory " << pass_through_linkpath;
-            return -1;
-        }
-        pass_through_linkpath += "/primary";
-        Symlink("/storage/emulated/" + std::to_string(user_id), pass_through_linkpath);
+frameworks/base/services/core/java/com/android/server/pm/UserManagerService.java
+```
+
+    //begin huzy3 add for app doubleOpen function 20201225  mBaseAppforShadowUser.add("com.android.gallery3d");
+    private static Set<String> mBaseAppforShadowUser = new ArraySet<>();
+    static {
+        mBaseAppforShadowUser.add("android");
+        mBaseAppforShadowUser.add("com.android.printspooler");
+        mBaseAppforShadowUser.add("com.android.packageinstaller");
+        mBaseAppforShadowUser.add("com.android.keychain");
+        mBaseAppforShadowUser.add("com.google.android.packageinstaller");
+        mBaseAppforShadowUser.add("com.android.webview");
+        mBaseAppforShadowUser.add("com.android.inputmethod.latin");
+        mBaseAppforShadowUser.add("com.android.permissioncontroller");
+        mBaseAppforShadowUser.add("com.android.externalstorage");
+        mBaseAppforShadowUser.add("com.android.providers.media");
+        mBaseAppforShadowUser.add("com.android.providers.media.module");
+        mBaseAppforShadowUser.add("com.android.providers.downloads");
+        mBaseAppforShadowUser.add("com.android.inputdevices");
+        mBaseAppforShadowUser.add("com.android.storagemanager");
     }
+   //end huzy3 add for app doubleOpen function 20201225
 
-    // Open fuse fd.
-    fuse_fd->reset(open("/dev/fuse", O_RDWR | O_CLOEXEC));
-    if (fuse_fd->get() == -1) {
-        PLOG(ERROR) << "Failed to open /dev/fuse";
-        return -1;
+
+private UserInfo createUserInternalUncheckedNoTracing(@Nullable String name,
+        @NonNull String userType, @UserInfoFlag int flags, @UserIdInt int parentId,
+        boolean preCreate, @Nullable String[] disallowedPackages,
+        @NonNull TimingsTraceAndSlog t) throws UserManager.CheckedUserOperationException {
+    final UserTypeDetails userTypeDetails = mUserTypes.get(userType);
+    if (userTypeDetails == null) {
+        Slog.e(LOG_TAG, "Cannot create user of invalid user type: " + userType);
+        return null;
     }
 
-    // Note: leaving out default_permissions since we don't want kernel to do lower filesystem
-    // permission checks before routing to FUSE daemon.
-    const auto opts = StringPrintf(
-        "fd=%i,"
-        "rootmode=40000,"
-        "allow_other,"
-        "user_id=0,group_id=0,",
-        fuse_fd->get());
+//begin huzy3 add for app doubleOpen function 20201225
+ Slog.w(LOG_TAG, "disallowedPackages  987654321  userId=" + userId + " ,"+ disallowedPackages);
 
-   LOG(INFO) << "hzy_vold Bind mounting ufuse_path.c_str()  " << fuse_path.c_str() ;
-   LOG(INFO) << "hzy_vold Bind mounting opt   " << opts.c_str() ;
+ if ((flags & UserInfo.FLAG_CUSTOM_PROFILE) != 0) {
+     //userTypeInstallablePackages.clear();
+     mPm.createNewUser(userId, mBaseAppforShadowUser, disallowedPackages);
+ }else{
+     mPm.createNewUser(userId, userTypeInstallablePackages, disallowedPackages);
+ }
+ //end
+```
 
-    result = TEMP_FAILURE_RETRY(mount("/dev/fuse", fuse_path.c_str(), "fuse",
-                                      MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME | MS_LAZYTIME,
-                                      opts.c_str()));
-    if (result != 0) {
-        PLOG(ERROR) << "Failed to mount " << fuse_path;
-        return -errno;
-    }
+```
+private void openShawDowlSpace() {
+   private int FLAG_MANAGED_PROFILE = UserInfo.FLAG_MANAGED_PROFILE | UserInfo.FLAG_CUSTOM_PROFILE; // 创建影子用户必要的flag
 
-    if (IsSdcardfsUsed()) {
-        std::string sdcardfs_path(
-                StringPrintf("/mnt/runtime/full/%s", relative_upper_path.c_str()));
-        LOG(INFO) << "Bind mounting 123 " << sdcardfs_path << " to " << pass_through_path;
+    // step 1 : call UMS.createProfileForUser() to create Managed Profile User
+    UserHandle userHandle = android.os.Process.myUserHandle();
 
-        return BindMount(sdcardfs_path, pass_through_path);
+    UserInfo userInfo = mUserManager.getUserInfo(UserManager.SHADOW_SPACE_USER_ID);
+    if (userInfo != null) {
+        android.util.Log.d(TAG, "openShawDowlSpace: username = " + userInfo.name);
     } else {
-        LOG(INFO) << "Bind mounting " << absolute_lower_path << " to " << pass_through_path;
-          return BindMount(absolute_lower_path, pass_through_path);
+        mShadowSpaceUserInfo = mUserManager.createProfileForUser(UserManager.SHADOW_SPACE_USER_NAME,
+                UserManager.USER_TYPE_PROFILE_MANAGED,
+                FLAG_MANAGED_PROFILE,
+                userHandle.getIdentifier()
+        );
+
+        try {
+            ActivityManager.getService().startUserInBackground(UserManager.SHADOW_SPACE_USER_ID);
+        } catch (RemoteException e) {
+            Log.w(TAG, "could not start pre-created user ", e);
+        }
+        Log.d(TAG, "startUserInBackground() userId = " + " | isOk = ");
     }
 }
 
-```
-
-
-10
-```
-status_t EmulatedVolume::mountFuseBindMounts() {
-    std::string androidSource;
-    std::string label = getLabel();
-    int userId = getMountUserId();
-    std::list<std::string> pathsToUnmount;
-
-    auto unmounter = [&]() {
-        LOG(INFO) << "mountFuseBindMounts() unmount scope_guard running";
-        for (const auto& path : pathsToUnmount) {
-            LOG(INFO) << "Unmounting " << path;
-            auto status = UnmountTree(path);
-            if (status != OK) {
-                LOG(INFO) << "Failed to unmount " << path;
-            } else {
-                LOG(INFO) << "Unmounted " << path;
-            }
-        }
-    };
-    auto unmount_guard = android::base::make_scope_guard(unmounter);
-
-    if (mUseSdcardFs) {
-        androidSource = StringPrintf("/mnt/runtime/default/%s/%d/Android", label.c_str(), userId);
-    } else {
-        androidSource = StringPrintf("/%s/%d/Android", mRawPath.c_str(), userId);
-    }
-
-    status_t status = OK;
-    // When app data isolation is enabled, obb/ will be mounted per app, otherwise we should
-    // bind mount the whole Android/ to speed up reading.
-    if (!mAppDataIsolationEnabled) {
-            LOG(INFO) << "hzy  mAppDataIsolationEnabled  is false ";
-
-        std::string androidDataSource = StringPrintf("%s/data", androidSource.c_str());
-        std::string androidDataTarget(
-                StringPrintf("/mnt/user/%d/%s/%d/Android/data", userId, label.c_str(), userId));
-        status = doFuseBindMount(androidDataSource, androidDataTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-
-        std::string androidObbSource = StringPrintf("%s/obb", androidSource.c_str());
-        std::string androidObbTarget(
-                StringPrintf("/mnt/user/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
-        status = doFuseBindMount(androidObbSource, androidObbTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-    }
-
-    if(userId == 9876){
-        std::string androidEmulate = StringPrintf("/mnt/runtime/full/%s/%d/", label.c_str(), 0);
-        std::string androidEmulateTarget =(
-                StringPrintf("/mnt/user/%d/%s/%d/", userId, label.c_str(), userId));
-        status = doFuseBindMount(androidEmulate, androidEmulateTarget, pathsToUnmount);
-        if (status != OK) {
-            LOG(INFO) << "hzy do doFuseBindMount for  userId  fail! ";
-        }
-    }
-
-    // Installers get the same view as all other apps, with the sole exception that the
-    // OBB dirs (Android/obb) are writable to them. On sdcardfs devices, this requires
-    // a special bind mount, since app-private and OBB dirs share the same GID, but we
-    // only want to give access to the latter.
-    if (mUseSdcardFs) {
-        std::string obbSource(StringPrintf("/mnt/runtime/write/%s/%d/Android/obb",
-                label.c_str(), userId));
-        std::string obbInstallerTarget(StringPrintf("/mnt/installer/%d/%s/%d/Android/obb",
-                userId, label.c_str(), userId));
-
-        status = doFuseBindMount(obbSource, obbInstallerTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-    } else if (mAppDataIsolationEnabled) {
-        std::string obbSource(StringPrintf("%s/obb", androidSource.c_str()));
-        std::string obbInstallerTarget(StringPrintf("/mnt/installer/%d/%s/%d/Android/obb",
-                userId, label.c_str(), userId));
-
-        status = doFuseBindMount(obbSource, obbInstallerTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-    }
-
-    // /mnt/androidwriteable is similar to /mnt/installer, but it's for
-    // MOUNT_EXTERNAL_ANDROID_WRITABLE apps and it can also access DATA (Android/data) dirs.
-    if (mAppDataIsolationEnabled) {
-        std::string obbSource = mUseSdcardFs ?
-            StringPrintf("/mnt/runtime/write/%s/%d/Android/obb", label.c_str(), userId)
-            : StringPrintf("%s/obb", androidSource.c_str());
-
-        std::string obbAndroidWritableTarget(
-                StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/obb",
-                userId, label.c_str(), userId));
-
-        status = doFuseBindMount(obbSource, obbAndroidWritableTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-
-        std::string dataSource = mUseSdcardFs ?
-                StringPrintf("/mnt/runtime/write/%s/%d/Android/data", label.c_str(), userId)
-                : StringPrintf("%s/data", androidSource.c_str());
-        std::string dataTarget(StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/data",
-                userId, label.c_str(), userId));
-
-        status = doFuseBindMount(dataSource, dataTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-    }
-    unmount_guard.Disable();
-    return OK;
-}
 ```

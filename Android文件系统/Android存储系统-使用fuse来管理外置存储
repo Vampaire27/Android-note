@@ -981,3 +981,9 @@ static void attr_from_stat(struct fuse* fuse, struct fuse_attr *attr,
 }
 
 ```
+
+attr_from_stat函数的逻辑读者对照 表格1-1 来分析下相信就会明白。我也在上面关键的地方写了注释。
+
+# 总结
+
+ Android使用fuse来作为Android的位置存储管理系统，主要通过灵活的gid，uid以及rwx权限体系来实现。

@@ -1,0 +1,69 @@
+[Android图形系统综述](https://www.mdeditor.tw/pl/pjx3)
+# 概述
+
+Android 图形系统是 Android 中一个非常重要的子系统，它涉及到许多相当复杂的模块，如 SurfaceFlinger, Choreographer, HardWare Composer 等平时开发中基本上不会直接接触的概念。前后基于 Android 10 版本陆陆续续阅读了图形系统各个组成模块的源码，结合网上的一些博客，心中对 Android 的图形系统构成以及各个组件之间的工作流程有了一个整体的理解，这篇文章特意将整个图形系统做一个总结，可能还有所疏漏，后续发现了再接着补全。
+
+这个系列前前后后记录了一些笔记，后续如有遗漏和错误也会接着更新：
+
+* [Android-Window机制源码解读](https://ljd1996.github.io/2020/08/27/Android-Window%E6%9C%BA%E5%88%B6%E5%8E%9F%E7%90%86/): Android Window 相关的机制，包括 WindowManagerService 的启动，startActivity 过程中 StartingWindow 的流程，以及 startActivity 过程中与 Window 相关的流程，如 DecorView 是何时以及怎么添加的等，最后给出了 WindowManager 添加/移除/更新 View 的源码解析。
+
+* [Android-Window机制原理之Token验证:](https://juejin.cn/post/6873669458742525960) 基于源码解析关于 Android WMS 在 addWindow 的时候Token验证的逻辑，以及说明为什么不能使用 Application Context 显示 Dialog。
+
+* [Android-View绘制原理:]() 当接收到 Vsync信号后，App 进程调用 ViewRootImpl.performTraversals 方法来执行 View 的绘制(measure, layout, draw)流程。
+
+* [Android-View原理与实践:](https://ljd1996.github.io/2020/09/11/Android-View%E5%8E%9F%E7%90%86%E4%B8%8E%E5%AE%9E%E8%B7%B5/) View 相关的一些零散知识点，对理解整个图形系统而言不重要。主要介绍了一下 View 的事件分发机制，滑动冲突，View.post 等。
+
+* [Android-SurfaceFlinger启动与工作原理:](https://juejin.cn/post/6891980868798939150) 介绍 SurfaceFlinger 的启动流程及其如何处理 Vsync 信号来合成 Layer。
+
+* [Android-Choreographer工作原理:](https://juejin.cn/post/6894206842277199880) App 进程如何通过 Choreographer 来注册和接收 Vsync 信号进而启动 View 的绘制流程。
+
+* [Android-Surface之创建流程及软硬件绘制:](https://juejin.cn/post/6896382932639580167) 在 View 绘制过程中，View.draw 绘制的数据是如何能够最终被 SurfaceFlinger 合成的，其中包括 Canvas, Bitmap, Surface, Layer, Buffer 以及软硬件绘制的工作流程。
+
+* [Android-Surface之双缓冲及SurfaceView解析:](https://juejin.cn/post/6897029276752625671) 介绍 View 绘制过程中的双缓冲技术以及 SurfaceView 的基本使用及源码解读。
+
+
+* [Android图形系统综述:](https://ljd1996.github.io/2020/09/15/Android%E5%9B%BE%E5%BD%A2%E7%B3%BB%E7%BB%9F%E7%BB%BC%E8%BF%B0/) 总结 Android 图形系统的工作流程。
+
+
+在开始之前先用一张图总结一下这个流程：
+! [](image/9d4108a9971b4b57928d7835236e300e.jpeg)
+
+
+看了这个图后，接着分步骤看看其中各个组件的具体工作流程。
+
+# Android 显示基础
+参考: [“终于懂了” 系列：Android屏幕刷新机制—VSync、Choreographer 全面理解！](https://juejin.cn/post/6863756420380196877#heading-1)
+
+
+相关概念
+```
+  屏幕刷新频率：一秒内屏幕刷新的次数（一秒内显示了多少帧的图像），单位Hz（赫兹），如常见的60Hz，刷新频率取决于硬件的固定参数（不会变）。
+  帧率（Frame Rate）：单位fps。Android系统为60fps，即每秒钟GPU最多绘制60帧画面，帧率是动态变化的，例如当画面静止时，GPU是没有绘制操作的，屏幕刷新的还是buffer中的数据，即GPU最后操作的帧数据。
+  逐行扫描：显示器并不是一次性将画面显示到屏幕上，而是从左到右边，从上到下逐行扫描，顺序显示整屏的一个个像素点，不过这一过程快到人眼无法察觉到变化。以 60Hz 刷新率的屏幕为例，这一过程即 1000/60≈16ms。
+  画面撕裂（tearing）：一个屏幕内的数据来自2个不同的帧，画面会出现撕裂感。
+```
+
+画面撕裂的原因：屏幕刷新频率是固定的，比如每16.6ms从buffer取数据显示完一帧，理想情况下帧率和刷新频率保持一致，即每绘制完成一帧，显示器显示一帧。但是CPU/GPU写数据是不可控的，所以会出现buffer里有些数据根本没显示出来就被重写了，即buffer里的数据可能来自不同帧，当屏幕刷新时，此时它并不知道buffer的状态，因此从buffer抓取的帧并不是完整的一帧画面，即出现画面撕裂。即Display在显示的过程中，buffer内数据被CPU/GPU修改，导致画面撕裂。
+
+
+双缓存：由于图像绘制和屏幕读取使用的是同个buffer，所以屏幕刷新时可能读取到的是不完整的一帧画面(撕裂/闪烁)。双缓存是让绘制和显示器拥有各自的buffer，GPU始终将完成的一帧图像数据写入到Back Buffer，而显示器使用Front Buffer，当屏幕刷新时，Front Buffer 并不会发生变化，当Back buffer准备就绪后，它们才进行交换。如下图所示：
+! [](image/744c5a243b2f411fb4a5cbe41ea90aa1.webp)
+
+VSync：如果在Back buffer准备完成一帧数据后就进行两个buffer的交换，那么若此时屏幕还没有完整显示上一帧内容就会出问题。因此只能等到屏幕处理完一帧数据后，才可以执行buffer交换的操作。当扫描完一个屏幕后，设备需要重新回到第一行以进入下一次的循环，此时有一段时间空隙，称为VerticalBlanking Interval(VBI)，这个时间点就是我们进行缓冲区交换的最佳时间。VSync(垂直同步)是VerticalSynchronization的简写，它利用VBI时期出现的vertical sync pulse（垂直同步脉冲）来保证双缓冲在最佳时间点才进行交换。另外，交换是指各自的内存地址，可以认为该操作是瞬间完成。V-sync这个概念在早年的PC机领域就已经出现了。
+
+Android 4.1之前：在Android4.1之前，屏幕刷新也遵循上面的双缓存+VSync机制。如下图：
+! [](image/1de8fbcc6e874a1198d9d07ff8eb1814.webp)
+
+
+从时间顺序来看：
+
+    Display显示第0帧数据，此时CPU和GPU渲染第1帧画面，且在Display显示下一帧之前完成；
+    Display在第0帧显示完成后，即第1个VSync时，缓存进行交换，正常显示第1帧；
+    接着第2帧开始处理，可能由于某些原因，直到第2个VSync快来前才开始处理这一帧数据，导致第2个VSync来时，第2帧数据还没有准备就绪，缓存没有交换，显示的还是第1帧。这种情况即丢帧(Jank)；
+    当第2帧数据准备完成后，它并不会马上被显示，而是要等待下一个VSync进行缓存交换再显示。
+
+所以屏幕会平白多显示了一次第1帧，原因是第2帧的CPU/GPU计算没能在VSync信号到来前完成。
+
+双缓存的交换是在Vsyn到来时进行，交换后屏幕会取Front buffer内的新数据，而实际上此时的Back buffer已经可以供GPU准备下一帧数据了。如果Vsyn到来时 CPU/GPU就开始操作的话，是有完整的16.6ms的，这样会很大程度地减小jank的出现(除非CPU/GPU计算超过了16.6ms)。
+
+Android 4.1之后：实现了Project Butter（黄油工程），drawing with VSync，系统在收到VSync pulse后，将马上开始下一帧的渲染。即一旦收到VSync通知（16ms触发一次），CPU和GPU立刻开始计算然后把数据写入buffer。如下图：

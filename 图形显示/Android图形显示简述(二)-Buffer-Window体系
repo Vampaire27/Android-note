@@ -1,0 +1,414 @@
+## Buffer/Window 体系
+
+代码速查表
+```
+system/core/libcutils/include/cutils/native_handle.h
+hardware/qcom/display/libgralloc/gralloc_priv.h
+frameworks/native/libs/nativebase/include/nativebase/nativebase.h
+frameworks/native/libs/nativewindow/include/system/window.h
+frameworks/native/libs/ui/include/ui/ANativeObjectBase.h
+frameworks/native/libs/ui/include/ui/GraphicBuffer.h
+frameworks/native/libs/gui/include/gui/Surface.h
+```
+
+native_handle/buffer_handle_t
+
+先看 native_handle 这个结构体的定义：
+```
+// native_handle.h
+typedef struct native_handle
+{
+    int version;        /* sizeof(native_handle_t) */
+    int numFds;         /* number of file-descriptors at &data[0] */
+    int numInts;        /* number of ints at &data[numFds] */
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wzero-length-array"
+#endif
+    int data[0];        /* numFds + numInts ints */
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+} native_handle_t;
+
+typedef const native_handle_t* buffer_handle_t;
+
+```
+native_handle 这个结构体，描述了一个数据结构，其中最关键的是 data[0] ，它是一个长度为 0 的数组，即 native_handle 是一个柔性数组。在标准的 C/C++ 中,长度为 0 的数组是不被允许的，编译时会产生错误！长度为 0 的数组是 C/C++ 的扩展，需要当前编译器支持这个扩展。从头文件注释中也可以看出，当使用的是 clang 编译器时，才会定义 data[0] 并且忽略数组为 0 的警告。
+
+从 C/C++ 中柔性数组的用途来看， native_handle 表示的是一个不定长数据结构，实际意义指向连续分配的内存空间（除了 native_handle 之外）代表的数据结构（通常是 private_handle_t ）。这里这么做，是因为显示系统和每家实现平台相关度很高， native_handle 定义一个通用的数据结构，至于显示系统如何显示，每家自己去实现对应的 private_handle_t 。
+
+native_handle 结构体中的注释写的很清楚， numFds 表示被指向数据结构包含几个文件描述符； numInts 表示被指向数据结构长度是多少个整型；有了这两个信息后，内存分配就很容易了，参考 native_handle_create 的源码实现：
+```
+// native_handle.c
+native_handle_t* native_handle_create(int numFds, int numInts) {
+    if (numFds < 0 || numInts < 0 || numFds > kMaxNativeFds
+            || numInts > kMaxNativeInts) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    // 给 native_handle 分配连续的内存空间
+    // 除了 native_handle 自身所占空间，还包含被指向数据结构的长度
+    size_t mallocSize = sizeof(native_handle_t)
+        + (sizeof(int) * (numFds + numInts));
+    native_handle_t* h = malloc(mallocSize);
+    if (h) {
+        h->version = sizeof(native_handle_t);
+        h->numFds = numFds;
+        h->numInts = numInts;
+    }
+    return h;
+}
+```
+
+小结： native_handle, native_handle_t 表示一个不定长数据结构，而 buffer_handle_t 表示指向 native_handle 的指针。
+private_handle_t
+
+private_handle_t 描述的是一块缓存，因为和实现平台高度相关，我这里选取高通平台，先看头文件定义：
+
+```
+// gralloc_priv.h
+#ifdef __cplusplus
+struct private_handle_t : public native_handle {
+#else
+    struct private_handle_t {
+        native_handle_t nativeHandle;
+#endif
+        enum {
+            PRIV_FLAGS_FRAMEBUFFER        = 0x00000001,
+            ...
+        };
+
+        // file-descriptors
+        int     fd;
+        int     fd_metadata;          // fd for the meta-data
+        // ints
+        int     magic;
+        int     flags;
+        unsigned int  size;
+        unsigned int  offset;
+        int     bufferType;
+        uint64_t base __attribute__((aligned(8)));
+        unsigned int  offset_metadata;
+        // The gpu address mapped into the mmu.
+        uint64_t gpuaddr __attribute__((aligned(8)));
+        int     format;
+        int     width;   // holds aligned width of the actual buffer allocated
+        int     height;  // holds aligned height of the  actual buffer allocated
+        uint64_t base_metadata __attribute__((aligned(8)));
+        int unaligned_width;   // holds width client asked to allocate
+        int unaligned_height;  // holds height client asked to allocate
+
+#ifdef __cplusplus
+        static const int sNumFds = 2;
+        static inline int sNumInts() {
+            return ((sizeof(private_handle_t) - sizeof(native_handle_t)) /
+                    sizeof(int)) - sNumFds;
+        }
+        static const int sMagic = 'gmsm';
+        ...
+}
+
+```
+private_handle_t 描述了缓存区使用的文件描述符 fd, fd_metadata 、大小、偏移量、基地址、长宽、格式、没有对齐的长宽等等，而 sNumFds 对应 nativeHandle.numFds ； sNumInts 对应 nativeHandle.numInts ，即除了文件描述符之外，该数据结构的长度。
+小结： private_handle_t 在各个模块之间传递的时候很不方便，而如果用 native_handle 的来传递，就可以消除平台的差异性。一个简单示意图描述两者的关系：
+
+![](image/0109-android-camera-5-hal-buffer_handle_t.png)
+
+至此，我们可以简单的理解为 native_handle, native_handle_t, private_handle_t, buffer_handle_t 表示的是同一块内存。
+
+# ANativeWindowBuffer
+
+先了解 android_native_base_t 数据结构的定义：
+
+```
+typedef struct android_native_base_t
+{
+    /* a magic value defined by the actual EGL native type */
+    int magic;
+
+    /* the sizeof() of the actual EGL native type */
+    int version;
+
+    void* reserved[4];
+
+    /* reference-counting interface */
+    void (*incRef)(struct android_native_base_t* base);
+    void (*decRef)(struct android_native_base_t* base);
+} android_native_base_t;
+
+```
+
+android_native_base_t 中 incRef/decRef 主要功能是：为了把派生类和 Android 所有 class 的老祖宗 RefBase 联系起来所预留的函数指针。
+
+再看 ANativeWindowBuffer 数据结构的定义：
+
+```
+/ nativebase.h
+typedef struct ANativeWindowBuffer
+{
+#ifdef __cplusplus
+    ANativeWindowBuffer() {
+        common.magic = ANDROID_NATIVE_BUFFER_MAGIC;
+        common.version = sizeof(ANativeWindowBuffer);
+        memset(common.reserved, 0, sizeof(common.reserved));
+    }
+
+    // Implement the methods that sp<ANativeWindowBuffer> expects so that it
+    // can be used to automatically refcount ANativeWindowBuffer's.
+    void incStrong(const void* /*id*/) const {
+        common.incRef(const_cast<android_native_base_t*>(&common));
+    }
+    void decStrong(const void* /*id*/) const {
+        common.decRef(const_cast<android_native_base_t*>(&common));
+    }
+#endif
+
+    struct android_native_base_t common;
+
+    int width;
+    int height;
+    int stride;
+    int format;
+    int usage_deprecated;
+    uintptr_t layerCount;
+
+    void* reserved[1];
+
+    const native_handle_t* handle;
+    uint64_t usage;
+
+    // we needed extra space for storing the 64-bits usage flags
+    // the number of slots to use from reserved_proc depends on the
+    // architecture.
+    void* reserved_proc[8 - (sizeof(uint64_t) / sizeof(void*))];
+} ANativeWindowBuffer_t;
+
+typedef struct ANativeWindowBuffer ANativeWindowBuffer;
+
+// Old typedef for backwards compatibility.
+typedef ANativeWindowBuffer_t android_native_buffer_t;
+```
+ANativeWindowBuffer 中使用了 native_handle_t 指针，同时该结构体中也有长宽、格式、步进等基本描述信息；也就是 ANativeWindowBuffer 描述的是一块 Window 相关的缓存区。
+
+# ANativeWindow
+
+ANativeWindow 数据结构的定义：
+frameworks/native/libs/nativewindow/include/system/window.h
+```
+// window.h
+struct ANativeWindow
+{
+#ifdef __cplusplus
+    ANativeWindow()
+        : flags(0), minSwapInterval(0), maxSwapInterval(0), xdpi(0), ydpi(0)
+    {
+        common.magic = ANDROID_NATIVE_WINDOW_MAGIC;
+        common.version = sizeof(ANativeWindow);
+        memset(common.reserved, 0, sizeof(common.reserved));
+    }
+
+    /* Implement the methods that sp<ANativeWindow> expects so that it
+       can be used to automatically refcount ANativeWindow's. */
+    void incStrong(const void* /*id*/) const {
+        common.incRef(const_cast<android_native_base_t*>(&common));
+    }
+    void decStrong(const void* /*id*/) const {
+        common.decRef(const_cast<android_native_base_t*>(&common));
+    }
+#endif
+
+    struct android_native_base_t common;
+
+    /* flags describing some attributes of this surface or its updater */
+    const uint32_t flags;
+
+    /* min swap interval supported by this updated */
+    const int   minSwapInterval;
+
+    /* max swap interval supported by this updated */
+    const int   maxSwapInterval;
+
+    /* horizontal and vertical resolution in DPI */
+    const float xdpi;
+    const float ydpi;
+
+    /* Some storage reserved for the OEM's driver. */
+    intptr_t    oem[4];
+
+    int     (*setSwapInterval)(struct ANativeWindow* window,
+                int interval);
+    int     (*dequeueBuffer_DEPRECATED)(struct ANativeWindow* window,
+                struct ANativeWindowBuffer** buffer);
+    int     (*lockBuffer_DEPRECATED)(struct ANativeWindow* window,
+                struct ANativeWindowBuffer* buffer);
+    int     (*queueBuffer_DEPRECATED)(struct ANativeWindow* window,
+                struct ANativeWindowBuffer* buffer);
+    int     (*query)(const struct ANativeWindow* window,
+                int what, int* value);
+    int     (*perform)(struct ANativeWindow* window,
+                int operation, ... );
+    int     (*cancelBuffer_DEPRECATED)(struct ANativeWindow* window,
+                struct ANativeWindowBuffer* buffer);
+    int     (*dequeueBuffer)(struct ANativeWindow* window,
+                struct ANativeWindowBuffer** buffer, int* fenceFd);
+    int     (*queueBuffer)(struct ANativeWindow* window,
+                struct ANativeWindowBuffer* buffer, int fenceFd);
+    int     (*cancelBuffer)(struct ANativeWindow* window,
+                struct ANativeWindowBuffer* buffer, int fenceFd);
+};
+
+ /* Backwards compatibility: use ANativeWindow (struct ANativeWindow in C).
+  * android_native_window_t is deprecated.
+  */
+typedef struct ANativeWindow android_native_window_t __deprecated;
+```
+
+从数据结构定义中可以看出， ANativeWindow 和窗口属性相关，它表示的是一个底层实现的窗口，定义的各种函数指针都是对 ANativeWindowBuffer 内存的操作；而 fenceFd 可以看成这个 buffer 的锁。
+
+小结：不管是 ANativeWindow, ANativeWindowBuffer 它们都包含 android_native_base_t 结构体，但是都没有对 incRef, decRef 赋值；可以认为 ANativeWindow, ANativeWindowBuffer 为抽象数据结构。
+
+# NativeObjectBase 模板
+
+ANativeObjectBase 是一个模板类，定义如下：
+
+```
+// ANativeObjectBase.h
+template <typename NATIVE_TYPE, typename TYPE, typename REF,
+        typename NATIVE_BASE = android_native_base_t>
+class ANativeObjectBase : public NATIVE_TYPE, public REF
+{
+public:
+    // Disambiguate between the incStrong in REF and NATIVE_TYPE
+    void incStrong(const void* id) const {
+        REF::incStrong(id);
+    }
+    void decStrong(const void* id) const {
+        REF::decStrong(id);
+    }
+
+protected:
+    typedef ANativeObjectBase<NATIVE_TYPE, TYPE, REF, NATIVE_BASE> BASE;
+    ANativeObjectBase() : NATIVE_TYPE(), REF() {
+        NATIVE_TYPE::common.incRef = incRef;
+        NATIVE_TYPE::common.decRef = decRef;
+    }
+    static inline TYPE* getSelf(NATIVE_TYPE* self) {
+        return static_cast<TYPE*>(self);
+    }
+    static inline TYPE const* getSelf(NATIVE_TYPE const* self) {
+        return static_cast<TYPE const *>(self);
+    }
+    static inline TYPE* getSelf(NATIVE_BASE* base) {
+        return getSelf(reinterpret_cast<NATIVE_TYPE*>(base));
+    }
+    static inline TYPE const * getSelf(NATIVE_BASE const* base) {
+        return getSelf(reinterpret_cast<NATIVE_TYPE const*>(base));
+    }
+    static void incRef(NATIVE_BASE* base) {
+        ANativeObjectBase* self = getSelf(base);
+        self->incStrong(self);
+    }
+    static void decRef(NATIVE_BASE* base) {
+        ANativeObjectBase* self = getSelf(base);
+        self->decStrong(self);
+    }
+};
+
+} // namespace android
+#endif // __cplusplus
+
+```
+ANativeObjectBase 模板类的主要作用就是实现 incRef, decRef 引用计数，以及父类子类的类型转换。
+GraphicBuffer
+
+先看 GraphicBuffer 的头文件定义：
+
+
+```
+// GraphicBuffer.h
+class GraphicBuffer
+    : public ANativeObjectBase<ANativeWindowBuffer, GraphicBuffer, RefBase>,
+      public Flattenable<GraphicBuffer>
+{...}
+
+```
+
+
+GraphicBuffer 使用 ANativeObjectBase 模板，即 GraphicBuffer 就是 ANativeWindowBuffer 的一种具体实现；而 ANativeWindowBuffer.common 成员的两个函数指针 incRef, decRef 指向了 GraphicBuffer 的另一个基类 RefBase 的 incStrong, decStrong ；而 ANativeWindowBuffer 可以看做是把 buffer_handle_t 包了一层，所以 GraphicBuffer 也是指向的一块缓存区。
+
+# Surface
+
+Surface 的头文件定义：
+
+
+```
+// Surface.h
+
+class Surface
+    : public ANativeObjectBase<ANativeWindow, Surface, RefBase>
+{
+    ...
+protected:
+    ...
+    struct BufferSlot {
+        sp<GraphicBuffer> buffer;
+        Region dirtyRegion;
+    };
+    BufferSlot mSlots[NUM_BUFFER_SLOTS];
+    ...
+}
+
+```
+Surface 也使用了 ANativeObjectBase 模板，即 Surface 就是 ANativeWindow 的一种具体实现，同样也继承了 RefBase 实现引用计数。另外成员数据结构 BufferSlot 是对 GraphicBuffer 的包装，而 mSlots 数组表示每个 Surface 中包含 NUM_BUFFER_SLOTS 个 GraphicBuffer 缓存。
+而 Surface 的构造函数中，也将 ANativeWindow 的函数指针进行了赋值：
+
+
+```
+
+// Surface.cpp
+Surface::Surface(const sp<IGraphicBufferProducer>& bufferProducer,
+    bool controlledByApp)
+      : mGraphicBufferProducer(bufferProducer),
+        mCrop(Rect::EMPTY_RECT),
+        mBufferAge(0),
+        mGenerationNumber(0),
+        mSharedBufferMode(false),
+        mAutoRefresh(false),
+        mSharedBufferSlot(BufferItem::INVALID_BUFFER_SLOT),
+        mSharedBufferHasBeenQueued(false),
+        mQueriedSupportedTimestamps(false),
+        mFrameTimestampsSupportsPresent(false),
+        mEnableFrameTimestamps(false),
+       mFrameEventHistory(std::make_unique<ProducerFrasmeEventHistory>()){
+    // Initialize the ANativeWindow function pointers.
+    ANativeWindow::setSwapInterval  = hook_setSwapInterval;
+    ANativeWindow::dequeueBuffer    = hook_dequeueBuffer;
+    ANativeWindow::cancelBuffer     = hook_cancelBuffer;
+    ANativeWindow::queueBuffer      = hook_queueBuffer;
+    ANativeWindow::query            = hook_query;
+    ANativeWindow::perform          = hook_perform;
+    ...
+}
+
+```
+
+
+# 小结
+
+  * native_handle/native_handle_t 是 private_handle_t 的抽象表示方法，消除平台相关性；方便 private_handle_t 所表示的缓存区可以在 Android 各个层次之间传递；而 buffer_handle_t 是指向他们的指针
+
+  * ANativeWindowBuffer 将 buffer_handle_t 进行了包装；
+
+  * ANativeWindow, ANativeWindowBuffer 都继承于 android_native_base_t ，它定义了引用计数两个函数指针；可以认为 ANativeWindow, ANativeWindowBuffer 为抽象数据结构，表示窗口和其对应缓存
+
+  * GraphicBuffer, Surface 都使用了模版类 ANativeObjectBase ，都继承了 RefBase 实现 incRef, decRef 引用计数；它们是具体的实现类，即实现具体的窗口缓存和窗口
+
+  * Surface 的成员 BufferSlot mSlots[NUM_BUFFER_SLOTS]; 可以看作是 sp<Grap`hicBuffer> 类型的数组；也就是说每个 Surface 中都包含有 NUM_BUFFER_SLOTS 个 GraphicBuffer
+
+  * Surface, GraphicBuffer 是图形显示系统的高层类，后续主要围绕这两个类来介绍；一个代表窗口，一个代表窗口对应的缓存
+
+Buffer/Window 体系缓存，查看大图
+
+![](image/0113-android-graphics-display-surface-buffer.png)

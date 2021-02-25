@@ -1,0 +1,216 @@
+
+[](https://redspider110.github.io/2019/04/17/0113-android-graphics-display/)
+
+Android 图形 Graphic 和显示 Display 是两个独立的部分，这里放在一起简述；介绍了图像和显示相关的基本概念，比如 BufferQueue 生产者消费者模型， Surface/SurfaceFlinger 图形合成等等。
+
+# 概念
+
+ 应用开发者可通过两种方式将图像绘制到屏幕上：使用 Canvas 或 OpenGL ：
+
+* android.graphics.Canvas 是一个 2D 图形 API ， Canvas API 通过一个名为 OpenGLRenderer 的绘制库实现硬件加速，该绘制库将 Canvas 运算转换为 OpenGL 运算，以便它们可以在 GPU 上执行。从 Android 4.0 开始，硬件加速的 Canvas 默认情况下处于启用状态
+
+* 除了 Canvas，开发者渲染图形的另一个主要方式是使用 OpenGL ES 直接渲染到 Surface 。 Android 在 Android.opengl 软件包中提供了 OpenGL ES 接口
+
+
+## EGL
+
+先熟悉 Android 平台图形处理 API 的标准：
+```
+    OpenGL
+    是由 SGI 公司开发的一套 3D 图形软件接口标准，由于具有体系结构简单合理、使用方便、与操作平台无关等优点， OpenGL 迅速成为 3D 图形接口的工业标准，并陆续在各种平台上得以实现。
+
+    OpenGL ES
+    是由 khronos 组织根据手持及移动平台的特点，对 OpenGL 3D 图形 API 标准进行裁剪定制而形成的。
+
+    Vulkan
+    是由 khronos 组织在 2016 年正式发布的，是 OpenGL ES 的继任者。 API 是轻量级、更贴近底层硬件 close-to-the-metal 的接口，可使 GPU 驱动软件运用多核与多线程 CPU 性能。
+```
+
+OpenGL ES 定义了一个渲染图形的 API ，但没有定义窗口系统。为了让它能够适合各种平台，它将与知道如何通过操作系统创建和访问窗口的库结合使用。
+
+而在 Android 中，这个库被称为 EGL ；也就是说 EGL 主要是适配系统和关联窗口属性。如果要绘制纹理多边形，应使用 OpenGL ES 调用；如果要在屏幕上进行渲染，应使用 EGL 调用。
+
+OpenGL ES 是 Android 绘图 API ，但 OpenGL ES 是平台通用的，在特定设备上使用需要一个中间层做适配， Android 中这个中间层就是 EGL 。
+![](image/0113-android-graphics-display-android-egl.jpg)
+
+# Surface 和 SurfaceFlinger
+
+无论开发者使用什么渲染 API，一切内容都会渲染到 Surface 。 Surface 表示缓冲队列中的生产者，而缓冲队列通常会被 SurfaceFlinger 消耗。在 Android 平台上创建的每个窗口都由 Surface 提供支持。所有被渲染的可见 Surface 都被 SurfaceFlinger 合成到显示部分。它们遵循生产者/消费者模型：
+![](image/0113-android-graphics-ape_fwk_graphics.png)
+
+
+
+* 图像流生产者
+
+  图像流生产者可以是生成图形缓冲区以供消耗的任何内容。例如 OpenGL ES, Canvas 2D, mediaserver 视频解码器。
+
+
+* 图像流消费者
+
+  图像流的最常见消费者是 SurfaceFlinger ，该系统服务会消耗当前可见的 Surface ，并使用窗口管理器中提供的信息将它们合成到显示部分。 SurfaceFlinger 是可以修改所显示部分内容的唯一服务。 SurfaceFlinger 使用 OpenGL 和 Hardware Composer 来合成一组 Surface 。
+其他 OpenGL ES 应用也可以消耗图像流，例如相机应用会消耗相机预览图像流。非 GL 应用也可以是消费者，例如 ImageReader 类。
+
+
+## WMS: WindowManagerServices
+
+窗口管理器，控制窗口的 Android 系统服务，它是视图容器。窗口总是由 Surface 提供支持。该服务会监督生命周期、输入和聚焦事件、屏幕方向、转换、动画、位置、变形、 Z-Order 以及窗口的其他许多方面。窗口管理器会将所有窗口元数据发送到 SurfaceFlinger ，以便 SurfaceFlinger 可以使用该数据在显示部分合成 Surface 。
+
+## FrameBuffer
+
+FrameBuffer 帧缓冲驱动，它是 Linux 的一种驱动程序接口。 Linux 是工作在保护模式下，所以用户态进程是无法象 DOS 那样使用显卡 BIOS 里提供的中断调用来实现直接写屏， Linux 抽象出 FrameBuffer 这个设备来供用户态进程实现直接写屏。 FrameBuffer 机制模仿显卡的功能，将显卡硬件结构抽象掉，可以通过 FrameBuffer 的读写直接对显存进行操作。用户可以将 FrameBuffer 看成是显示内存的一个映像，将其映射到进程地址空间之后，就可以直接进行读写操作，而写操作可以立即反应在屏幕上。这种操作是抽象的统一的。用户不必关心物理显存的位置、换页机制等等具体细节，这些都是由 FrameBuffer 设备驱动来完成的。但 FrameBuffer 本身不具备任何运算数据的能力，就只好比是一个暂时存放水的水池。 CPU 将运算后的结果放到这个水池,水池再将结果流到显示器，中间不会对数据做处理。应用程序也可以直接读写这个水池的内容在这种机制下，尽管 FrameBuffer 需要真正的显卡驱动的支持，但所有显示任务都有 CPU 完成，因此 CPU 负担很重。
+
+在开发者看来， FrameBuffer 本质上是一块显示缓存，往显示缓存中写入特定格式的数据就意味着向屏幕输出内容。所以说 FrameBuffer 就是一块白板。例如对于初始化为 16 位色的 FrameBuffer 来说， FrameBuffer 中的两个字节代表屏幕上一个点，从上到下，从左至右，屏幕位置与内存地址是顺序的线性关系。
+帧缓存可以在系统存储器(内存)的任意位置，视频控制器通过访问帧缓存来刷新屏幕。帧缓存也叫刷新缓存 FrameBuffer 或 RefreshBuffer ，这里的帧 Frame 是指整个屏幕范围。帧缓存有个地址，是在内存里。我们通过不停的向 FrameBuffer 中写入数据，显示控制器就自动的从 FrameBuffer 中取数据并显示出来。全部的图形都共享内存中同一个帧缓存。
+
+```
+FrameBuffer 帧缓冲实际上包括两个不同的方面：
+
+    Frame ：帧，就是指一幅图像，在屏幕上看到的那幅图像就是一帧
+    Buffer ：缓冲，就是一段存储区域，可这个区域存储的是帧
+```
+FrameBuffer 就是一个存储图形/图像帧数据的缓冲。Linux 内核提供了统一的 Framebuffer 显示驱动，设备节点 /dev/graphics/fb* 或者 /dev/fb* ，以 fb0 表示第一个 Monitor ，当前实现中只用到了一个显示屏。这个虚拟设备将不同硬件厂商实现的真实设备统一在一个框架下，这样应用层就可以通过标准的接口进行图形/图像的输入和输出了：
+![](image/0113-android-graphics-display-linux-framebuffer.png)
+
+
+从上图中可以看出，应用层通过标准的 ioctl, mmap 等系统调用，就可以操作显示设备，用起来非常方便。这里 mmap 把设备中的显存映射到用户空间的，在这块缓冲上写数据，就相当于在屏幕上绘画。
+
+
+## Gralloc
+
+Gralloc 的含义为是 Graphics Alloc 图形分配 。 Android 系统在硬件抽象层中提供了一个 Gralloc 模块，封装了对 Framebuffer 的所有访问操作。
+Gralloc 模块符合 Android 标准的 HAL 架构设计；它分为 fb 和 gralloc 两个设备：前者负责打开内核中的 Framebuffer 、初始化配置，以及提供 post, setSwapInterval 等操作；后者则管理帧缓冲区的分配和释放。上层只能通过 Gralloc 访问帧缓冲区，这样一来就实现了有序的封装保护。
+
+Gralloc 图形内存分配器，分配图像生产者请求的内存。它不仅仅是在原生堆上分配内存的另一种方法；在某些情况下，分配的内存可能并非缓存一致，或者可能完全无法从用户空间访问。分配的性质由用法标记确定，这些标记包括以下属性：
+
+    * 从软件 CPU 访问内存的频率
+    * 从硬件 GPU 访问内存的频率
+    * 是否将内存用作 OpenGL ES: GLES 纹理
+    * 视频编码器是否会使用内存
+
+例如如果格式指定为 RGBA 8888 像素，并且指明将从软件访问缓冲区（这意味着应用将直接触摸像素），则分配器必须按照 R-G-B-A 的顺序为每个像素创建 4 个字节的缓冲区。相反如果指明仅从硬件访问缓冲区且缓冲区作为 GLES 纹理，则分配器可以执行 GLES 驱动程序所需的任何操作 - BGRA 排序、非线性搅和布局、替代颜色格式等。允许硬件使用其首选格式可以提高性能。某些值在特定平台上无法组合，例如视频编码器标记可能需要 YUV 像素，因此将无法添加软件访问权并指定 RGBA 8888 。
+
+Gralloc 分配器返回的句柄可以通过 Binder 在进程之间传递。
+
+# HWC
+
+HWC: Hardware Composer 硬件混合渲染器，显示子系统的硬件抽象实现。 SurfaceFlinger 可以将某些合成工作委托给 Hardware Composer，以分担 OpenGL 和 GPU 上的工作量。 SurfaceFlinger 只是充当另一个 OpenGL ES 客户端。因此在 SurfaceFlinger 将一个或两个缓冲区合成到第三个缓冲区中的过程中，它会使用 OpenGL ES 。这样使合成的功耗比通过 GPU 执行所有计算更低。
+Hardware Composer HAL 则进行另一半的工作，并且是所有 Android 图形渲染的核心。
+
+Hardware Composer 必须支持事件，其中之一是 VSYNC（另一个是支持即插即用 HDMI 的热插拔 hotplug ） 。
+VSYNC 垂直刷新
+
+先介绍几个概念：
+
+  * 帧
+    视频，动画中的每一张画面，而视频和动画特效就是由无数张画面组合而成，每一张画面都是一帧。
+
+  * 帧率
+    Frame Rate ，也指帧速率，单位 fps:frames per second ，描述视频、电子绘图或游戏每秒播放多少帧；FPS 是测量用于保存、显示动态视频的信息数量；我们本篇讲的帧率/帧速率指的是系统显卡处理的速率，即每秒能处理多少帧。
+    每秒钟帧数愈多，所显示的动作就会愈流畅。通常要避免动作不流畅的最低是 30 ，所以常见的有 30fps, 60fps 等。 wiki 百科中提到几个帧率数字：
+        12 fps：由于人类眼睛的特殊生理结构，如果所看画面之帧率高于每秒约 10-12 帧的时候，就会认为是连贯的，是动画的
+        24 fps：有声电影的拍摄及播放帧率均为每秒 24 帧，对一般人而言已算可接受
+        30 fps：早期的高动态电子游戏，帧率少于每秒 30 帧的话就会显得不连贯，这是因为没有动态模糊使流畅度降低
+        60 fps：在实际体验中，60 帧相对于 30 帧有着更好的体验
+        85 fps：一般而言，大脑处理视频的极限
+     ![](image/0113-android-graphics-display-fps-demo.gif)
+
+
+  * 屏幕刷新频率
+
+  Refresh Rate 或者是 Scanning Frequency，单位赫兹 Hz （即周期/秒），是指设备刷新屏幕的频率，通常为 60hz 。屏幕的刷新过程是每一行从左到右（行刷新，水平刷新，Horizontal Scanning ），从上到下（屏幕刷新，垂直刷新， Vertical Scanning ）。
+  ![](image/0113-android-graphics-vsync.png)
+
+  * Tearing 撕裂
+  显示出来的图像出现上半部分和下半部分不属于同一帧，我们称之为 tearing 。假设系统显卡处理能力为 FPS 100 ，显示器的刷新频率是 75Hz ，显卡将比显示器快 1/3 ；这意味着，在一个刷新周期之内，显卡将写入 4/3 的帧数据，也就是说下一帧的 1/3 覆盖在前一帧之上；当然随着系统运行， 1/3 这个比例会发生变化，1/3，2/3，1，1/3，循环；这种帧与帧之间的不完全覆盖重合现象就是 Tearing 撕裂现象。
+
+  ![](image/0113-android-graphics-display-tearing.png)
+
+
+  显卡处理图像的帧速率和屏幕刷新频率是相互独立的，当两者不一致时会出现 tearing 问题，为了解决不一致的问题，引入了 Vsync 信号：当整个屏幕刷新完毕，即一个垂直刷新周期完成，会有短暂的空白期，等待定期同步信号 VSync 信号，收到后才开始下一次屏幕刷新；所以 VSync 中的 V 指的是垂直刷新中的垂直 Vertical 。
+  Vsync 技术意味着，显卡显示性能极限被限制在屏幕刷新率以内了：在系统显卡处理的 FPS 高于屏幕刷新率时，显卡会将一部分时间浪费在等待上；因为没有可用的内存用于绘制，显卡需要等待 Vsync 信号才能绘制下一帧。
+
+
+  * 单缓存缓存模型
+   理想的情况是帧率和刷新频率相等，每绘制一帧，屏幕显示一帧，如下图所示；但是如果不一致，就会出现 tearing 。
+
+   ![](image/0113-android-graphics-display-vsync-single-buffer.png)
+
+
+   * 双重缓存 Double Buffer
+   两个缓存区分别为 Back Buffer 和 Frame Buffer 。 GPU 向 Back Buffer 中写数据，屏幕从 Frame Buffer 中读数据。当屏幕刷新完成后产生 VSync 信号，此时将数据从 Back Buffer 复制到 Frame Buffer，可认为该复制操作在瞬间完成；复制完后显示设备开始显示这帧数据，同时通知 CPU/GPU 绘制下一帧图像。
+   ![](image/0113-android-graphics-display-vsync-double-buffer.png)
+
+
+   但是当 GPU/CPU 绘制一帧的时间超过了 Vsync 时，屏幕刷新从 Frame Buffer 取到的数据仍然是上一帧数据，即两个 Vsync 周期显示同一帧数据，我们称为发生了掉帧 Dropped Frame, Skipped Frame, Jank 现象。
+
+   ![](image/0113-android-graphics-display-vsync-double-buffer-jank.png)
+
+
+
+   * 三重缓存 Triple Buffer
+   在双重缓存模型中，当 Jank 现象出现时， GPU/CPU 此时都处于闲置状态，所以引入了三重缓存的概念：在 Jank 时， GPU/CPU 在第三个 Buffer 中绘制数据：
+
+   ![](image/0113-android-graphics-display-vsync-triple-buffer.png)
+
+   需要注意的是，第三个缓存并不是总是存在的，只要当需要的时候才会创建；而且也无法完全解决 Jank 现象，但是能缓解。
+   ![](image/0113-android-graphics-display-vsync-triple-buffer-jank.png)
+
+
+## 60Hz 和 16 ms
+
+   从上面解释帧速率时提到，虽然人眼感知生理的极限 85fps ，但达到 60fps 时动画就已经有很好的体验，不会出现卡顿和迟滞现象；而最为关键的是 60Hz 是美国交流电的频率，如果屏幕刷新频率能够匹配交流电的频率就可以有效的预防屏幕中出现滚动条；所以：
+
+    60Hz 的屏幕刷新率或者 60fps 的帧率，是人眼能够感知到比较流畅的数值
+    1000ms/60=16ms ， 16ms 是指 GPU/CPU 在绘制图形时，必须在这个刷新频率内绘制完成，否则会出现丢帧现象
+
+## BufferQueue
+  实现了整个生产者消费者模型。 BufferQueues 是 Android 图形组件之间的粘合剂。它们是一对队列，可以调解缓冲区从生产者到消费者的固定周期。一旦生产者移交其缓冲区， SurfaceFlinger 便会负责将所有内容合成到显示部分。
+  BufferQueue 永远不会复制缓冲区内容（移动如此多的数据是非常低效的操作）；相反缓冲区始终通过句柄进行传递。
+
+  ![](image/0113-android-graphics-display-bufferqueue.png)
+
+  BufferQueue 包含将图像流生产者与图像流消费者结合在一起的逻辑。图像生产者的一些示例包括由相机 HAL 或 OpenGL ES 游戏生成的相机预览。图像消费者的一些示例包括 SurfaceFlinger 或显示 OpenGL ES 流的另一个应用，如显示相机取景器的相机应用。
+  BufferQueue 是将缓冲区池与队列相结合的数据结构，它使用 Binder IPC 在进程之间传递缓冲区。生产者接口，或者您传递给想要生成图形缓冲区的某个人的内容，即是 IGraphicBufferProducer （ SurfaceTexture 的一部分）。 BufferQueue 通常用于渲染到 Surface ，并且与 GL 消费者及其他任务一起消耗内容。 BufferQueue 可以在三种不同的模式下运行：
+
+  * 类同步模式
+  默认情况下， BufferQueue 在类同步模式下运行，在该模式下，从生产者进入的每个缓冲区都在消费者那退出。在此模式下不会舍弃任何缓冲区。如果生产者速度太快，创建缓冲区的速度比消耗缓冲区的速度更快，它将阻塞并等待可用的缓冲区。
+
+  * 非阻塞模式
+  BufferQueue 还可以在非阻塞模式下运行，在此类情况下，它会生成错误，而不是等待缓冲区。在此模式下也不会舍弃缓冲区。这有助于避免可能不了解图形框架的复杂依赖项的应用软件出现潜在死锁现象。
+
+  * 舍弃模式
+  BufferQueue 可以配置为丢弃旧缓冲区，而不是生成错误或进行等待。例如，如果对纹理视图执行 GL 渲染并尽快绘制，则必须丢弃缓冲区。
+
+  为了执行这项工作的大部分环节， SurfaceFlinger 就像另一个 OpenGL ES 客户端一样工作。例如当 SurfaceFlinger 正在积极地将一个缓冲区或两个缓冲区合成到第三个缓冲区中时，它使用的是 OpenGL ES 。
+
+## 数据流
+
+  Android 图形管道数据流如下图所示：
+  ![](image/01113-android-graphics-display-graphics_pipeline.png)
+  左侧的对象是生成图形缓冲区的渲染器，如主屏幕、状态栏和系统界面。 SurfaceFlinger 是合成器，而硬件混合渲染器是制作器。
+
+## 组件小结
+
+  低级别组件
+  * BufferQueue 和 gralloc 。 BufferQueue 将可生成图形数据缓冲区的组件（生产者）连接到接受数据以便进行显示或进一步处理的组件（消费者）。通过供应商专用 HAL 接口实现的 gralloc 内存分配器将用于执行缓冲区分配任务。
+
+  * SurfaceFlinger, Hardware Composer 和虚拟显示屏。 SurfaceFlinger 接受来自多个源的数据缓冲区，然后将它们进行合成并发送到显示屏。
+
+  *  Hardware Composer HAL (HWC) 确定使用可用硬件合成缓冲区的最有效的方法，虚拟显示屏使合成输出可在系统内使用（录制屏幕或通过网络发送屏幕）。
+
+  * Surface, Canvas, SurfaceHolder 。 Surface 可生成一个通常由 SurfaceFlinger 使用的缓冲区队列。当渲染到 Surface 上时，结果最终将出现在传送给消费者的缓冲区中。 Canvas API 提供一种软件实现方法（支持硬件加速），用于直接在 Surface 上绘图（ OpenGL ES 的低级别替代方案）。与视图有关的任何内容均涉及到 SurfaceHolder ，其 API 可用于获取和设置 Surface 参数（如大小和格式）。
+
+  * EGLSurface, OpenGL ES 。 OpenGL ES (GLES) 定义了用于与 EGL 结合使用的图形渲染 API 。 EGI 是一个规定如何通过操作系统创建和访问窗口的库（要绘制纹理多边形，请使用 GLES 调用；要将渲染放到屏幕上，请使用 EGL 调用）。
+
+  *  ANativeWindow ，它是 Java Surface 类的 C/C++ 等价类，用于通过原生代码创建 EGL 窗口 Surface 。
+
+  *  Vulkan 。 Vulkan 是一种用于高性能 3D 图形的低开销、跨平台 API 。与 OpenGL ES 一样， Vulkan 提供用于在应用中创建高质量实时图形的工具。 Vulkan 的优势包括降低 CPU 开销以及支持 SPIR-V 二进制中间语言。
+
+高级别组件
+  * SurfaceView 和 GLSurfaceView 。 SurfaceView 结合了 Surface 和 View 。 SurfaceView 的 View 组件由 SurfaceFlinger （而不是应用）合成，从而可以通过单独的线程/进程渲染，并与应用界面渲染隔离。 GLSurfaceView 提供帮助程序类来管理 EGL 上下文、线程间通信以及与 Activity 生命周期的交互（但使用 GLES 时并不需要 GLSurfaceView ）。
+
+  * SurfaceTexture 。 SurfaceTexture 将 Surface 和 GLES 纹理相结合来创建 BufferQueue ，而应用是 BufferQueue 的消费者。当生产者将新的缓冲区排入队列时，它会通知应用。应用会依次释放先前占有的缓冲区，从队列中获取新缓冲区并执行 EGL 调用，从而使 GLES 可将此缓冲区作为外部纹理使用。 Android 7.0 增加了对安全纹理视频播放的支持，以便用户能够对受保护的视频内容进行 GPU 后处理。
+
+  * TextureView 。 TextureView 结合了 View 和 SurfaceTexture 。 TextureView 对 SurfaceTexture 进行包装，并负责响应回调以及获取新的缓冲区。在绘图时， TextureView 使用最近收到的缓冲区的内容作为其数据源，根据 View 状态指示，在它应该渲染的任何位置和以它应该采用的任何渲染方式进行渲染。 View 合成始终通过 GLES 来执行，这意味着内容更新可能会导致其他 View 元素重绘。
+
+高级别组件可以直接在 APP 中使用。
