@@ -1,0 +1,790 @@
+# libgui 库
+
+代码目录结构
+
+frameworks/native/libs/gui 目录结构：
+
+```
+h
+│   │   ├── bufferqueue
+│   │   │   └── 1.0
+│   │   │       ├── B2HProducerListener.h
+│   │   │       └── H2BGraphicBufferProducer.h
+│   │   ├── BufferQueueConsumer.h
+│   │   ├── BufferQueueCore.h
+│   │   ├── BufferQueueDefs.h
+│   │   ├── BufferQueue.h
+│   │   ├── BufferQueueProducer.h
+│   │   ├── BufferSlot.h
+│   │   ├── ConsumerBase.h
+│   │   ├── CpuConsumer.h
+│   │   ├── DisplayEventReceiver.h
+│   │   ├── FrameTimestamps.h
+│   │   ├── GLConsumer.h
+│   │   ├── GuiConfig.h
+│   │   ├── IConsumerListener.h
+│   │   ├── IDisplayEventConnection.h
+│   │   ├── IGraphicBufferConsumer.h
+│   │   ├── IGraphicBufferProducer.h
+│   │   ├── IProducerListener.h
+│   │   ├── ISurfaceComposerClient.h
+│   │   ├── ISurfaceComposer.h
+│   │   ├── OccupancyTracker.h
+│   │   ├── StreamSplitter.h
+│   │   ├── SurfaceComposerClient.h
+│   │   ├── SurfaceControl.h
+│   │   ├── Surface.h
+│   │   └── view
+│   │       └── Surface.h
+│   └── private
+│       └── gui
+│           ├── BitTube.h
+│           ├── ComposerService.h
+│           ├── LayerState.h
+│           └── SyncFeatures.h
+├── IProducerListener.cpp
+├── ISurfaceComposerClient.cpp
+├── ISurfaceComposer.cpp
+├── LayerState.cpp
+├── OccupancyTracker.cpp
+├── StreamSplitter.cpp
+├── SurfaceComposerClient.cpp
+├── SurfaceControl.cpp
+├── Surface.cpp
+├── SyncFeatures.cpp
+├── tests
+│   ├── ...
+└── view
+    └── Surface.cpp
+
+11 directories, 96 files
+
+```
+其中 H2B, B2H 表示 Framework Buffer 和 HAL 层数据结构的相互转换；实际上代表的是同一样东西，方便各层内部使用。
+IGraphicBufferProducer/IProducerListener 生产者
+
+# IGraphicBufferProducer 是生产者接口，实现了 IInterface 可以用于跨进程通信。
+
+
+```
+// IGraphicBufferProducer.h
+class IGraphicBufferProducer : public IInterface
+{
+public:
+    DECLARE_HYBRID_META_INTERFACE(GraphicBufferProducer,
+        HGraphicBufferProducer)
+    ...
+    // 根据指定参数申请一块 Buffer ，索引值为 slot ，同步为 fence
+    // 从 BufferQueue 中出队一块缓存 GraphicBuffer
+    virtual status_t dequeueBuffer(int* slot, sp<Fence>* fence,
+        uint32_t w, uint32_t h,
+        PixelFormat format, uint64_t usage, uint64_t* outBufferAge,
+        FrameEventHistoryDelta* outTimestamps) = 0;
+    // 获取 slot 位置的 GraphicBuffer
+    virtual status_t requestBuffer(int slot, sp<GraphicBuffer>* buf) = 0;
+    // 客户端已经向 slot 位置的 Buffer 填充完数据
+    // IGraphicBufferProducer 得到 Buffer 的输入信息，
+    // slot 这块缓存 GraphicBuffer 进入队列 BufferQueue
+    virtual status_t queueBuffer(int slot, const QueueBufferInput& input,
+            QueueBufferOutput* output) = 0;
+    // 释放 slot 位置的 GraphicBuffer
+    virtual status_t detachBuffer(int slot) = 0;
+    virtual status_t detachNextBuffer(sp<GraphicBuffer>* outBuffer,
+            sp<Fence>* outFence) = 0;
+    // 根据指定的 buffer 获取 slot
+    virtual status_t attachBuffer(int* outSlot,
+            const sp<GraphicBuffer>& buffer) = 0;
+    // 释放 slot 位置的 buffer
+    virtual status_t cancelBuffer(int slot, const sp<Fence>& fence) = 0;
+    ...
+    // 客户端根据 api 类型，连接 IGraphicBufferProducer ，
+    // 客户端得到缓存的相关信息 QueueBufferOutput
+    virtual status_t connect(const sp<IProducerListener>& listener,
+            int api, bool producerControlledByApp,
+            QueueBufferOutput* output) = 0;
+    // 断开连接
+    virtual status_t disconnect(int api,
+        DisconnectMode mode = DisconnectMode::Api) = 0;
+    // 获取消费者名称
+    virtual String8 getConsumerName() const = 0;
+    ...
+};
+
+```
+
+IProducerListener 是 IGraphicBufferProducer 对应的回调接口。
+
+```
+IProducerListener.h
+class ProducerListener : public virtual RefBase
+{
+public:
+   ProducerListener() {}
+   virtual ~ProducerListener();
+
+   virtual void onBufferReleased() = 0; // Asynchronous
+   virtual bool needsReleaseNotify() = 0;
+};
+
+class IProducerListener : public ProducerListener, public IInterface
+{
+public:
+   DECLARE_META_INTERFACE(ProducerListener)
+};
+
+class BnProducerListener : public BnInterface<IProducerListener>
+{
+public:
+   virtual status_t onTransact(uint32_t code, const Parcel& data,
+           Parcel* reply, uint32_t flags = 0);
+   virtual bool needsReleaseNotify();
+};
+
+class DummyProducerListener : public BnProducerListener
+{
+public:
+   virtual ~DummyProducerListener();
+   virtual void onBufferReleased() {}
+   virtual bool needsReleaseNotify() { return false; }
+};
+```
+
+# IGraphicBufferConsumer/IConsumerListener 消费者
+
+IGraphicBufferConsumer 是消费者接口，实现了 IInterface 可以用于跨进程通信。
+
+```
+/ IGraphicBufferConsumer.h
+class IGraphicBufferConsumer : public IInterface {
+public:
+    DECLARE_META_INTERFACE(GraphicBufferConsumer)
+    ...
+    // 从 BufferQueue 中获取一块准备好了的缓存 GraphicBuffer
+    virtual status_t acquireBuffer(BufferItem* buffer,
+        nsecs_t presentWhen, uint64_t maxFrameNumber = 0) = 0;
+    // 释放 slot 位置的缓存
+    virtual status_t detachBuffer(int slot) = 0;
+    // 根据指定的 GraphicBuffer 获取 slot
+    virtual status_t attachBuffer(int* outSlot,
+        const sp<GraphicBuffer>& buffer) = 0;
+    // 移除指定 slot 位置的缓存
+    virtual status_t releaseBuffer(int buf, uint64_t frameNumber,
+        EGLDisplay display, EGLSyncKHR fence,
+        const sp<Fence>& releaseFence) = 0;
+    ...
+    // 连接一个消费者进入 BufferQueue
+    virtual status_t consumerConnect(const sp<IConsumerListener>& consumer,
+                                     bool controlledByApp) = 0;
+    // 从 BufferQueue 断开连接
+    virtual status_t consumerDisconnect() = 0;
+    ...
+};
+
+```
+
+
+IConsumerListener 是 IGraphicBufferConsumer 对应的回调接口：
+
+```
+// IConsumerListener.h
+class ConsumerListener : public virtual RefBase {
+public:
+    ConsumerListener() {}
+    virtual ~ConsumerListener();
+
+    virtual void onDisconnect() {} /* Asynchronous */
+    virtual void onFrameAvailable(const BufferItem& item)
+        = 0; /* Asynchronous */
+    virtual void onFrameReplaced(const BufferItem& /* item */)
+        {} /* Asynchronous */
+    virtual void onBuffersReleased() = 0; /* Asynchronous */
+    virtual void onSidebandStreamChanged() = 0; /* Asynchronous */
+    virtual void addAndGetFrameTimestamps(const NewFrameEventsEntry*
+        /*newTimestamps*/, FrameEventHistoryDelta* /*outDelta*/) {}
+};
+
+class IConsumerListener : public ConsumerListener, public IInterface {
+public:
+    DECLARE_META_INTERFACE(ConsumerListener)
+};
+```
+
+# BufferItem
+
+BufferItem 描述了一块缓存 GraphicBuffer ，以及位置 mSlot ，同步 mFence 等等信息。
+
+```
+// BufferItem.h
+class BufferItem : public Flattenable<BufferItem> {
+    ...
+    sp<GraphicBuffer> mGraphicBuffer;
+    sp<Fence> mFence;
+    Rect mCrop;
+    ...
+    android_dataspace mDataSpace;
+    uint64_t mFrameNumber;
+    int mSlot;
+    ...
+}
+
+```
+
+
+BufferSlot
+
+BufferSlot 记录了当前 slot 位置的缓存 GraphicBuffer ，以及对应状态， EGL 相关信息。
+
+```
+// BufferSlot.h
+struct BufferSlot {
+
+    BufferSlot()
+    : mGraphicBuffer(nullptr),
+      mEglDisplay(EGL_NO_DISPLAY),
+      mBufferState(),
+      mRequestBufferCalled(false),
+      mFrameNumber(0),
+      mEglFence(EGL_NO_SYNC_KHR),
+      mFence(Fence::NO_FENCE),
+      mAcquireCalled(false),
+      mNeedsReallocation(false) {
+    }
+
+    sp<GraphicBuffer> mGraphicBuffer;
+    EGLDisplay mEglDisplay;
+    BufferState mBufferState;
+    bool mRequestBufferCalled;
+    uint64_t mFrameNumber;
+    EGLSyncKHR mEglFence;
+    sp<Fence> mFence;
+    bool mAcquireCalled;
+    bool mNeedsReallocation;
+};
+```
+
+
+BufferQueueDefs 中定义了一个 BufferSlot 的数组结构类型 SlotsType 。
+
+
+```
+// BufferQueueDefs.h
+namespace android {
+    class BufferQueueCore;
+
+    namespace BufferQueueDefs {
+        typedef BufferSlot SlotsType[NUM_BUFFER_SLOTS];
+    } // namespace BufferQueueDefs
+} // namespace android
+```
+
+# BufferQueueCore
+
+BufferQueueCore 是生产者消费模型的核心，如下是几个重要的成员变量：
+
+// BufferQueueCore.h
+```
+class BufferQueueCore : public virtual RefBase {
+public:
+    ...
+    typedef Vector<BufferItem> Fifo;
+private:
+    ...
+    String8 mConsumerName;
+    sp<IConsumerListener> mConsumerListener;
+    sp<IProducerListener> mConnectedProducerListener;
+
+    BufferQueueDefs::SlotsType mSlots;
+    Fifo mQueue;
+    ...
+}
+```
+
+  mQueue
+  是一个新建先出队列，存储了一队 BufferItem 数据，即一组缓存区。
+
+  mSlots
+  一个数组，保存了 BufferSlot 数据，每个 slot 位置对应一个缓存。
+
+  mConsumerListener
+  当前生产消费模型中的，消费者回调接口。
+
+  mConnectedProducerListener
+  当前生产消费模型中的，生产者回调接口。
+
+# BufferQueueProducer/BufferQueueConsumer 生产者/消费者实现类
+
+BufferQueueProducer 是 IGraphicBufferProducer 的实现类，实现了生产者对应的功能。
+
+
+```
+// BufferQueueProducer.h
+class BufferQueueProducer : public BnGraphicBufferProducer,
+                            private IBinder::DeathRecipient {
+    ...
+private:
+    ...
+    sp<BufferQueueCore> mCore;
+    // This references mCore->mSlots.
+    BufferQueueDefs::SlotsType& mSlots;
+    String8 mConsumerName;
+    ...
+    sp<Fence> mLastQueueBufferFence;
+    Rect mLastQueuedCrop;
+    uint32_t mLastQueuedTransform;
+}
+
+```
+
+BufferQueueProducer 中持有 BufferQueueCore 对象； mSlots 指向 mCore->mSlots ；同时保持了生产消费模型中，对应消费者的名称。
+
+```
+BufferQueueConsumer 是 IGraphicBufferConsumer 的实现类，实现了消费者对应的功能。
+
+// BufferQueueConsumer.h
+class BufferQueueConsumer : public BnGraphicBufferConsumer {
+    ...
+private:
+    sp<BufferQueueCore> mCore;
+    // This references mCore->mSlots.
+    BufferQueueDefs::SlotsType& mSlots;
+    String8 mConsumerName;
+}
+
+```
+
+BufferQueueConsumer 中持有 BufferQueueCore 对象； mSlots 指向 mCore->mSlots 。
+
+# BufferQueue 模型
+
+BufferQueue 类是 Android 中所有图形处理操作的核心。它的作用很简单：将生成图形数据缓冲区的一方（生产者）连接到接受数据以进行显示或进一步处理的一方（消费者）。几乎所有在系统中移动图形数据缓冲区的内容都依赖于 BufferQueue 。
+
+基本用法很简单：生产者请求一个可用的缓冲区 dequeueBuffer ，并指定一组特性，包括宽度、高度、像素格式和用法标记；生产者填充缓冲区并将其返回到队列 queueBuffer 。随后消费者获取该缓冲区 acquireBuffer ，并使用该缓冲区的内容。当消费者操作完毕后，将该缓冲区返回到队列 releaseBuffer 。
+
+最新的 Android 设备支持“同步框架”，这使得系统能够在与可以异步处理图形数据的硬件组件结合使用时提高工作效率。例如，生产者可以提交一系列 OpenGL ES 绘制命令，然后在渲染完成之前将输出缓冲区加入队列。该缓冲区伴有一个栅栏，当内容准备就绪时，栅栏会发出信号。当该缓冲区返回到空闲列表时，会伴有第二个栅栏，因此消费者可以在内容仍在使用期间释放该缓冲区。该方法缩短了缓冲区通过系统时的延迟时间，并提高了吞吐量。
+队列的一些特性（例如可以容纳的最大缓冲区数）由生产者和消费者联合决定。但是 BufferQueue 负责根据需要分配缓冲区。除非特性发生变化，否则将会保留缓冲区；例如，如果生产者请求具有不同大小的缓冲区，则系统会释放旧的缓冲区，并根据需要分配新的缓冲区。
+生产者和消费者可以存在于不同的进程中； BufferQueue 永远不会复制缓冲区内容（移动如此多的数据是非常低效的操作），缓冲区始终通过句柄进行传递。
+
+
+```
+/ BufferQueue.h
+class BufferQueue {
+public:
+    ...
+    typedef ::android::ConsumerListener ConsumerListener;
+
+    // ProxyConsumerListener 是 ConsumerListener 弱引用实现
+    class ProxyConsumerListener : public BnConsumerListener {
+    public:
+        explicit ProxyConsumerListener(const wp<ConsumerListener>&
+            consumerListener);
+        ~ProxyConsumerListener() override;
+        void onDisconnect() override;
+        void onFrameAvailable(const BufferItem& item) override;
+        void onFrameReplaced(const BufferItem& item) override;
+        void onBuffersReleased() override;
+        void onSidebandStreamChanged() override;
+        void addAndGetFrameTimestamps(
+                const NewFrameEventsEntry* newTimestamps,
+                FrameEventHistoryDelta* outDelta) override;
+    private:
+        // 弱引用
+        wp<ConsumerListener> mConsumerListener;
+    };
+
+    // BufferQueue manages a pool of gralloc memory slots to be used by
+    // producers and consumers. allocator is used to allocate all the
+    // needed gralloc buffers.
+    static void createBufferQueue(
+            sp<IGraphicBufferProducer>* outProducer,
+            sp<IGraphicBufferConsumer>* outConsumer,
+            bool consumerIsSurfaceFlinger = false);
+
+    BufferQueue() = delete; // Create through createBufferQueue
+};
+```
+
+BufferQueue 的头文件定义很简单：
+
+  * 定义了一个 ConsumerListener 的弱引用
+
+  * 整个类只有一个函数 createBufferQueue ，它将参数中的 IGraphicBufferProducer, IGraphicBufferConsumer 消费者关联起来
+
+  * 没有构造函数，只能通过 createBufferQueue 来创建对象
+
+  * BufferQueue 中并不包含队列数据结构来存储缓存，仅仅连接了生产者、消费者两者的关系
+
+来看 createBufferQueue 的具体实现：
+
+```
+  sp<IGraphicBufferProducer>* outProducer,
+   sp<IGraphicBufferConsumer>* outConsumer,
+   bool consumerIsSurfaceFlinger) {
+  ...
+  sp<BufferQueueCore> core(new BufferQueueCore());
+  sp<IGraphicBufferProducer> producer(
+   new BufferQueueProducer(core, consumerIsSurfaceFlinger));
+  ...
+  sp<IGraphicBufferConsumer> consumer(new BufferQueueConsumer(core));
+  ...
+  *outProducer = producer;
+  *outConsumer = consumer;
+}
+```
+
+上面代码删掉了 LOG 打印及空判断，整个代码流程非常简单：
+
+新建 BufferQueueCore core
+由 core 新建生产者 IGraphicBufferProducer
+由 core 新建消费者 IGraphicBufferConsumer
+
+也就是说 BufferQueueCore 是最终的纽带，保存了生产者消费者对应的缓存区，连接了两者的关系。
+
+
+# Surface
+
+Surface 代表着窗口，它包含一个生产者 IGraphicBufferProducer 用来填充缓存，也就是窗口中用来显示在屏幕上的内容，mSlot 数组表示可以有多个缓存区。
+
+
+```
+/ Surface.h
+class Surface
+    : public ANativeObjectBase<ANativeWindow, Surface, RefBase>
+{
+public:
+    ...
+    sp<IGraphicBufferProducer> getIGraphicBufferProducer() const;
+    String8 getConsumerName() const;
+    ...
+protected:
+    ...
+    struct BufferSlot {
+        sp<GraphicBuffer> buffer;
+        Region dirtyRegion;
+    };
+    sp<IGraphicBufferProducer> mGraphicBufferProducer;
+    BufferSlot mSlots[NUM_BUFFER_SLOTS];
+    uint32_t mReqWidth;
+    uint32_t mReqHeight;
+    PixelFormat mReqFormat;
+    ...
+    // must be used from the lock/unlock thread
+    sp<GraphicBuffer>           mLockedBuffer;
+    sp<GraphicBuffer>           mPostedBuffer;
+    ...
+private:
+    ...
+}
+
+
+```
+
+
+# ISurfaceComposer/ISurfaceComposerClient
+
+ISurfaceComposerClient/ISurfaceComposer 都继承了 IInterface ，它们俩分别代表 Surface 合成的客户端和服务端，具体在 SurfaceFlinger 服务进程中实现， libgui 中只对合成能力（函数）做了定义。
+
+```
+// ISurfaceComposerClient.h
+class ISurfaceComposerClient : public IInterface {
+public:
+    DECLARE_META_INTERFACE(SurfaceComposerClient)
+    ...
+    virtual status_t createSurface(const String8& name, uint32_t w,
+        uint32_t h, PixelFormat format, uint32_t flags,
+        const sp<IBinder>& parent, uint32_t windowType,
+        uint32_t ownerUid, sp<IBinder>* handle,
+        sp<IGraphicBufferProducer>* gbp) = 0;
+    virtual status_t destroySurface(const sp<IBinder>& handle) = 0;
+    virtual status_t clearLayerFrameStats(const sp<IBinder>& handle)
+        const = 0;
+    virtual status_t getLayerFrameStats(const sp<IBinder>& handle,
+        FrameStats* outStats) const = 0;
+};
+
+// ISurfaceComposer.h
+class ISurfaceComposer: public IInterface {
+public:
+    DECLARE_META_INTERFACE(SurfaceComposer)
+    ...
+    virtual sp<ISurfaceComposerClient> createConnection() = 0;
+    virtual sp<ISurfaceComposerClient> createScopedConnection(
+            const sp<IGraphicBufferProducer>& parent) = 0;
+    virtual sp<IDisplayEventConnection> createDisplayEventConnection(
+            VsyncSource vsyncSource = eVsyncSourceApp) = 0;
+    virtual sp<IBinder> createDisplay(const String8& displayName,
+            bool secure) = 0;
+    virtual void destroyDisplay(const sp<IBinder>& display) = 0;
+    ...
+    virtual status_t captureScreen(const sp<IBinder>& display,
+            const sp<IGraphicBufferProducer>& producer,
+            Rect sourceCrop, uint32_t reqWidth, uint32_t reqHeight,
+            int32_t minLayerZ, int32_t maxLayerZ,
+            bool useIdentityTransform,
+            Rotation rotation = eRotateNone) = 0;
+}
+
+```
+
+如下是 ISurfaceComposerClient 相关的类图结构：
+
+![](image/01113-android-graphics-display-ISurfaceComposerClient.png)
+
+先看 ComposerService ，它代表着 SurfaceFlinger 服务端，头文件定义如下：
+
+```
+// ComposerService.h
+class ComposerService : public Singleton<ComposerService>
+{
+    sp<ISurfaceComposer> mComposerService;
+    sp<IBinder::DeathRecipient> mDeathObserver;
+    Mutex mLock;
+
+    ComposerService();
+    void connectLocked();
+    void composerServiceDied();
+    friend class Singleton<ComposerService>;
+public:
+
+    // Get a connection to the Composer Service.  This will block until
+    // a connection is established.
+    static sp<ISurfaceComposer> getComposerService();
+};
+
+```
+
+查看 connectLocked, getComposerService 两个函数的实现：
+```
+// SurfaceComposerClient.cpp
+void ComposerService::connectLocked() {
+    const String16 name("SurfaceFlinger");
+    while (getService(name, &mComposerService) != NO_ERROR) {
+        usleep(250000);
+    }
+    assert(mComposerService != NULL);
+    ...
+}
+
+/*static*/ sp<ISurfaceComposer> ComposerService::getComposerService() {
+    ComposerService& instance = ComposerService::getInstance();
+    Mutex::Autolock _l(instance.mLock);
+    if (instance.mComposerService == NULL) {
+        ComposerService::getInstance().connectLocked();
+        assert(instance.mComposerService != NULL);
+        ALOGD("ComposerService reconnected");
+    }
+    return instance.mComposerService;
+}
+
+```
+
+
+connectLocked 连接过程就是等待 SurfaceFlinger 服务启动后并获取它； getComposerService 直接返回已经连接成功的实例 mComposerService 。
+
+再看 SurfaceComposerClient ，可以将它理解为应用端，是 SurfaceFlinger 服务的客户端，它将建立和 SurfaceFlinger 服务的通信，头文件定义如下：
+
+```
+// SurfaceComposerClient.h
+class SurfaceComposerClient : public RefBase
+{
+public:
+    // Return the connection of this client
+    sp<IBinder> connection() const;
+    ...
+    //! Create a surface
+    sp<SurfaceControl> createSurface(
+            const String8& name,// name of the surface
+            uint32_t w,         // width in pixel
+            uint32_t h,         // height in pixel
+            PixelFormat format, // pixel-format desired
+            uint32_t flags = 0, // usage flags
+            SurfaceControl* parent = nullptr, // parent
+            uint32_t windowType = 0,
+            uint32_t ownerUid = 0 // UID of the task
+    );
+    status_t    destroySurface(const sp<IBinder>& id);
+
+    //! Create a virtual display
+    static sp<IBinder> createDisplay(const String8& displayName,
+        bool secure);
+    //! Destroy a virtual display
+    static void destroyDisplay(const sp<IBinder>& display);
+    ...
+
+private:
+    virtual void onFirstRef();
+    Composer& getComposer();
+    ...
+    sp<ISurfaceComposerClient>  mClient;
+    Composer&                   mComposer;
+    wp<IGraphicBufferProducer>  mParent;
+};
+
+```
+
+
+mClient 实际对应的是 SurfaceFlinger 进程中的 Client.cpp ，查看 SurfaceComposerClient::onFirstRef 源码：
+```
+// SurfaceComposerClient.cpp
+void SurfaceComposerClient::onFirstRef() {
+    sp<ISurfaceComposer> sm(ComposerService::getComposerService());
+    if (sm != 0) {
+        auto rootProducer = mParent.promote();
+        sp<ISurfaceComposerClient> conn;
+        conn = (rootProducer != nullptr) ?
+                sm->createScopedConnection(rootProducer) :
+                sm->createConnection();
+        if (conn != 0) {
+            mClient = conn;
+            mStatus = NO_ERROR;
+        }
+    }
+}
+
+// SurfaceFlinger.cpp
+sp<ISurfaceComposerClient> SurfaceFlinger::createScopedConnection(
+        const sp<IGraphicBufferProducer>& gbp) {
+    if (authenticateSurfaceTexture(gbp) == false) {
+        return nullptr;
+    }
+    const auto& layer = (static_cast<MonitoredProducer*>(
+        gbp.get()))->getLayer();
+    if (layer == nullptr) {
+        return nullptr;
+    }
+
+   return initClient(new Client(this, layer));
+}
+
+```
+
+SurfaceComposerClient 中有一个重要功能就是创建 Surface ，对应源码：
+
+```
+// SurfaceComposerClient.cpp
+sp<SurfaceControl> SurfaceComposerClient::createSurface(
+        const String8& name,
+        uint32_t w,
+        uint32_t h,
+        PixelFormat format,
+        uint32_t flags,
+        SurfaceControl* parent,
+        uint32_t windowType,
+        uint32_t ownerUid)
+{
+    sp<SurfaceControl> sur;
+    if (mStatus == NO_ERROR) {
+        sp<IBinder> handle;
+        sp<IBinder> parentHandle;
+        sp<IGraphicBufferProducer> gbp;
+
+        if (parent != nullptr) {
+            parentHandle = parent->getHandle();
+        }
+        status_t err = mClient->createSurface(name, w, h, format,
+                flags, parentHandle,
+                windowType, ownerUid, &handle, &gbp);
+        ALOGE_IF(err, "SurfaceComposerClient::createSurface error..");
+        if (err == NO_ERROR) {
+            sur = new SurfaceControl(this, handle, gbp);
+        }
+    }
+    return sur;
+}
+
+```
+
+最终会调用 SurfaceFlinger 中的 mClient 来创建 Layer, IGraphicBufferProducer ；
+
+而具体的 Surface 则由 SurfaceControl 来创建。
+
+## SurfaceControl
+
+SurfaceControl 持有创建的 Surface 的强引用，头文件定义：
+
+```
+// SurfaceControl.h
+class SurfaceControl : public RefBase
+{
+    ...
+private:
+    ...
+    sp<SurfaceComposerClient>   mClient;
+    sp<IBinder>                 mHandle;
+    sp<IGraphicBufferProducer>  mGraphicBufferProducer;
+    mutable sp<Surface>         mSurfaceData;
+};
+}
+```
+
+mHandle 指向 SurfaceFlinger 创建的 Layer 。而 SurfaceControl::createSurface 直接 new 了一个 Surface 对象。
+
+```
+// SurfaceControl.cpp
+sp<Surface> SurfaceControl::generateSurfaceLocked() const
+{
+    // This surface is always consumed by SurfaceFlinger, so the
+    // producerControlledByApp value doesn't matter; using false.
+    mSurfaceData = new Surface(mGraphicBufferProducer, false);
+
+    return mSurfaceData;
+}
+
+sp<Surface> SurfaceControl::createSurface() const
+{
+    Mutex::Autolock _l(mLock);
+    return generateSurfaceLocked();
+}
+
+```
+
+
+# IDisplayEventConnection 显示连接
+
+IDisplayEventConnection 继承了 IInterface ，客户端 APP 通过它向服务端 SurfaceFlinger 发送刷新请求。
+
+```
+class IDisplayEventConnection : public IInterface {
+public:
+    DECLARE_META_INTERFACE(DisplayEventConnection)
+
+    /*
+     * stealReceiveChannel() returns a BitTube to receive events from.
+     *Only the receive file descriptor of outChannel will be initialized,
+     * and this effectively "steals" the receive channel from the remote
+     * end (such that the remote end can only use its send channel).
+     */
+    virtual status_t stealReceiveChannel(gui::BitTube* outChannel) = 0;
+
+    /*
+     * setVsyncRate() sets the vsync event delivery rate.
+     * A value of 1 returns every vsync event.
+     * A value of 2 returns every other event, etc.
+     * A value of 0 returns no event unless
+     * requestNextVsync() has been called.
+     */
+    virtual status_t setVsyncRate(uint32_t count) = 0;
+
+    /*
+     * requestNextVsync() schedules the next vsync event.
+     * It has no effect if the vsync rate is > 0.
+     */
+    virtual void requestNextVsync() = 0; // Asynchronous
+};
+
+```
+
+IDisplayEventConnection 的类图结构
+
+![](image/0113-android-graphics-display-create-IDisplayEventConnection.png)
+
+
+IDisplayEventConnection 的具体实现是在 SurfaceFlinger 进程中的 EventThread::Connection ；DisplayEventReceiver 持有该实例。
+
+# 小结
+
+  * libgui 中一共提供了 4 组 IInterface 接口： IGraphicBufferProducer/IProducerListener, IGraphicBufferConsumer/IConsumerListener, ISurfaceComposerClient/ISurfaceComposer, IDisplayEventConnection
+
+  * IGraphicBufferProducer/IProducerListener 生产者模型
+  * IGraphicBufferConsumer/IConsumerListener 消费者模型
+  * ISurfaceComposerClient/ISurfaceComposer 提供创建 Surface 的功能，及相关管理
+  * IDisplayEventConnection 提供了 APP 客户端请求服务端 SurfaceFlinger 刷新的接口

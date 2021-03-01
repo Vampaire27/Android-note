@@ -1,0 +1,261 @@
+# 导航混频功能
+* 原理:
+   1:对于Android端混频:把三方导航的声音在系统中绑定到STREAM_ALARM通道,系统声音绑定到STREAM_MUSIC通道,通过设置不同通道的音量来实现混屏效果.
+   2:外置FM混频:由MCU控制DA的2路输入增益实现, 这里不做介绍.
+
+* 实现思路
+  对于导航app,存在导航发声前申请音频焦点和不申请焦点2种情况.
+  1).导航发声前申请音频焦点:
+    * AudioManager.java 中添加设置导航包名相关接口
+    ```
+    public void setGpsProcessName(String name) {
+       Log.v(TAG, "setGpsProcessName name="+name+", mStrNaviName="+mStrNaviName);
+       mStrNaviName = name;
+       SystemProperties.set(SYSTEM_PATH, name);
+    }
+
+    public static String getGpsProcessName() {
+      return SystemProperties.get(SYSTEM_PATH,"com.google.android.apps.maps");
+    }
+    ```
+    * AudioAttributes.java 中对导航app 强制转换成到ALARM通道
+     ```
+     public AudioAttributes build() {
+      AudioAttributes aa = new AudioAttributes();
+      //hzy add for google map voice mix 2020.0305
+      String curSetvolumeApp = ActivityThread.currentPackageName();
+      if (curSetvolumeApp != null && curSetvolumeApp.equals(AudioManager.getGpsProcessName())) {//modify for KLD navi Sound.YDG 2017-08-05
+          mContentType = AudioManager.STREAM_ALARM;
+          mUsage = USAGE_ALARM;
+      }
+      aa.mContentType = mContentType;
+      aa.mUsage = mUsage;
+      aa.mSource = mSource;
+      ...
+      return aa;
+    }
+    ```
+
+    ```
+    public Builder setContentType(@AttributeContentType int contentType) {
+
+          //hzy add for google map voice mix 2020.0305
+          String curSetvolumeApp = ActivityThread.currentPackageName();
+          if (curSetvolumeApp!= null && curSetvolumeApp.equals(AudioManager.getGpsProcessName())) {
+              contentType = CONTENT_TYPE_SONIFICATION;
+          }
+
+          switch (contentType) {
+              case CONTENT_TYPE_UNKNOWN:
+              case CONTENT_TYPE_MOVIE:
+              ...
+                   mContentType = contentType;
+                   break;
+              default:
+                   mUsage = CONTENT_TYPE_UNKNOWN;
+          }
+          return this;
+    }
+    ```
+    ```
+    public Builder setInternalLegacyStreamType(int streamType) {
+        //hzy add for google map voice mix 2020.0305
+        String curSetvolumeApp = ActivityThread.currentPackageName();
+        if (curSetvolumeApp!= null && curSetvolumeApp.equals(AudioManager.getGpsProcessName())) {
+            streamType = AudioManager.STREAM_ALARM;
+        }
+
+        switch(streamType) {
+            case AudioSystem.STREAM_VOICE_CALL:
+                mContentType = CONTENT_TYPE_SPEECH;
+                break;
+
+        mUsage = usageForStreamType(streamType);
+        return this;
+    }
+    ```
+
+    * MediaPlayer.java 中对导航app 强制转换成到ALARM通道
+    ```
+    public void setAudioStreamType(int streamtype) {
+      deprecateStreamTypeForPlayback(streamtype, "MediaPlayer", "setAudioStreamType()");
+      baseUpdateAudioAttributes(
+            new AudioAttributes.Builder().setInternalLegacyStreamType(streamtype).build());
+       String curSetvolumeApp = ActivityThread.currentPackageName();
+      if (curSetvolumeApp.equals(AudioManager.getGpsProcessName())) {//modify for KLD navi Sound.
+         streamtype = AudioManager.STREAM_ALARM;
+      }
+
+     _setAudioStreamType(streamtype);
+     mStreamType = streamtype;
+    }
+    ```
+
+    * 在系统后者main服务监控到导航申请音频焦点时,设置STREAM_MUSIC的音量来达到混音功能.
+    ```
+    if (gpsMix) {
+      mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC,
+              (defealutValue * gpsMixRate) / SettingsDefine.Common.MIXRATIO_MAX, AudioManager.FLAG_PLAY_SOUND);
+    } else {
+      //导航混音关时，不暂停音乐，而是mute。YDG 2017-05-09
+      mAudioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0);
+    }
+    ```
+  2).导航发声前不申请音频焦点:
+
+     和上面的区别是,系统或者main服务不能再监控 "导航申请音频焦点",来设置和调整音量.
+     * Tracks.cpp中根据当前音轨type设置是否是导航发声.
+
+     ```
+    status_t AudioFlinger::PlaybackThread::Track::start(AudioSystem::sync_event_t event __unused,
+                                                  audio_session_t triggerSession __unused)
+    {
+      status_t status = NO_ERROR;
+      ALOGV("start(%d), calling pid %d session %d",
+            mName, IPCThreadState::self()->getCallingPid(), mSessionId);
+
+      sp<ThreadBase> thread = mThread.promote();
+      if (thread != 0) {
+        if (isOffloaded()) {
+            Mutex::Autolock _laf(thread->mAudioFlinger->mLock);
+            Mutex::Autolock _lth(thread->mLock);
+            sp<EffectChain> ec = thread->getEffectChain_l(mSessionId);
+            if (thread->mAudioFlinger->isNonOffloadableGlobalEffectEnabled_l() ||
+                    (ec != 0 && ec->isNonOffloadableEnabled())) {
+                invalidate();
+                return PERMISSION_DENIED;
+            }
+        }
+        Mutex::Autolock _lth(thread->mLock);
+      //
+      if (this->streamType() == AUDIO_STREAM_ALARM)
+      {
+          wwc2GpsOn = true;
+         wwc2GpsBegin = true;
+      }
+     ```
+
+     ```
+     void AudioFlinger::PlaybackThread::Track::reset()
+    {
+    // Do not reset twice to avoid discarding data written just after a flush and before
+    // the audioflinger thread detects the track is stopped.
+     //YDG 2017-03-30
+     if (this->streamType() == AUDIO_STREAM_ALARM)
+     {
+      		wwc2GpsOn = false;
+	 	      wwc2GpsBegin = true;
+     }
+
+     ```
+
+
+# 导航语音掉字问题.
+  原因:车载系统,Android出来的声音需要经过MCU控制的AP放大再到喇叭.平时这个AP是关闭的.三方导航如果在MCU打开AP之前
+  就已经播放音轨,就会导致掉字现象.
+  解决办法:延迟导航音轨的播放时间.
+  * AudioTrack.java
+
+```
+
+  public AudioTrack(AudioAttributes attributes, AudioFormat format, int bufferSizeInBytes,
+           int mode, int sessionId)
+                   throws IllegalArgumentException {
+       super(attributes, AudioPlaybackConfiguration.PLAYER_TYPE_JAM_AUDIOTRACK);
+       // mState already == STATE_UNINITIALIZED
+
+
+      //todo (zhongyang) need really phone test.
+       String apkName = ActivityThread.currentPackageName();
+       loge("AudioTrack----packageName="+ apkName);
+       if(apkName.equals(AudioManager.getGpsProcessName())){
+           mAttributes =new AudioAttributes.Builder(mAttributes).setLegacyStreamType(AudioManager.STREAM_ALARM)
+                            .build();
+           needDelayTime = true;
+       }
+       //end
+
+
+  }
+
+  ```
+  所有write方法添加一次延迟.
+
+```
+
+  public int write(@NonNull byte[] audioData, int offsetInBytes, int sizeInBytes,
+           @WriteMode int writeMode) {
+
+       if (mState == STATE_UNINITIALIZED || mAudioFormat == AudioFormat.ENCODING_PCM_FLOAT) {
+           return ERROR_INVALID_OPERATION;
+       }
+
+       //begin hzy add for map voice lost first words.20191015
+        if(needDelayTime){
+            try {
+                Log.e(TAG, "AudioTrack.writebyte() delay 500ms ");
+                Thread.sleep(DELAY_TIME);
+            }catch (InterruptedException e){
+
+            }
+            needDelayTime =false;
+        }
+        //end
+
+
+       return ret;
+   }
+  ```
+* MediaPlayer.java 使用同样的处理方式
+
+```
+    public void start() throws IllegalStateException {
+    //FIXME use lambda to pass startImpl to superclass
+
+    //begin hzy add for map voice lost first words.20191015
+    if(mStreamType == AudioManager.STREAM_ALARM){
+        baseSetStartDelayMs(DELAY_TIME);
+        Log.d(TAG, "baseSetStartDelayMs 500ms");
+    }
+    //end
+
+```
+
+# Pop音问题.
+  原因:Ａndroid系统+Ｍcu+AP.存在Ａndroid系统+底板 2个声音放大ＡＰ.如果这2个ＡＰ打开和关闭的顺序处理不当,
+  就会出现Ｐop音.
+  * 修改Ａndroid原生ＡＰ的打开和关闭流程. 在acc on打开一次, acc off 关闭.
+
+  ```
+  kernel-3.18/sound/soc/mediatek/mt_soc_audio_v3
+  //begin: modify for pop sound. not to close or open PA when ACC ON. 2017-04-22
+if (channels == AUDIO_ANALOG_CHANNELS_LEFT1) {
+  if (forceToChange_left1) {
+    printk("%s  forceToChange_left1  Audio_Amp_Change  AUDIO_ANALOG_CHANNELS_LEFT1\n", __func__);
+    forceToChange_left1 = false;
+    //mCodec_data->mAudio_Ana_DevicePower[AUDIO_ANALOG_DEVICE_OUT_HEADSETL] = enable;
+  }
+  else {
+    if (channel_left1_open || !enable) {
+      printk("%s  return  Audio_Amp_Change  AUDIO_ANALOG_CHANNELS_LEFT1\n", __func__);
+      return;
+    }
+    printk("%s  channel_left1_open  Audio_Amp_Change  AUDIO_ANALOG_CHANNELS_LEFT1\n", __func__);
+  }
+  channel_left1_open = enable;
+}
+if (channels == AUDIO_ANALOG_CHANNELS_RIGHT1) {
+  if (forceToChange_right1) {
+    forceToChange_right1 = false;
+    //mCodec_data->mAudio_Ana_DevicePower[AUDIO_ANALOG_DEVICE_OUT_HEADSETR] = enable;
+  }
+  else {
+    if (channel_right1_open || !enable) {
+      printk("%s  return  Audio_Amp_Change  AUDIO_ANALOG_CHANNELS_RIGHT1\n", __func__);
+      return;
+    }
+  }
+  channel_right1_open = enable;
+}
+//end: modify for pop sound. not to close or open PA when ACC ON. 2017-04-22
+  ```

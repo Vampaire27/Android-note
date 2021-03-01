@@ -1,0 +1,159 @@
+# Android 颜色换反转之后,所有图像合成重device 变成 Client
+
+```
+public static void applyInversionSetting(Context context, int userId) {
+    final ContentResolver cr = context.getContentResolver();
+    final DisplayTransformManager dtm = LocalServices.getService(DisplayTransformManager.class);
+
+    long identity = Binder.clearCallingIdentity();
+    try {
+        final boolean invertColors = Secure.getIntForUser(cr,
+                Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, 0, userId) != 0;
+        dtm.setColorMatrix(DisplayTransformManager.LEVEL_COLOR_MATRIX_INVERT_COLOR,
+                invertColors ? MATRIX_INVERT_COLOR : null);
+    } finally {
+        Binder.restoreCallingIdentity(identity);
+    }
+}
+```
+
+
+
+```
+/**
+ * Matrix and offset used for luminance inversion. Represents a transform
+ * from RGB to YIQ color space, rotation around the Y axis by 180 degrees,
+ * transform back to RGB color space, and subtraction from 1. The last row
+ * represents a non-multiplied addition, see surfaceflinger's ProgramCache
+ * for full implementation details.
+ */
+private static final float[] MATRIX_INVERT_COLOR = new float[] {
+    0.402f, -0.598f, -0.599f, 0,
+   -1.174f, -0.174f, -1.175f, 0,
+   -0.228f, -0.228f,  0.772f, 0,
+         1,       1,       1, 1
+};
+
+```
+
+surfaceflinger.cpp
+
+status_t SurfaceFlinger::onTransact(
+  ...
+  case 1015: {
+                 // apply a color matrix
+                 n = data.readInt32();
+                 if (n) {
+                     // color matrix is sent as a column-major mat4 matrix
+                     for (size_t i = 0 ; i < 4; i++) {
+                         for (size_t j = 0; j < 4; j++) {
+                             mColorMatrix[i][j] = data.readFloat();
+                         }
+                     }
+                 } else {
+                     mColorMatrix = mat4();
+                 }
+
+                 // Check that supplied matrix's last row is {0,0,0,1} so we can avoid
+                 // the division by w in the fragment shader
+                 float4 lastRow(transpose(mColorMatrix)[3]);
+                 if (any(greaterThan(abs(lastRow - float4{0, 0, 0, 1}), float4{1e-4f}))) {
+                     ALOGE("The color transform's last row must be (0, 0, 0, 1)");
+                 }
+
+                 invalidateHwcGeometry();
+                 repaintEverything();
+                 return NO_ERROR;
+             }
+  ...
+}
+```
+
+```
+
+void SurfaceFlinger::setUpHWComposer() {
+...
+if (colorMatrix != mPreviousColorMatrix) {
+    status_t result = mHwc->setColorTransform(hwcId, colorMatrix);
+    ALOGE_IF(result != NO_ERROR, "Failed to set color transform on "
+            "display %zd: %d", displayId, result);
+}
+...
+}
+```
+
+
+hwc.cp
+```
+
+#ifdef USES_PQSERVICE
+int32_t HWCDisplay::setColorTransform(const float* matrix, const int32_t& hint)
+#else
+int32_t HWCDisplay::setColorTransform(const float* matrix, const int32_t& hint)
+#endif
+{
+    m_color_transform_hint = hint;
+    m_color_transform = new ColorTransform(matrix, hint, true);
+
+    if (!Platform::getInstance().m_config.support_color_transform ||
+        getId() == HWC_DISPLAY_VIRTUAL)
+    {
+        m_color_transform_ok = (hint == HAL_COLOR_TRANSFORM_IDENTITY);
+        m_color_transform->dirty = false;
+        return HWC2_ERROR_UNSUPPORTED;
+    }
+    else
+    {
+#ifdef USES_PQSERVICE
+        if (getId() == HWC_DISPLAY_PRIMARY)
+        {
+            sp<IPictureQuality> pq_service = IPictureQuality::getService();
+            if (pq_service == nullptr)
+            {
+                HWC_LOGE("cannot find PQ service!");
+                m_color_transform_ok = false;
+            }
+            else
+            {
+                const int32_t dimension = 4;
+                hidl_array<float, 4, 4> send_matrix;
+                for (int32_t i = 0; i < dimension; ++i)
+                {
+                    DbgLogger logger(DbgLogger::TYPE_HWC_LOG, 'D', "matrix ");
+                    for (int32_t j = 0; j < dimension; ++j)
+                    {
+                        send_matrix[i][j] = matrix[i * dimension + j];
+                        logger.printf("%f,", send_matrix[i][j]);
+                    }
+                }
+                m_color_transform_ok = (pq_service->setColorTransform(send_matrix, hint, 1) == Result::OK);
+                HWC_LOGI("(%" PRIu64 " %s ) hint:%d ok:%d", getId(), __func__, hint, m_color_transform_ok);
+                if (m_color_transform_ok)
+                {
+                    HWCMediator::getInstance().getOvlDevice(HWC_DISPLAY_PRIMARY)->setLastValidColorTransform(HWC_DISPLAY_PRIMARY, m_color_transform);
+                }
+            }
+        }
+        else
+        {
+            m_color_transform_ok = false;
+        }
+#else
+        m_color_transform_ok = (hint == HAL_COLOR_TRANSFORM_IDENTITY);
+#endif
+    }
+    return m_color_transform_ok ? HWC2_ERROR_NONE : HWC2_ERROR_UNSUPPORTED;
+}
+
+```
+
+
+
+
+```
+if (m_color_transform_ok)
+{
+    HWCMediator::getInstance().getOvlDevice(HWC_DISPLAY_PRIMARY)->setLastValidColorTransform(HWC_DISPLAY_PRIMARY, m_color_transform);
+}
+
+```

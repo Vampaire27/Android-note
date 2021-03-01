@@ -1,0 +1,163 @@
+# libui 库
+
+libui.so 库主要是 GraphicBuffer 缓存相关的代码，包含缓存分配，映射当当前进程等等，而 IAllocator, IMapper 具体是在 HAL 中实现的。
+
+代码目录结构
+
+frameworks/native/libs/ui 目录结构：
+
+```
+ui
+├── Android.bp
+├── ColorSpace.cpp
+├── DebugUtils.cpp
+├── Fence.cpp
+├── FenceTime.cpp
+├── FrameStats.cpp
+├── Gralloc2.cpp
+├── GraphicBufferAllocator.cpp
+├── GraphicBuffer.cpp
+├── GraphicBufferMapper.cpp
+├── HdrCapabilities.cpp
+├── include
+│   └── ui
+│       ├── ANativeObjectBase.h
+│       ├── BufferQueueDefs.h
+│       ├── ColorSpace.h
+│       ├── DebugUtils.h
+│       ├── DisplayInfo.h
+│       ├── DisplayStatInfo.h
+│       ├── Fence.h
+│       ├── FenceTime.h
+│       ├── FloatRect.h
+│       ├── FrameStats.h
+│       ├── Gralloc2.h
+│       ├── GraphicBufferAllocator.h
+│       ├── GraphicBuffer.h
+│       ├── GraphicBufferMapper.h
+│       ├── HdrCapabilities.h
+│       ├── PixelFormat.h
+│       ├── Point.h
+│       ├── Rect.h
+│       ├── Region.h
+│       └── UiConfig.h
+├── MODULE_LICENSE_APACHE2
+├── NOTICE
+├── PixelFormat.cpp
+├── Rect.cpp
+├── Region.cpp
+├── tests
+│   ├── Android.bp
+│   ├── colorspace_test.cpp
+│   └── Region_test.cpp
+├── tools
+│   ├── Android.bp
+│   └── lutgen.cpp
+└── UiConfig.cpp
+
+4 directories, 42 files
+```
+
+# GraphicBufferAllocator/GraphicBufferMapper
+
+它们两个都是包装类，包装了 IAllocator, IMapper ，而这两个类都是在 HAL Gralloc2 中实现的。
+
+  * GraphicBufferAllocator
+  缓存分配，包装了 IAllocator 类。
+
+  * GraphicBufferMapper
+  缓存映射到当前进程，包装了 IMapper 类。
+
+# GraphicBuffer
+
+  GraphicBuffer 继承 ANativeWindowBuffer ，并持有 GraphicBufferMapper 映射对应的缓存区。
+
+```
+      class GraphicBuffer :
+      public ANativeObjectBase<ANativeWindowBuffer, GraphicBuffer,RefBase>,
+      public Flattenable<GraphicBuffer>
+  {
+
+  public:
+      static sp<GraphicBuffer> from(ANativeWindowBuffer *);
+      ...
+  private:
+      GraphicBufferMapper& mBufferMapper;
+      ssize_t mInitCheck;
+      uint64_t mId;
+      uint32_t mGenerationNumber;
+  };
+
+```
+
+# Fence 机制
+
+Fence 是一种同步机制，主要用于 GraphicBuffer 的同步。它主要被用来处理跨硬件的情况，尤其是 CPU, GPU, HWC 之间的同步，另外它还可以用于多个时间点之间的同步。 GPU 编程和纯 CPU 编程一个很大的不同是它是异步的，也就是说当我们调用 GL command 返回时这条命令并不一定完成了，只是把这个命令放在本地的 command buffer 里，而 Fence 机制就是解决这些同步问题的。
+Fence 顾名思义就是把先到的拦住，等后来的，两者步调一致了再往前走。抽象地说，Fence 包含了同一或不同时间轴上的多个时间点，只有当这些点同时到达时 Fence 才会被触发。 Fence 可以由硬件实现 Graphic driver，也可以由软件实现 Android kernel 中的 sw_sync 。
+
+Fence 的主要实现代码路径：
+
+```
+frameworks/native/libs/ui/Fence.cpp
+system/core/libsync/sync.c
+kernel/drivers/base/sync.c
+frameworks/native/libs/gui/SyncFeatures.cpp
+
+```
+
+总得来说， kernel driver 部分是同步的主要实现，libsync 是对 driver 接口的封装， Fence 是对 libsync 的进一步的 C++ 封装。 Fence 会被作为 GraphicBuffer 的附属随着 GraphicBuffer 在生产者和消费间传输； SyncFeatures 用以查询系统支持的同步机制。
+
+# DisplayInfo 显示信息
+
+```
+/ DisplayInfo.h
+struct DisplayInfo {
+    uint32_t w{0};                      // 屏幕的宽
+    uint32_t h{0};                      // 屏幕的高
+    float xdpi{0};                      // 屏幕 x 方向每英寸的像素点
+    float ydpi{0};                      // 屏幕 y 方向每英寸的像素点
+    float fps{0};                       // FPS 屏幕的刷新率
+    float density{0};                   // 屏幕的密度
+    uint8_t orientation{0};             // 屏幕的旋转方式
+    bool secure{false};                 // 屏幕是否是安全的
+    nsecs_t appVsyncOffset{0};          // App 的 Vsync 的偏移
+    nsecs_t presentationDeadline{0};    // 显示的最后时间
+};
+
+/* Display orientations as defined in Surface.java
+    and ISurfaceComposer.h. */
+enum {
+    DISPLAY_ORIENTATION_0 = 0,
+    DISPLAY_ORIENTATION_90 = 1,
+    DISPLAY_ORIENTATION_180 = 2,
+    DISPLAY_ORIENTATION_270 = 3
+};
+
+}; // namespace android
+```
+
+DisplayInfo 结构体包含了显示屏幕的基本信息：
+
+  * 屏幕分辨率 Resolution
+
+  屏幕的宽高是用分辨率 Resolution 来描述的，也就是有多少个像素点。屏幕宽度，即屏幕横向可以显示多少个像素点；屏幕高度，即屏幕纵向可以显示多少给像素点。平常所说的 720P: 1080x720 屏幕，即横向可以显示 1080 个像素点，纵向可以显示 720 个像素点。如下为常见屏幕分辨率：
+
+  ![](image/0113-android-graphics-display-resolution.png)
+
+
+  * 屏幕 DPI
+  DPI: Dots Per Inch 每英寸点数，是一个度量单位，表示屏幕每英寸上有多少个物理点。常见屏幕物理大小，是用英寸来描述屏幕对角线的长度，比如 IPhone X 的大小 5.8 寸，即屏幕对角线长度为 5.8 英寸。*标准 DPI 为 160dpi *，人类视网膜级通常为 300dpi 。
+
+  * PPI: Pixel Per Inch 每英寸像素，也是度量单位，表示每英寸显示多少个像素。通常情况下 DPI, PPI 设为相同，表示每个物理点显示一个像素；但是好一点的显示器，可能 DPI 比 PPI 大，即一个像素由多个物理点来显示。
+
+  * 密度 Density DIP: Density Independent Pixels 设备无关像素，通常简写为 DP=DIP，请注意 DPI 做好区分。 DP 表示这个像素的数值是和设备无关的，那实际转换时怎么转换呢？Density 密度，实际是一个缩放因子，它表示当前设备实际 DPI 和标准 DPI 的比例值；比如设备实际 DPI 为 320dpi ，那么 density=320/160=2 ，即 density 为 2 。有了 density 之后， dp, px 可以使用公式来转换 px=density*dp 。所以我们在 APP 布局设计中，所有显示设置的距离，通常使用 dp 来计算，来规避不同
+
+  * 屏幕特性。屏幕刷新率 FPS 这里屏幕刷新率使用 FPS 来表示，不是 Hz ，表示屏幕每秒能显示多少帧数据；通常为 60 fps ，即 16 ms 刷新一次。
+
+  * 屏幕旋转方向 orientations 手机默认竖屏，0 表示竖屏， 180 表示横屏。
+
+  * 屏幕安全性 secure
+  这主要是用于 DRM 数字版权保护时，确保显示的设备是安全的，以防止 DRM 的内容被在显示的过程中被截取，只有安全的设备才能显示 DRM 的内容。 Android 默认所有的非虚拟显示都是安全的。
+
+  * appVsyncOffset, presentationDeadline
+  这两个都和 Vsync 有关； appVsyncOffset 是一个偏移量，在系统或硬件 Vsync 的基础上做一些偏移； presentationDeadline 表示，一帧数据必现在这个时间内显示出来。

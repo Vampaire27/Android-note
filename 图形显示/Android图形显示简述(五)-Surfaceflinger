@@ -1,0 +1,407 @@
+# SurfaceFlinger
+代码速查表
+
+```
+surfaceflinger/
+├── Android.bp
+├── Android.mk
+├── Barrier.h
+├── Client.cpp
+├── Client.h
+├── clz.h
+├── Colorizer.h
+├── DdmConnection.cpp
+├── DdmConnection.h
+├── DisplayDevice.cpp
+├── DisplayDevice.h
+├── DisplayHardware
+│   ├── ComposerHal.cpp
+│   ├── ComposerHal.h
+│   ├── DisplaySurface.h
+│   ├── FramebufferSurface.cpp
+│   ├── FramebufferSurface.h
+│   ├── HWC2.cpp
+│   ├── HWC2.h
+│   ├── HWComposerBufferCache.cpp
+│   ├── HWComposerBufferCache.h
+│   ├── HWComposer.cpp
+│   ├── HWComposer.h
+│   ├── HWComposer_hwc1.cpp
+│   ├── HWComposer_hwc1.h
+│   ├── PowerHAL.cpp
+│   ├── PowerHAL.h
+│   ├── VirtualDisplaySurface.cpp
+│   └── VirtualDisplaySurface.h
+├── DisplayUtils.cpp
+├── DisplayUtils.h
+├── DispSync.cpp
+├── DispSync.h
+├── Effects
+│   ├── Daltonizer.cpp
+│   └── Daltonizer.h
+├── EventControlThread.cpp
+├── EventControlThread.h
+├── EventLog
+│   ├── EventLog.cpp
+│   ├── EventLog.h
+│   └── EventLogTags.logtags
+├── EventThread.cpp
+├── EventThread.h
+├── ExSurfaceFlinger
+│   ├── ExLayer.cpp
+│   ├── ExLayer.h
+│   ├── ExSurfaceFlinger.cpp
+│   ├── ExSurfaceFlinger.h
+│   ├── ExVirtualDisplaySurface.cpp
+│   └── ExVirtualDisplaySurface.h
+├── FrameTracker.cpp
+├── FrameTracker.h
+├── GpuService.cpp
+├── GpuService.h
+├── Layer.cpp
+├── LayerDim.cpp
+├── LayerDim.h
+├── Layer.h
+├── LayerRejecter.cpp
+├── LayerRejecter.h
+├── LayerVector.cpp
+├── LayerVector.h
+├── main_surfaceflinger.cpp
+├── MessageQueue.cpp
+├── MessageQueue.h
+├── MODULE_LICENSE_APACHE2
+├── MonitoredProducer.cpp
+├── MonitoredProducer.h
+├── RenderEngine
+│   ├── Description.cpp
+│   ├── Description.h
+│   ├── GLES20RenderEngine.cpp
+│   ├── GLES20RenderEngine.h
+│   ├── GLExtensions.cpp
+│   ├── GLExtensions.h
+│   ├── Mesh.cpp
+│   ├── Mesh.h
+│   ├── ProgramCache.cpp
+│   ├── ProgramCache.h
+│   ├── Program.cpp
+│   ├── Program.h
+│   ├── RenderEngine.cpp
+│   ├── RenderEngine.h
+│   ├── Texture.cpp
+│   └── Texture.h
+├── StartPropertySetThread.cpp
+├── StartPropertySetThread.h
+├── SurfaceFlingerConsumer.cpp
+├── SurfaceFlingerConsumer.h
+├── SurfaceFlinger.cpp
+├── SurfaceFlinger.h
+├── SurfaceFlinger_hwc1.cpp
+├── surfaceflinger.rc
+├── SurfaceInterceptor.cpp
+├── SurfaceInterceptor.h
+├── Transform.cpp
+└── Transform.h
+
+9 directories, 117 files
+```
+
+
+## surfaceflinger 进程
+
+SurfaceFlinger 是以独立进程运行的，进程名为 surfaceflinger ，对应的 rc 文件如下：
+
+```
+// surfaceflinger.rc
+service surfaceflinger /system/bin/surfaceflinger
+    class core animation
+    user system
+    group graphics drmrpc readproc
+    onrestart restart zygote
+    writepid /dev/stune/foreground/tasks
+    socket pdx/system/vr/display/client     stream 0666 system graphics u:object_r:pdx_display_client_endpoint_socket:s0
+    socket pdx/system/vr/display/manager    stream 0666 system graphics u:object_r:pdx_display_manager_endpoint_socket:s0
+    socket pdx/system/vr/display/vsync      stream 0666 system graphics u:object_r:pdx_display_vsync_endpoint_socket:s0
+```
+
+surfaceflinger 服务属于核心类 core，当 surfaceflinger 重启时会触发 zygote 的重启。接下来看进程 main 方法对应文件为：
+
+
+```
+// main_surfaceflinger.cpp
+int main(int, char**) {
+    // 启动 IAllocator, DisplayService 两个服务
+    startHidlServices();
+
+    signal(SIGPIPE, SIG_IGN);
+
+    ProcessState::self()->setThreadPoolMaxThreadCount(4);
+    sp<ProcessState> ps(ProcessState::self());
+    ps->startThreadPool();
+
+    // 1. new SurfaceFlinger 实例
+    sp<SurfaceFlinger> flinger =
+        DisplayUtils::getInstance()->getSFInstance();
+
+    setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
+    set_sched_policy(0, SP_FOREGROUND);
+    if (cpusets_enabled()) set_cpuset_policy(0, SP_SYSTEM);
+
+    // 2. SurfaceFlinger 初始化
+    flinger->init();
+
+    // 3. 发布 SurfaceFlinger, GpuService 两个服务
+    // publish surface flinger
+    sp<IServiceManager> sm(defaultServiceManager());
+    sm->addService(String16(SurfaceFlinger::getServiceName()),
+        flinger, false);
+
+    // publish GpuService
+    sp<GpuService> gpuservice = new GpuService();
+    sm->addService(String16(GpuService::SERVICE_NAME),gpuservice,false);
+
+    struct sched_param param = {0};
+    param.sched_priority = 2;
+    if (sched_setscheduler(0, SCHED_FIFO, &param) != 0) {
+        ALOGE("Couldn't set SCHED_FIFO");
+    }
+
+    // run surface flinger in this thread
+    // 4. SurfaceFlinger 无限循环等待事件
+    flinger->run();
+
+    return 0;
+}
+```
+
+
+surfaceflinger 进程的 main 函数中主要做了 4 件事：
+
+*   通过 DisplayUtils 创建 SurfaceFlinger 对象
+* SurfaceFlinger 对象调用 init 方法，实现初始化
+* SurfaceFlinger 向系统注册 Binder 服务
+* SurfaceFlinger 对象调用 run 方法，该方法是一个 do-while 无限循环
+
+
+初始化流程
+
+SurfaceFlinger 初始化流程，查看大图
+![](image/0113-android-graphics-display-SurfaceFlinger-init.png)
+
+
+
+## DisplayDevice 显示设备
+```
+// DisplayDevice.h
+class DisplayDevice : public LightRefBase<DisplayDevice>
+{
+public:
+    ...
+    enum DisplayType {
+        DISPLAY_ID_INVALID = -1,
+        DISPLAY_PRIMARY     = HWC_DISPLAY_PRIMARY,      // 主显
+        DISPLAY_EXTERNAL    = HWC_DISPLAY_EXTERNAL,     // 外显
+        DISPLAY_VIRTUAL     = HWC_DISPLAY_VIRTUAL,      // 虚显
+        NUM_BUILTIN_DISPLAY_TYPES = HWC_NUM_PHYSICAL_DISPLAY_TYPES,
+    };
+    ...
+}
+
+```
+显示设备有三种类型：主显、外显、虚显；每添加一个显示屏，都会创建一个 DisplayDevice 。
+
+
+# Layer 层
+
+Layer 是 SurfaceFlinger 进行合成的基本操作单元。Layer 在应用请求创建 Surface 的时候在 SurfaceFlinger 内部创建，因此一个 Surface 对应一个 Layer 。每个 Layer 包含常见属性：
+
+```
+    Z order
+    Alpha value from 0 to 255
+    visibleRegion
+    crop region
+    transformation: rotate 0, 90, 180, 270: flip H, V: scale
+```
+
+当多个 Layer 进行合成的时候，并不是整个 Layer 的空间都会被完全显示，根据这个 Layer 最终的显示效果，一个 Layer 可以被划分成很多的 Region ， 在 SurfaceFlinger 中定义了以下几种类型：
+
+  * TransparantRegion ：完全透明的区域，在它之下的区域将被显示出来
+
+  * OpaqueRegion ：完全不透明的区域，是否显示取决于它上面是否有遮挡或是否透明
+
+  * VisibleRegion ：可见区域，包括完全不透明无遮挡区域或半透明区域；即 visibleRegion = Region - above OpaqueRegion.
+
+  * CoveredRegion ：被遮挡区域，在它之上，有不透明或半透明区域
+
+  * DirtyRegion ：可见部分改变区域，包括新的被遮挡区域，和新的露出区域
+
+
+头文件定义：
+
+```
+// Layer.h
+class Layer : public SurfaceFlingerConsumer::ContentsChangedListener {
+public:
+    ...
+    // regions below are in window-manager space
+    Region visibleRegion;
+    Region coveredRegion;
+    Region visibleNonTransparentRegion;
+    Region surfaceDamageRegion;
+
+    // Layer serial number.  This gives layers an explicit ordering, so we
+    // have a stable sort order when their layer stack and Z-order are
+    // the same.
+    int32_t sequence;
+    ...
+private:
+    ...
+    // constants
+    sp<SurfaceFlingerConsumer> mSurfaceFlingerConsumer;
+    sp<IGraphicBufferProducer> mProducer;
+    uint32_t mTextureName;      // from GLES
+    bool mPremultipliedAlpha;
+    String8 mName;
+    String8 mTransactionName; // A cached version of "TX - " + mName for systraces
+    PixelFormat mFormat;
+    ...
+    FenceTimeline mAcquireTimeline;
+    FenceTimeline mReleaseTimeline;
+    ...
+    // The mesh used to draw the layer in GLES composition mode
+    mutable Mesh mMesh;
+    // The texture used to draw the layer in GLES composition mode
+    mutable Texture mTexture;
+    Vector<BufferItem> mQueueItems;
+    // Child list about to be committed/used for editing.
+    LayerVector mCurrentChildren;
+    // Child list used for rendering.
+    LayerVector mDrawingChildren;
+
+    wp<Layer> mCurrentParent;
+    wp<Layer> mDrawingParent;
+}
+```
+
+
+SurfaceFlinger 接收所有 Surface 作为输入，根据 Z-Order， 透明度，大小，位置等参数，计算出每个 Surface 在最终合成图像中的位置，然后交由 HWComposer, OpenGL 生成最终的显示 Buffer , 然后显示到特定的显示设备上。
+Layer 的合成分为两种，离线合成和在线合成：
+
+  * 离线合成
+  先将所有图层画到一个最终层 FrameBuffer 上，再将 FrameBuffer 送到 LCD 显示。由于合成 FrameBuffer 与送 LCD 显示一般是异步的（线下生成 FrameBuffer ，需要时线上的 LCD 去取），因此叫离线合成。
+
+  * 在线合成
+  不使用 FrameBuffer ，在 LCD 需要显示某一行的像素时，用显示控制器将所有图层与该行相关的数据取出，合成一行像素送过去。只有一个图层时，又叫 Overlay 技术。
+  由于省去合成 FrameBuffer 时读图层，写 FrameBuffer 的步骤，大幅降低了内存传输量，减少了功耗，但这个需要硬件支持。
+
+  ![](image/0113-android-graphics-display-layer-composer.jpg)
+
+
+## Surface 创建流程图
+
+由客户端 SurfaceComposerClient 发起创建流程，然后由服务端 SurfaceFlinger 创建对应的 Layer ，而 Layer 在被引用时会创建生产者消费者模型的 BufferQueue ，然后再由客户端将拿到的结果传入 SurfaceControl ，最后直接实例化一个 Surface 。
+
+创建生产者消费者模型 BufferQueue 的关键代码：
+
+
+```
+// Layer.cpp
+void Layer::onFirstRef() {
+    // Creates a custom BufferQueue for SurfaceFlingerConsumer to use
+    sp<IGraphicBufferProducer> producer;
+    sp<IGraphicBufferConsumer> consumer;
+    BufferQueue::createBufferQueue(&producer, &consumer, true);
+    mProducer = new MonitoredProducer(producer, mFlinger, this);
+    mSurfaceFlingerConsumer =
+        new SurfaceFlingerConsumer(consumer, mTextureName, this);
+    mSurfaceFlingerConsumer->setConsumerUsageBits(getEffectiveUsage(0));
+    mSurfaceFlingerConsumer->setContentsChangedListener(this);
+    mSurfaceFlingerConsumer->setName(mName);
+
+    if (mFlinger->isLayerTripleBufferingDisabled()) {
+        mProducer->setMaxDequeuedBufferCount(2);
+    }
+
+    const sp<const DisplayDevice> hw(mFlinger->getDefaultDisplayDevice());
+    updateTransformHint(hw);
+}
+
+```
+创建 Surface 流程，查看大图
+
+![](image/0113-android-graphics-display-create-surface.png)
+
+# VSYNC 垂直刷新
+
+ Android 中有 2 种 VSync 信号：
+ * 屏幕产生的硬件 VSync 和由 SurfaceFlinger 将其转成的软件 Vsync 信号；软件 Vsync 后者经由 Binder 传递给 Choreographer 。
+
+ * Vsync 信号可将某些事件同步到显示设备的刷新周期。应用总是在 VSYNC 边界上开始绘制，而 SurfaceFlinger 总是在 VSYNC 边界上进行合成。这样可以消除卡顿，并提升图形的视觉表现。 HWComposer 对象创建过程，会注册一些回调方法；当硬件产生 VSYNC 信号时，则会回调 HWC2::ComposerCallbackBridge::onVsync 方法，然后逐级回调，下图是整个回调流程图：
+
+![](image/2021-03-01.png)
+
+
+
+  * 硬件 Vsync 信号发送过来，一路执行到 DispSyncThread.updateModel 方法中调用 mCond.signal ，唤醒 DispSyncThread 线程
+
+  * DispSyncThread 线程中执行 EventThread::onVSyncEvent 中调用 mCondition.broadcast 唤醒 EventThread 线程
+
+  * EventThread 线程中执行 DisplayEventReceiver::sendEvents 方法，会调用 BitTube::sendObjects ；在 MessageQueue::setEventThread 中，我们设置了 BitTube 事件的回调，当收到数据会触发 MQ.cb_eventReceiver ；根据 Handler 消息机制，进入 SurfaceFlinger 主线程
+
+*   SurfaceFlinger 主线程进入到 MesageQueue的handleMessage ，最终调用 SurfaceFlinger::handleMessageRefresh
+
+
+# 客户端通知 SurfaceFlinger 刷新
+
+BufferQueueProducer::queueBuffer 函数中会调用 listener->onFrameAvailable ，而这最终会触发服务端的 Layer::onFrameAvailable ，从而通知 SurfaceFlinger 合成图像。我们先看 onFrameAvailable 接口的继承关系：
+![](image/0113-android-graphics-display-onFrameAvailable-class-uml.png)
+
+
+从 Surface 创建流程中贴出的 Layer::onFirstRef 代码中可以看到，在 Layer 中设置了 mSurfaceFlingerConsumer->setContentsChangedListener 监听事件，所以 BufferQueueProducer::queueBuffer 会触发 Layer::onFrameAvailable 事件，下面是完整的请求流程。
+客户端在 BufferQueue 中生产完图像数据后，通知 SurfaceFlinger 刷新界面的流程图：
+
+客户端通知 SurfaceFlinger 刷新，查看大图
+
+![](image/0113-android-graphics-display-requestNextVsync.png)
+
+# 后续
+
+  * WMS
+  *Layer 合成流程
+  * 结合 Camera 熟悉图形显示中 Buffer 相关流程
+  *Choreographer 及掉帧分析
+      Choreographer 简析
+  * 详述 SurfaceTexture, SurfaceView, GLSurfaceView 等区别
+  * 工具 dumpsys SurfaceFlinger 输出的 LOG 分析
+  * screencap 命令及源码分析
+  * Systrace 性能工具分析
+      *Systrace 官网
+
+# 参考文档
+
+  [Android 图形显示-官网](https://source.android.google.cn/devices/graphics)
+
+  [Android中native_handle private_handle_t 的关系](https://blog.csdn.net/ear5cm/article/details/45458683)
+
+  [夕阳风-图形显示系列文章](https://www.jianshu.com/u/f92447ae8445)
+
+  [SurfaceFlinger 系列](https://windrunnerlihuan.com/2017/04/27/Android-SurfaceFlinger-%E5%AD%A6%E4%B9%A0%E4%B9%8B%E8%B7%AF-%E4%BA%8C-SurfaceFlinger%E6%A6%82%E8%BF%B0/)
+
+  [理解 VSYNC](https://blog.csdn.net/zhaizu/article/details/51882768)
+
+  [dp, dpi, px, density 的关系](https://www.cnblogs.com/yaozhongxiao/archive/2014/07/14/3842908.html)
+
+  [gityuan: SurfaceFlinger 相关](http://gityuan.com/2017/02/18/surface_flinger_2/)
+
+  [阿拉神农：深入理解Surface系统](https://blog.csdn.net/innost/article/details/47208337)
+
+  [图解 Surface, SurfaceFlinger 关系](https://blog.csdn.net/freekiteyu/article/details/79483406)
+
+  [Google Grafika](https://github.com/google/grafika)
+
+  [图形引擎的核心 - BufferQueue](https://blog.csdn.net/u013928208/article/details/82999075)
+
+  [surfaceflinger框架-流程图大全](https://blog.csdn.net/xisuzun7960/article/details/81212721)
+
+  [BufferQueue介绍](https://blog.csdn.net/armwind/article/details/73436532)
+
+  [GraphicBuffer同步机制-Fence](https://blog.csdn.net/jinzhuojun/article/details/39698317/)
