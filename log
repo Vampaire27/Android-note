@@ -1,0 +1,37 @@
+03-12 15:26:38.346  1495  2977 I ActivityTaskManager: START u9876 {act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.tencent.mobileqq/.activity.SplashActivity bnds=[47,567][316,1004]} from uid 10109
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: IntentStarted during UNKNOWN. Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.tencent.mobileqq/.activity.SplashActivity bnds=[47,567][316,1004] }
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: java.lang.Throwable: EventSequenceValidator#getStackTrace
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.google.android.startop.iorap.EventSequenceValidator.logWarningWithStackTrace(EventSequenceValidator.java:260)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.google.android.startop.iorap.EventSequenceValidator.onIntentStarted(EventSequenceValidator.java:106)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.android.server.wm.LaunchObserverRegistryImpl.handleOnIntentStarted(LaunchObserverRegistryImpl.java:139)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.android.server.wm.LaunchObserverRegistryImpl.lambda$veRn_GhgLZLlOHOJ0ZYT6KcfYqo(Unknown Source:0)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.android.server.wm.-$$Lambda$LaunchObserverRegistryImpl$veRn_GhgLZLlOHOJ0ZYT6KcfYqo.accept(Unknown Source:10)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.android.internal.util.function.pooled.PooledLambdaImpl.doInvoke(PooledLambdaImpl.java:292)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.android.internal.util.function.pooled.PooledLambdaImpl.invoke(PooledLambdaImpl.java:201)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.android.internal.util.function.pooled.OmniFunction.run(OmniFunction.java:97)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at android.os.Handler.handleCallback(Handler.java:938)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at android.os.Handler.dispatchMessage(Handler.java:99)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at android.os.Looper.loop(Looper.java:223)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: 	at com.android.server.ServiceThread.run(ServiceThread.java:44)
+03-12 15:26:38.346  1495  1531 D EventSequenceValidator: inc AccIntentStartedEvents to 30
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: onActivityLaunched during UNKNOWN.
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: java.lang.Throwable: EventSequenceValidator#getStackTrace
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.google.android.startop.iorap.EventSequenceValidator.logWarningWithStackTrace(EventSequenceValidator.java:260)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.google.android.startop.iorap.EventSequenceValidator.onActivityLaunched(EventSequenceValidator.java:149)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.android.server.wm.LaunchObserverRegistryImpl.handleOnActivityLaunched(LaunchObserverRegistryImpl.java:157)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.android.server.wm.LaunchObserverRegistryImpl.lambda$UGY1OclnLIQLMEL9B55qjERFf4o(Unknown Source:0)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.android.server.wm.-$$Lambda$LaunchObserverRegistryImpl$UGY1OclnLIQLMEL9B55qjERFf4o.accept(Unknown Source:10)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.android.internal.util.function.pooled.PooledLambdaImpl.doInvoke(PooledLambdaImpl.java:292)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.android.internal.util.function.pooled.PooledLambdaImpl.invoke(PooledLambdaImpl.java:201)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.android.internal.util.function.pooled.OmniFunction.run(OmniFunction.java:97)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at android.os.Handler.handleCallback(Handler.java:938)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at android.os.Handler.dispatchMessage(Handler.java:99)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at android.os.Looper.loop(Looper.java:223)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at android.os.HandlerThread.run(HandlerThread.java:67)
+03-12 15:26:38.350  1495  1531 D EventSequenceValidator: 	at com.android.server.ServiceThread.run(ServiceThread.java:44)
+03-12 15:26:38.351  1079  1079 I perfetto: ing_service_impl.cc:758 Configured tracing session 52, #sources:1, duration:5000 ms, #buffers:1, total buffer size:4096 KB, total sessions:1, uid:1071 session name: ""
+03-12 15:26:38.351  1077  1077 I perfetto: probes_producer.cc:230  Ftrace setup (target_buf=52)
+03-12 15:26:38.357  1077  1077 I perfetto: ftrace_procfs.cc:176    enabled ftrace
+03-12 15:26:36.066     1     1 I init    : Control message: Processed ctl.interface_start for 'android.hardware.atrace@1.0::IAtraceDevice/default' from pid: 596 (/system/bin/hwservicemanager)
+03-12 15:26:38.356  1077  1077 W perfetto: enabled ftrace

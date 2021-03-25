@@ -1,0 +1,97 @@
+# AndroidR上关于TextureView的刷新流程
+
+
+[](https://blog.csdn.net/liwenjie28/article/details/110955095#t0)
+声明：
+本人愚钝，学习内容比较慢也不是很深，写这个博客的文章就是为了记录之前的一些的累积的东西，如果有什么写的不好的请帮忙指出，大家共同学习。
+之前由于工作需要修，HWUI的bug，所以不得不看下video + surfacetexture的更新绘制的流程，之前查看网页，也没有太多的关于HWUI的说明，有的也只是大概的流程，但是具体中很多的细节的内容，还是需要不断探索和研究，所以写出来这个总结博客好做个参考。
+![](image/20201210165725185.jpg)
+
+1. View上层刷新的过程
+注：每行开头的tab代表函数内部一层层调用，从上往下是同一个函数中，调用别的函数的先后
+```
+ViewRootImpl::performDraw()
+	ViewRootImpl::draw(bool)
+		mAttachInfo.mThreadedRenderer.draw(mView, mAttachInfo, this, callback);
+			ThreadedRender::draw(View view, AttachInfo attachInfo, DrawCallbacks callback ....)
+				ThreadedRender::updateRootDisplayList(View view, callback)
+					ThreadedRender::updateViewTreeDisplayList(
+						View::updateDisplayListIfDirty()
+							   final RecordingCanvas canvas = renderNode.beginRecording(width, height);
+							   View::draw(canvas)
+							         View::drawBackground
+									 ViewGroup::dispatchDraw(canvas);
+									            ViewGroup::drawChild(canvas)
+												           View::draw(Canvas canvas, ViewGroup parent, long drawingTime)
+														       View::updateDisplayListIfDirty
+															         final DisplayListCanvas canvas = renderNode.beginRecording(width, height);
+																		{
+																			RecordingCanvas obtain(@NonNull RenderNode node, int width, int height)
+																				canvas = new RecordingCanvas(node, width, height);																						    canvas = new RecordingCanvas(node, width, height);
+																					nCreateDisplayListCanvas(node.mNativeRenderNode, width, height)
+																					{
+																						Canvas* Canvas::create_recording_canvas(int width, int height, uirenderer::RenderNode* renderNode) {
+																							return new uirenderer::skiapipeline::SkiaRecordingCanvas(renderNode, width, height);
+																						}
+																					}
+																		}
+														             TextureView::draw(canvas) {
+																		if (canvas.isHardwareAccelerated()) {
+																			DisplayListCanvas displayListCanvas = (DisplayListCanvas) canvas;
+
+																			TextureLayer layer = getTextureLayer();
+																			if (layer != null) {
+																				applyUpdate();
+																				applyTransformMatrix();
+
+																				mLayer.setLayerPaint(mLayerPaint); // ensure layer paint is up to date
+																				displayListCanvas.drawTextureLayer(layer); -->
+																				android_view_DisplayListCanvas_drawTextureLayer
+																				  {
+																						Canvas* canvas = reinterpret_cast<Canvas*>(canvasPtr);
+																						DeferredLayerUpdater* layer = reinterpret_cast<DeferredLayerUpdater*>(layerPtr);
+																						canvas->drawLayer(layer);
+																						{
+																							void SkiaRecordingCanvas::drawLayer(uirenderer::DeferredLayerUpdater* layerUpdater) {
+																								if (layerUpdater != nullptr) {
+																									// Create a ref-counted drawable, which is kept alive by sk_sp in SkLiteDL.
+																									sk_sp<SkDrawable> drawable(new LayerDrawable(layerUpdater));
+																									drawDrawable(drawable.get());
+																										void SkCanvas::drawDrawable(SkDrawable* dr, const SkMatrix* matrix = nullptr)
+																											void SkCanvas::onDrawDrawable(SkDrawable* dr, const SkMatrix* matrix)
+																											    this->getDevice()->drawDrawable(dr, matrix, this)
+																												    SkGpuDevice::drawDrawable(SkDrawable* drawable, const SkMatrix* matrix, SkCanvas* canvas)
+																														void GrRenderTargetContext::drawDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler> drawable,
+																																								 const SkRect& bounds) {
+																															std::unique_ptr<GrOp> op(GrDrawableOp::Make(fContext, std::move(drawable), bounds));
+																															SkASSERT(op);
+																															this->addOp(std::move(op));
+																														}
+																												应该是renderthread中，做execute的时候，调用这个，
+																												void SkDrawable::draw(SkCanvas* canvas, const SkMatrix* matrix)
+																													void LayerDrawable::onDraw(SkCanvas* canvas) {
+																														Layer* layer = mLayerUpdater->backingLayer(); //mLayerUpdater就是类DeferredLayerUpdater
+																												//Layer对象定义在androidR/frameworks/base/libs/hwui/Layer.cpp
+																														if (layer) {
+																															DrawLayer(canvas->getGrContext(), canvas, layer, nullptr, nullptr, true);
+																															LayerDrawable::DrawLayer(......)
+																															{
+																															    sk_sp<SkImage> layerImage = layer->getImage(); //这个layerImage就是video解码之后queue进surfacetexure的graphicbuffer，下面会专门会说明这个流程
+																																canvas->drawImage(layerImage.get(), 0, 0, &paint);
+																															    //SkGpuDevice::drawImage 确认走哪个分支draw
+																																//这里就先不分析skia如何更新图片调用gpu绘制这个video的每一帧的画面
+																																//自此view的更新就算是完成了更新
+																																//就等着UI主线程调用刷新的动作，然后再绘制这个更新的画面
+																															}
+																														}
+																													}
+																								}
+																							}
+
+																						}
+																				  }
+																			}
+																		}
+																	 }
+
+```

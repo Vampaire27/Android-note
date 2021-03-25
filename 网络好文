@@ -1,0 +1,40 @@
+
+# 性能监控系列
+
+[今日头条 ANR 优化实践系列 - 设计原理及影响因素](https://mp.weixin.qq.com/s/ApNSEWxQdM19QoCNijagtg)
+
+
+[Android自动化页面测速在美团的实践](https://tech.meituan.com/2018/07/12/autospeed.html)
+
+
+[国外性能监控系列](http://www.brendangregg.com/overview.html)
+
+[facebook 性能监控套件](https://engineering.fb.com/2018/10/30/open-source/linux/)
+
+[Android开发高手课的原始内容](https://blog.yorek.xyz/android/3rd-library/3rd-library-source-code/)
+
+[Android 性能优化“基石”是什么？ Fps,Memory,Cpu如何采集？](https://mp.weixin.qq.com/s/O2diQxhj4Kg9O4yV8MK7Hg)
+
+[面试官：如何监测应用的 FPS ？ ](https://mp.weixin.qq.com/s/vJAonOhW79d9VXzvQlm1Gg)
+
+## IO
+
+[Android IO监控 | 性能监控系列](https://juejin.cn/post/6900810600188739592)
+
+
+[Android 性能优化 —— IO 的监控与优化 ](https://sharrychoo.github.io/blog/android-performance-opt/io)
+
+[Android IO性能分析及排查](https://www.it610.com/article/1298645021439885312.htm)
+
+[我为Dexposed续一秒——论ART上运行时 Method AOP实现](http://weishu.me/2017/11/23/dexposed-on-art/)
+
+[Linux Tools Quick Tutorial](https://linuxtools-rst.readthedocs.io/zh_CN/latest/tool/lsof.html)
+
+#  图形显示
+
+
+
+[Scheduling for the Android display pipeline](https://lwn.net/Articles/809545/)
+
+
+[Android P图形显示系统（一）硬件合成HWC2](https://www.jianshu.com/p/824a9ddf68b9）

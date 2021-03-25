@@ -1,0 +1,105 @@
+Systrace是分析Android性能问题的神器，Google IO 2017上更是对其各种强推；由于TraceView过于严重的运行时开销，我怀疑这个方向是不是压根儿就是错误的。个人预计Google会放弃TraceView转向全力支持Systrace；不过这个工具并不像TraceView那样简单直观，使用起来也不太方便，而且没有一个详尽的文档介绍如何使用和分析；本文和后续旨在弥补这一块的缺失，尽可能地完整介绍Systrace的方方面面。
+
+在介绍使用之前，先简单说明一下Systrace的原理：它的思想很朴素，在系统的一些关键链路（比如System Service，虚拟机，Binder驱动）插入一些信息（我这里称之为Label），通过Label的开始和结束来确定某个核心过程的执行时间，然后把这些Label信息收集起来得到系统关键路径的运行时间信息，进而得到整个系统的运行性能信息。Android Framework里面一些重要的模块都插入了Label信息（Java层的通过android.os.Trace类完成，native层通过ATrace宏完成），用户App中可以添加自定义的Label，这样就组成了一个完成的性能分析系统。
+
+TraceView试图收集某个阶段所有函数的运行信息（sampling的也是基于此思路），它希望在你并不知道哪个函数有问题的时候直接定位到关键函数；但可惜的是，**收集所有信息** 这个是不现实的，它的运行时开销严重干扰了运行环境；一个人犯罪了，你要把全国人民都抓起来审问一遍吗？Systrace的思路是反过来的，在不清楚问题的情况下，你压根儿无法下手，只有掌握了一些基本的信息，通过假设－分析－验证 的过程一步一步找出问题的原因；TraceView那种一招吃遍天下鲜的方式，讲道理是不符合科学依据的（当然在特定的场合TraceView有他的用途）。
+
+## 简单使用
+
+Systrace对系统版本有一个要求，就是需要Android 4.1以上，最好是Android 4.3以上（我相信这个已经不是什么问题了）；但是系统版本越高，Android Framework中添加的系统可用Label就越多，能够支持和分析的系统模块也就越多；因此，在可能的情况下，尽可能使用高版本的Android系统来进行分析；然后对待分析的App也有一个限制——需要是debuggable的。
+
+与TraceView不同的是，systrace需要PC端配合手机端使用；然后systrace也没有办法在代码里面自由滴控制trace的开始和结束，因此刚开始使用有点别扭。
+
+回到正题。首先，在手机端准备好你需要分析的过程的环境；比如假设你要分析App的冷启动过程，那就先把App进程杀掉，切换到Launcher中有你的App 图标的那个页面，随时准备点击图标启动进程；假设你要分析某个Activity的卡顿情况，那就先在手机上进入到上一个Activity，随时准备点按钮切换到待分析的Activity中。
+
+有同学会问，至于这么如临大敌紧张兮兮的么？其实准备这个过程非常重要，因为Systrace没办法自由滴控制开始和结束（下面有一个办法可以缓解），而trace得到的数据有可能非常多，因此我们需要手工缩小需要分析的数据集合；不然你可能被一堆眼花缭乱的数据和图像弄得晕头转向，然后什么有用的结论也分析不出来。记住哦，**手动缩小范围，会帮助你加速收敛问题的分析过程，进而快速地定位和解决问题。**
+
+手机上App上的环境准备好以后，打开PC端的命令行；进入systrace的目录，也即(假设$ANDROID_HOME是你Android SDK的根目录）：
+
+```
+cd $ANDROID_HOME/platform-tools/systrace
+```
+
+然后执行如下命令：
+
+```
+./systrace.py -t 10 sched gfx view wm am app webview -a <package-name>
+```
+
+这样，`systrace.py` 这个脚本就通过adb给手机发送了收集trace的通知；与此同时，切换到手机上进行你需要分析的操作，比如点击Launcher中App的Icon启动App，或者进入某个Activity开始滑动ListView/RecyclerView。经过你指定的时间之后（以上是10s），就会有trace数据生成在当前目录，默认是 `trace.html`；用Chrome浏览器打开即可。
+
+`systrace.py`命令的一般用法是：
+
+systrace.py [options] [category1 [category2 ...]]
+其中，`[options]` 是一些命令参数，`[category]` 等是你感兴趣的系统模块，比如view代表view系统（包含绘制流程），am代表ActivityManager（包含Activity创建过程等）；分析不同问题的时候，可以选择不同你感兴趣的模块。需要重复的是，尽可能缩小需要Trace的模块，其一是数据量小易与分析；其二，虽然systrace本身开销很小，但是缩小需要Trace的模块也能减少运行时开销。比如你分析卡顿的时候，`power`, `webview` 就几乎是无用的。
+
+`[option]` 中比较重要的几个参数如下：
+
+* -a <package_name>：这个选项可以开启指定包名App中自定义Trace Label的Trace功能。也就是说，如果你在代码中使用了`Trace.beginSection("tag")`, `Trace.endSection`；默认情况下，你的这些代码是不会生效的，因此，这个选项一定要开启！
+
+* -t N：用来指定Trace运行的时间，取决于你需要分析过程的时间；还是那句话，在需要的时候尽可能缩小时间；当然，绝对不要把时间设的太短导致你操作没完Trace就跑完了，这样会出现`Did not finish` 的标签，分析数据就基本无效了。
+
+* -l：这个用来列出你分析的那个手机系统支持的Trace模块；也就是上面命令中 `[category1]`能使用的部分；不同版本的系统能支持的模块是不同的，一般来说，高版本的支持的模块更多。
+
+* -o FILE：指定trace数据文件的输出路径，如果不指定就是当前目录的`trace.html`。
+
+`systrace.py -l` 可以输出手机能支持的Trace模块，而且输出还给出了此模块的用途；常用的模块如下：
+
+* `sched`: CPU调度的信息，非常重要；你能看到CPU在每个时间段在运行什么线程；线程调度情况，比如锁信息。
+* `gfx`：Graphic系统的相关信息，包括SerfaceFlinger，VSYNC消息，Texture，RenderThread等；分析卡顿非常依赖这个。
+* `view`: View绘制系统的相关信息，比如onMeasure，onLayout等；对分析卡顿比较有帮助。
+* `am`：ActivityManager调用的相关信息；用来分析Activity的启动过程比较有效。
+* `dalvik`: 虚拟机相关信息，比如GC停顿等。
+* `binder_driver`: Binder驱动的相关信息，如果你怀疑是Binder IPC的问题，不妨打开这个。
+* `core_services`: SystemServer中系统核心Service的相关信息，分析特定问题用。
+
+这样，我们就学会了Systrace的使用；命令本身并不复杂，不过与TraceView相比，易用性差远了——但这是值得的，使用上的不便换来了极低运行时开销，而这对分析性能问题尤为重要。
+
+先别急，如何分析数据是后话，我们先介绍一些使用上的小技巧。
+
+
+## 无法代码控制开始和结束怎么办？
+
+如上文所述，systrace没有办法在代码中控制Trace运行的开始和结束；那么，如果我们要分析App的启动性能，我点了桌面图标，把Trace时间设置为10s，我怎么知道这10s中，哪段时间是我App的启动过程？如果不知道我们需要分析的时间段，那后续不是扯淡么？
+
+我们可以用自定义Trace Label解决；Android SDK中提供了`android.os.Trace#beginSection`和`android.os.Trace#endSection` 这两个接口；我们可以在代码中插入这些代码来分析某个特定的过程；比如我们觉得Fragment的onCreateView过程有问题，那就在`onCreateView` 中加上代码：
+```
+public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container,
+            Bundle savedInstanceState) {
+    Trace.beginSection("Fragement_onCreateView");
+    // .. 其他代码
+    // ...
+    // .. 结束处
+    Trace.endSection();
+}
+```
+这样，在Trace的分析结果中就会带上`Fragement_onCreateView` 这个过程的运行时间段信息（当然你得开启 -a 选项！），如下：
+![](image/v2-321b7913151244123bd639c0e2221b82_720w.png)
+
+我们可以在任意自己感兴趣的地方添加自定义的Label；一般来说，分析过程就是，你怀疑哪里有问题，就在那那个函数加上Label，运行一遍抓一个Trace，看看自己的猜测对不对；如果猜测正确，进一步加Label缩小范围，定位到具体的自定义函数，函数最终调用到系统内部，那就开启系统相关模块的Trace，继续定位；如果猜测错误，那就转移目标，一步步缩小范围，直至问题收敛。
+
+回到正题，我们如何控制Systace的开始和结束？事实上这是没法办到的，不过控制开始和结束的目的是什么？其实就是得到开始和结束这段时间内的Trace信息。要达到这个目的，我们只需要在期望开始和结束的地方加上自定义的Label就可以了。比如你要分析App的冷启动过程，那就在Application类的attachBaseContext调用`Trace.beginSection("Boot Procedure")`，然后在App首页的`onWindowFocusChanged` 或者你认为别的合适的启动结束点调用`Trace.endSection`就可以到启动过程的信息；比如下图是我的Label：
+![](image/v2-670485ba7ccbb5bb037255be56903879_720w.png)
+
+从bindApplication到activityStart，到Phase2，Phase3；这几个过程组合就是我感兴趣的启动过程。从图中可以直观地看出来，从Application到activityStart占用了启动一半的时间，activityStart下面那有一大段空白是在干什么？这是个问题。
+
+## 如何分析非Debug的App
+
+systrace官方文档说待trace的App必须是debuggable的，但是官方又说，debuggable的App与非debuggable的性能有较大差别；因为系统为了支持debug开启了一些列功能并且关闭掉了某些重要的优化，见 文档 ：
+```
+Run a release (or at least non-debuggable) version of your app. The ART runtime disables several important optimizations in order to support debugging features, so make sure you're looking at something similar to what a user will see.
+```
+如果我们想要待分析的App尽可能接近真实情况，那么必须要在非Debug的App中能启用systrace功能；因为相同情况下Debug的App性能比非Debuggable的差，你无法确保在debuggable版本上分析出来的结论能准确推广到非debuggable的版本上。
+
+分析systrace源码之后 ，发现这个条件只是个障眼法而已；我们可以手动开启App的自定义Label的Trace功能，方法也很简单，调用一个函数即可；但是这个函数是SDK @hide的，我们需要反射调用：
+```
+Class<?> trace = Class.forName("android.os.Trace");
+Method setAppTracingAllowed = trace.getDeclaredMethod("setAppTracingAllowed", boolean.class);
+setAppTracingAllowed.invoke(null, true);
+```
+把这段代码放在Application的`attachBaseContext` 中，这样就可以手动开启App自定义Label的Trace功能，在非debuggable的版本中也适用！
+
+
+OK，systrace命令的使用说到这里也没什么要注意的了；其实命令的使用不难，分析思路也很简单：合理假设-> 加自定义Label验证 -> (结论成立-> 缩小范围继续)／(结论推翻-> 重新假设) 这样一步一步直至问题收敛；如果你分析了一段时间，发现问题是发散的，一会儿觉得是这里有问题，一会儿又觉得是那里有问题，那么或许你的假设根本就是错误的；需要重新调整方向分析。
+
+那么，现在我们学会了工具的使用，数据也已经拿到手了，如何分析数据呢？请听下回分解 ^_^

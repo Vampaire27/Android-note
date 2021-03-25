@@ -1,0 +1,68 @@
+##1：通过vmstat 确定系统 IO 使用状态。
+
+```
+130|coral:/proc/22998 # vmstat 1
+procs -----------memory---------- ---swap-- -----io---- -system-- ----cpu----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa
+ 4  0 255232 109940   2896 1154056   1    1     7    36    0 1134  4  4 92  0
+ 1  0 255232 101900   2896 1160000   0    0     0    16    1 28330 19 18 63 0
+ 8  0 255232 119092   2896 1154872   0   60     0    16    1 28275 17 18 64 0
+ 9  0 255232 113476   2896 1160920   0    0     0     0    1 26696 17 18 65 0
+ 2  0 255232 104808   2896 1167608   0    0     4    20    1 28640 18 18 63 0
+ 7  0 255232 103812   2896 1171040   0   12     4    28    1 27909 18 17 65 0
+ 2  0 255232 108740   2896 1171256   0   32     0     0    1 27665 18 19 64 0
+ 2  0 255232 112832   2896 1171788   0   28     4 49332    1 28178 18 19 63 0
+ 3  0 255232 105236   2896 1178000   0    0     4    36    1 28486 18 18 65 0
+
+```
+## 2. iotop 定位进程IO操作
+
+```
+1|coral:/proc/22998 # iotop -m 5
+                          --- IO (KiB/s) --- --- faults ---  ----------- delayed on ----------
+   PID Command            read  write  total  major  minor  IO     swap   sched  mem    total
+ 25700 MPEG4Writer           0   5776   5776      0      0  0.00%  0.00%  0.00%  0.00%  0.00%
+  2087 HeapTaskDaemon      228      0    228      3    134  0.00%  0.00%  0.00%  0.00%  0.00%
+  2012 notification-sq       0     16     16      0      0  0.00%  0.00%  0.00%  0.00%  0.00%
+  1128 logcat                0      4      4      0      0  0.00%  0.00%  0.00%  0.00%  0.00%
+     1 init                  0      0      0      0      0  0.00%  0.00%  0.00%  0.00%  0.00%
+       TOTAL               228   5796   6024      3  17981
+
+```
+## 3.  strace确定具体文件df
+
+```
+130|coral:/proc/22998 # strace -p 25700
+strace: Process 25700 attached
+strace: [ Process PID=25700 runs in 32 bit mode. ]
+strace: WARNING: Proper structure decoding for this personality is not supported, please consider building strace with mpers support enabled.
+futex(0xedd40444, FUTEX_WAIT_BITSET_PRIVATE, 1754, NULL, FUTEX_BITSET_MATCH_ANY) = 0
+write(153, "\1@\"\200\243\177X\205------------------------"..., 256) = 256
+write(153, "\1@\"\200\243\177X\205------------------------"..., 256) = 256
+write(153, "\1@\"\200\243\177X\205------------------------"..., 256) = 256
+write(153, "\1@\"\200\243\177X\205------------------------"..., 256) = 256
+write(153, "\1@\"\200\243\177X\205------------------------"..., 256) = 256
+write(153, "\1@\"\200\243\177X\205------------------------"..., 256) = 256
+write(153, "\1@\"\200\243\177X\205------------------------"..., 256) = 256
+
+```
+
+## 4 lsof 确定具体操作文件
+
+
+```
+130|coral:/proc/22998 # lsof -p 25700
+COMMAND     PID       USER   FD      TYPE             DEVICE  SIZE/OFF       NODE NAME
+MPEG4Writer 25700      media  cwd       DIR              253,5      4096          2 /
+MPEG4Writer 25700      media  rtd       DIR              253,5      4096          2 /
+MPEG4Writer 25700      media  148u     0000                0,9       0t0     782795 /dmabuf:
+MPEG4Writer 25700      media  149u      CHR              10,54       0t0       5406 /dev/ashmem775a673e-cebf-43d4-9db9-a699a9108809
+MPEG4Writer 25700      media  150u     0000                0,9       0t0     808769 /dmabuf:
+MPEG4Writer 25700      media  152u     0000                0,9       0t0     808768 /dmabuf:
+MPEG4Writer 25700      media  153u      REG               0,63 1984230808      62755 /storage/emulated/9876/DCIM/Camera/VID_20210325_141825.mp4.tmp
+MPEG4Writer 25700      media  155r      CHR              10,61       0t0       5402 /dev/ion
+MPEG4Writer 25700      media  156u     0000                0,9       0t0     808772 /dmabuf:
+MPEG4Writer 25700      media  157u     0000                0,9       0t0     808674 /dmabuf:
+MPEG4Writer 25700      media  158r      CHR              10,61       0t0       5402 /dev/ion
+
+```

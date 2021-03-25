@@ -47,7 +47,7 @@ vendor下面添加目录结构如下:
   ```
 
 # 编译命令
-./Tmake.sh -t aosp_coral -v userdebug
+./Tmake.sh -t coral -v userdebug
 
 ```
 usage() {

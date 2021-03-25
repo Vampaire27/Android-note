@@ -135,3 +135,23 @@ if(isCloneAppForCommon(pkg.packageName)) {
 //                    isCloneapp = true;
 //                }
 //            }
+
+ScreenRecorder_V1.0.9.zip
+
+17:25:09.620  1532  6320 E DatabaseUtils: Writing exception to parcel
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: java.lang.IllegalArgumentException: You cannot change private secure settings.
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.warnOrThrowForUndesiredSecureSettingsMutationForTargetSdk(SettingsProvider.java:2150)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.enforceRestrictedSystemSettingsMutationForCallingPackage(SettingsProvider.java:1937)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.mutateSystemSetting(SettingsProvider.java:1764)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.insertSystemSetting(SettingsProvider.java:1717)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.call(SettingsProvider.java:413)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.content.ContentProvider.call(ContentProvider.java:2455)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.content.ContentProvider$Transport.call(ContentProvider.java:518)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.content.ContentProviderNative.onTransact(ContentProviderNative.java:295)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.os.Binder.execTransact(Binder.java:1123)
+03-02 17:25:10.154  1532  1555 D ColorDisplayService: DisplayWhiteBalanceTintController Animation cancelled: false to matrix:
+03-02 17:25:10.154  1532  1555 D ColorDisplayService:        0.978310-0.000463 0.000091 0.000000 0.015711 0.955448 0.000325 0.000000 0.000268-0.000757 0.999584 0.000000 0.000000 0.000000 0.000000 1.000000 min matrix coefficients:
+03-02 17:25:10.154  1532  1555 D ColorDisplayService:        0.974188-0.000742-0.000178 0.000000 0.015711 0.937279-0.000175 0.000000 0.000268-0.000757 0.929254 0.000000 0.000000 0.000000 0.000000 1.000000 max matrix coefficients:
+03-02 17:25:10.154  1532  1555 D ColorDisplayService:        0.978310 0.000000 0.000091 0.000000 0.025372 0.955448 0.000325 0.000000 0.000440 0.000138 0.999584 0.000000 0.000000 0.000000 0.000000 1.000000
+03-02 17:25:10.396   942  1035 D VSC     : @ 1026.659: [WO] tilt angle 84

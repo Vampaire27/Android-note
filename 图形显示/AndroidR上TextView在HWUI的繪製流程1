@@ -1,0 +1,180 @@
+# AndroidR上普通的字体绘制在HWUI的部分实现
+
+
+这里先说明下HWUI的部分调用OpenglES的流程，之后再更新博客说明上层的TextView的具体刷新过程。
+
+1. 简单的数字绘制的apk
+
+写了一个最简单的例子，绘制数字和特殊字符的过程，作为研究HWUI的文字绘制的范例。
+
+1.1 布局
+
+```
+androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/activity_hello_jnicallback"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="com.example.hellojnicallback.MainActivity"
+>
+    TextView
+        android:id="@+id/tickView"
+        android:layout_width="300dp"
+        android:layout_height="200dp"
+        android:text="00:00:00"
+        android:background="@mipmap/ic_launcher"/>
+androidx.constraintlayout.widget.ConstraintLayout>
+
+```
+
+1.2 代码的实现更新数字的过程
+```
+        TextView tickView = (TextView) findViewById(R.id.tickView);
+        tickView.getPaint().setFakeBoldText(true);
+        tickView.getPaint().setSubpixelText(false);
+        tickView.setTextSize(60);
+```
+Code中只是简单地获取了时钟的结果，然后把数据填给tickView
+
+# 2. 从gapid的call trace 上分析如下：
+
+* 2.1 画面上关于脏数据区域的计算
+
+  屏幕脏区域的计算，一般都是求所有RendorNodes的dirty Region或的结果，我这个应用写的简单，是全屏显示，并且只有一个main activity，所以只有一层layer，并且只更新了时钟显示的部分，区域(0, 240, 900, 840)。
+  前提是GPU这边要支持partial update的特性，否则这个dirty region的区域就是全屏的参数。
+  HWUI中RenderThread通过OpenglES绘制操作都做完的时候，就会调用eglSwapBuffersWithDamageKHR，告诉GPU开始真正的绘制的操作。在GAPID中每个Frame Number：第一帧的开头就会掉这个函数。
+  如下的log是我的这个应用的显示更新的区域：
+
+```
+        M03C914  09-12 02:02:50.654  9413  9490 E OpenGLRenderer：eglSwapBuffersWithDamageKHR, rect[0 ,1080, 900, 600]
+```
+
+* 2.2 HWUI中文字的绘制
+
+  HWUI对文字的绘制会预先生成的一张2048x1024的texture，作为upload文字的时候用，我之后会再补充HWUI中从上层apk到skia如何更新文字的。
+```
+        glBindTexture 先绑定这张texture
+        glPixelStorei GL_UNPACK_ALIGNMENT 1 设置一个字节对齐
+       glPixelStorei GL_UNPACK_ROW_LENGTH 512 设置的width
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 308(xoffset), 45(yoffset), 92(w), 130(h), GL_RED(format), GL_UNSIGNED_BYTE(类型), data(包含文字的raw 图片内容))
+  ```
+  现在上传一张包含数字比如 “2” 的图片，把它贴到从左上角开始的坐标(308, 45)+w:h(92,130)的区域，这张texture就是GPU的内存里面的图片。
+    有时候，skia这边会打包四个或者是多个文字一起，但是这几个字是放在一个放行的图片里面，一起upload到gpu里面的。
+```
+  glPixelStorei GL_UNPACK_ALIGNMENT 0 清除设置一个字节对齐
+  glBindFramebuffer(GL_FRAMEBUFFER, 0) 接下来的这些draw，是要绘制到主context上，也就
+```
+  是主屏幕的framebuffer里面
+
+  glDrawArrays 如果这一帧里面的gldraw没有调用glUseProgram的话，OpenGL就默认的使用前一个draw里面绑定的program来做绘制的操作。（这个是gapid里面可以实验一下）
+
+* 2.3 从GAPID上截图说明下postion 和color的设置有时候这些数据看不到，可能GAPID有数据受限制。
+先说明下，vertex + color + tex坐标的数据存储，
+![](image/20201214161841888.jpg)
+如下图1. 的部分是pos的设置，顶点4组数据如下，数据类型是float32的类型，否则看不出来：黑色括号中，就是对应的“0” “:” “0” “:” “2”五个字符的postion的坐标位置，float32的的格式，每个position需要占用8个Bytes，GAPID中每行是16个Bytes
+![图1](image/20201214162239702.PNG)
+
+如图2. 的部分是color vec4()的设置，但是这个部分是一个4bytes的数据，上层设置的如下：tickView.setTextColor(Color.argb(128, 255, 1, 1));
+![](image/2020121416244988.PNG)
+
+括号内对应的是RGBA的数据，但是texture的数据，HWUI对这个RGBA的数据，255的不知道为什么写成0x80，这个需要再check。
+
+如图3：shader中sin mediump uvec2 inTextureCoords；
+就是设置texture的坐标入括号中表示，GAPID中只有int16的显示，没有short的显示，只能自己做换算。
+![](image/20201214162305820.PNG)
+
+* 2.2 绘制的shader和program，texture的shader是跟文字属性相关
+
+vertex shader:
+```
+#version 320 es
+precision mediump float;
+precision mediump sampler2D;
+uniform highp vec4 sk_RTAdjust;
+uniform highp vec2 uAtlasDimensionsInv_Stage0;
+in highp vec2 inPosition;
+in mediump vec4 inColor;
+in mediump uvec2 inTextureCoords;
+out mediump vec4 vinColor_Stage0;
+out highp vec2 vTextureCoords_Stage0;
+flat out highp int vTexIndex_Stage0;
+out highp vec2 vIntTextureCoords_Stage0;
+void main() {
+    vinColor_Stage0 = inColor;
+    highp ivec2 signedCoords = ivec2(int(inTextureCoords.x), int(inTextureCoords.y));
+    highp vec2 unormTexCoords = vec2(float(signedCoords.x / 2), float(signedCoords.y / 2));
+    vTextureCoords_Stage0 = unormTexCoords * uAtlasDimensionsInv_Stage0;
+    vTexIndex_Stage0 = 0;
+    vIntTextureCoords_Stage0 = unormTexCoords;
+    gl_Position = vec4(inPosition.x, inPosition.y, 0.0, 1.0);
+    gl_Position = vec4(gl_Position.xy * sk_RTAdjust.xz + gl_Position.ww * sk_RTAdjust.yw, 0.0, gl_Position.w);
+}
+```
+fragment shader:
+
+```
+#version 320 es
+precision mediump float;
+precision mediump sampler2D;
+out mediump vec4 sk_FragColor;
+uniform mediump float uDistanceAdjust_Stage0;
+uniform sampler2D uTextureSampler_0_Stage0;
+in mediump vec4 vinColor_Stage0;
+in highp vec2 vTextureCoords_Stage0;
+flat in highp int vTexIndex_Stage0;
+in highp vec2 vIntTextureCoords_Stage0;
+void main() {
+    mediump vec4 outputColor_Stage0;
+    mediump vec4 outputCoverage_Stage0;
+    {
+        outputColor_Stage0 = vinColor_Stage0;
+        highp vec2 uv = vTextureCoords_Stage0;
+        mediump vec4 texColor;
+        {
+            texColor = texture(uTextureSampler_0_Stage0, uv);
+        }
+     //猜测下面的这些处理，应该是在做gamma的矫正
+        mediump float distance = 7.96875 * (texColor.x - 0.50196081399917603);
+        distance -= uDistanceAdjust_Stage0;
+        mediump float afwidth;
+        afwidth = abs(0.64999997615814209 * dFdx(vIntTextureCoords_Stage0.x));
+        mediump float val = smoothstep(-afwidth, afwidth, distance);
+        outputCoverage_Stage0 = vec4(val);
+    }
+    {
+        sk_FragColor = outputColor_Stage0 * outputCoverage_Stage0;
+    }
+}
+```
+之前在Android9.0上，在skia pipeline中，模仿opengl pipeline中做gamma矫正，修改shader如下：
+```
+注意：XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+编辑这个shader遇到的坑，
+不认识#define,
+不认识half3(4.6f, xxx)中f，只能写4.6，
+不认识vec3
+#version 320 es
+uniform lowp sampler2D uTextureSampler_0_Stage0;
+in float2 vTextureCoords_Stage0;
+flat in int vTexIndex_Stage0;
+in half4 vinColor_Stage0;
+out half4 sk_FragColor;
+void main() {
+    half4 outputColor_Stage0;
+        half4 outputCoverage_Stage0;
+        { // Stage 0, Texture
+                outputColor_Stage0 = vinColor_Stage0; //参考了programCache中gamma相关设置。
+                half4 texColor;
+                {
+                        texColor = texture(uTextureSampler_0_Stage0, vTextureCoords_Stage0);
+                }
+                float luminance = dot(vinColor_Stage0.rgb, half3(0.2126, 0.7152, 0.0722)); //gamma 相关的计算， 调整这个half3(0.2126, 0.7152, 0.0722)中参数，为half3(0.7152, 0.2126, 0.0722)看效果没什么变化
+                outputColor_Stage0 = outputColor_Stage0 * pow(texColor.a, luminance  0.5 ? 0.69 : 1.45); // gamma相关的计算，但是这个1.45的话根据网络教程，调整到2.2的时候，会让灰色的字体变得非常不清楚，不知道为什么？？？？？？
+                outputCoverage_Stage0 = half4(1);
+    }
+        { // Xfer Processor: Porter Duff
+                sk_FragColor = outputColor_Stage0 * outputCoverage_Stage0;
+        }
+}
+```

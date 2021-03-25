@@ -14,3 +14,28 @@ https://finalx.github.io/2017/09/30/Android%E4%B8%AD%E7%9A%84GraphicBuffer%E5%90
 
 
 https://me.zhoujinjian.com/posts/20210710/
+
+//AndroidR上TextView在HWUI的绘制流程
+https://www.iberi.org/thread-4953-1-1.html
+https://www.mdeditor.tw/pl/gpdK/zh-hk
+
+自上而下解读Android显示流程（上）
+
+沧浪之水
+https://zhuanlan.zhihu.com/p/261169653
+
+
+AndroidR上关于Bitmap走gpu内存分配的流程
+https://blog.csdn.net/liwenjie28/article/details/113103342
+
+
+Android Freetype的学习过程总结
+https://blog.csdn.net/liwenjie28/article/details/105016661
+
+
+Skia深入分析1——skia上下文
+https://blog.csdn.net/jxt1234and2010/article/details/42572559
+
+
+AndroidR上关于TextureView的刷新流程
+https://blog.csdn.net/liwenjie28/article/details/110955095

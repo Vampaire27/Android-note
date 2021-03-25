@@ -1,0 +1,394 @@
+# AndroidR上关于Bitmap走gpu内存分配的流程
+Android的上层应用，这个是说apk里面，有时候会根据HWUI的参数来选择Bitmap是走硬件绘制，还是走软件绘制。
+这些参数是GPU这边支持的分配图片内存对应的最大的Width和Height，如果超出了这个范围只能选择走CPU的绘制。
+那看下HWUI中关于Bitmap这边选择GPU来绘制的流程。
+1. apk这边调用BitmapFactory的decodeStream时候，设置的参数如下:
+```
+options.inPreferredConfig = Config.HARDWARE; *//这边是在选择走GPU的绘制， 如果没有这个设置，就选择走GPU的绘制。*
+Bitmap bitmap = BitmapFactory.decodeStream(inputStream, null, options);
+```
+以上的code直接调用到native层的代码，
+```
+private static native Bitmap nativeDecodeStream(InputStream is, byte[] storage,
+        Rect padding, Options opts, long inBitmapHandle, long colorSpaceHandle);
+```
+2. 接下来看native层如何调用GPU的绘制指令
+```
+static jobject nativeDecodeStream(JNIEnv* env, jobject clazz, jobject is, jbyteArray storage,
+        jobject padding, jobject options, jlong inBitmapHandle, jlong colorSpaceHandle) {
+
+    jobject bitmap = NULL;
+    std::unique_ptr<SkStream> stream(CreateJavaInputStreamAdaptor(env, is, storage)); //上层java已经拿到了比如xx.webp的图片raw数据
+
+    if (stream.get()) {
+        std::unique_ptr<SkStreamRewindable> bufferedStream(
+                SkFrontBufferedStream::Make(std::move(stream), SkCodec::MinBufferedBytesNeeded()));
+        SkASSERT(bufferedStream.get() != NULL);
+        bitmap = doDecode(env, std::move(bufferedStream), padding, options, inBitmapHandle,
+                          colorSpaceHandle); //图片的解码和解码之后数据存储过程
+    }
+    return bitmap;
+}
+```
+
+```
+  static jobject doDecode(JNIEnv* env, std::unique_ptr<SkStreamRewindable> stream, ......) {
+      SkCodec::Result result = codec->getAndroidPixels(decodeInfo, decodingBitmap.getPixels(),
+              decodingBitmap.rowBytes(), &codecOptions); //做图片的软解
+
+
+      //看上层的调用流程也有缩放的过程，但是这边没有走，这个应该是decode的过程中做缩放
+      // Apply a fine scaling step if necessary.
+      if (needsFineScale(codec->getInfo().dimensions(), size, sampleSize)) {
+          willScale = true;
+          scaledWidth = codec->getInfo().width() / sampleSize;
+          scaledHeight = codec->getInfo().height() / sampleSize;
+      }
+
+  	if (willScale) {
+          SkPaint paint;
+          // kSrc_Mode instructs us to overwrite the uninitialized pixels in
+          // outputBitmap.  Otherwise we would blend by default, which is not
+          // what we want.
+          paint.setBlendMode(SkBlendMode::kSrc);
+          paint.setFilterQuality(kLow_SkFilterQuality); // bilinear filtering
+
+          SkCanvas canvas(outputBitmap, SkCanvas::ColorBehavior::kLegacy);
+          canvas.scale(scaleX, scaleY);
+          canvas.drawBitmap(decodingBitmap, 0.0f, 0.0f, &paint); //通过canvas的drawBitmap做缩放
+      } else {
+  	    //这边是不需要做缩放的话，直接把数据给outputBitmap
+          outputBitmap.swap(decodingBitmap);
+      }
+
+  	//如果是硬件绘制的话，需要allocateHardwareBuffer
+  	if (isHardware) {
+          sk_sp<Bitmap> hardwareBitmap = Bitmap::allocateHardwareBitmap(outputBitmap); //分配HardwareBitmap的内存
+          if (!hardwareBitmap.get()) {
+              return nullObjectReturn("Failed to allocate a hardware bitmap");
+          }
+          return bitmap::createBitmap(env, hardwareBitmap.release(), bitmapCreateFlags,
+                  ninePatchChunk, ninePatchInsets, -1); //创建一个java的object回传给java层
+      }
+
+      // now create the java bitmap
+      return bitmap::createBitmap(env, defaultAllocator.getStorageObjAndReset(),
+              bitmapCreateFlags, ninePatchChunk, ninePatchInsets, -1); //这边是走软绘的流程
+              }
+```
+
+先看下Bitmap::allocateHardwareBitmap(outputBitmap)的流程
+```
+sk_sp<Bitmap> Bitmap::allocateHardwareBitmap(const SkBitmap& bitmap) {
+    return uirenderer::HardwareBitmapUploader::allocateHardwareBitmap(bitmap);
+}
+
+sk_sp<Bitmap> HardwareBitmapUploader::allocateHardwareBitmap(const SkBitmap& sourceBitmap) {
+    bool usingGL = uirenderer::Properties::getRenderPipelineType() ==
+            uirenderer::RenderPipelineType::SkiaGL; //使用opengl绘制
+
+    SkBitmap bitmap = makeHwCompatible(format, sourceBitmap); //如果format支持的话，就直接返回sourceBitmap
+    sp<GraphicBuffer> buffer = new GraphicBuffer( //Gralloc上分配的buffer
+            static_cast<uint32_t>(bitmap.width()), static_cast<uint32_t>(bitmap.height()),
+            format.pixelFormat,
+            GraphicBuffer::USAGE_HW_TEXTURE | GraphicBuffer::USAGE_SW_WRITE_NEVER |
+                    GraphicBuffer::USAGE_SW_READ_NEVER,
+            std::string("Bitmap::allocateHardwareBitmap pid [") + std::to_string(getpid()) +
+                    "]");
+
+	createUploader(usingGL); //初始化一个thread作upload texture使用
+
+    if (!sUploader->uploadHardwareBitmap(bitmap, format, buffer)) {
+        return nullptr;
+    }
+    return Bitmap::createFrom(buffer->toAHardwareBuffer(), bitmap.colorType(),
+                              bitmap.refColorSpace(), bitmap.alphaType(),
+                  Bitmap::computePalette(bitmap)); //创建一个native层的Bitmap
+}
+
+```
+这边先看下uploadHardwareBitmap的实现在frameworks/base/libhwui/中
+```
+bool uploadHardwareBitmap(const SkBitmap& bitmap, const FormatInfo& format,
+						  sp<GraphicBuffer> graphicBuffer) {
+	ATRACE_CALL();
+	beginUpload();
+	bool result = onUploadHardwareBitmap(bitmap, format, graphicBuffer);
+	endUpload();
+	return result;
+}
+
+bool onUploadHardwareBitmap(const SkBitmap& bitmap, const FormatInfo& format,
+							sp<GraphicBuffer> graphicBuffer) override {
+	ATRACE_CALL();
+
+	EGLDisplay display = getUploadEglDisplay();
+
+	EGLClientBuffer clientBuffer = (EGLClientBuffer)graphicBuffer->getNativeBuffer();
+	AutoEglImage autoImage(display, clientBuffer); //把GraphicBuffer封装成一个EGLImage
+	......
+	{
+		ALOGE("CPU -> gralloc transfer (%dx%d)", bitmap.width(), bitmap.height());
+		//给RenderThread的抛一个Task，做upload texture
+		EGLSyncKHR fence = mUploadThread->queue().runSync([&]() -> EGLSyncKHR {
+			AutoSkiaGlTexture glTexture;
+			glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, autoImage.image); //绑定texture的target
+
+			if (GLUtils::dumpGLErrors()) {
+				return EGL_NO_SYNC_KHR;
+			}
+			// glTexSubImage2D is synchronous in sense that it memcpy() from pointer that we
+			// provide.
+			// But asynchronous in sense that driver may upload texture onto hardware buffer
+			// when we first use it in drawing
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, bitmap.width(), bitmap.height(),
+							format.format, format.type, bitmap.getPixels());//上传数据bitmap.getPixels()给GPU
+
+			EGLSyncKHR uploadFence = //创建fence
+					eglCreateSyncKHR(eglGetCurrentDisplay(), EGL_SYNC_FENCE_KHR, NULL);
+				if (uploadFence == EGL_NO_SYNC_KHR) {
+					ALOGW("Could not create sync fence %#x", eglGetError());
+				};
+				glFlush();
+			    ......
+				return uploadFence;
+			});
+
+		if (fence == EGL_NO_SYNC_KHR) {
+			return false;
+		}
+		EGLint waitStatus = eglClientWaitSyncKHR(display, fence, 0, FENCE_TIMEOUT);// 等fence
+
+		eglDestroySyncKHR(display, fence);
+	}
+	return true;
+    }
+
+    renderthread::EglManager mEglManager;
+};
+
+```
+以上的这些opengl的指令，都是用来把decode之后的raw数据传递给GPU，glTexSubImage2D这边是CPU 在copy数据到GPU的内存。
+如果上层应用这边需要做Bitmap的绘制的话，应该是直接调用drawBitmap，如果是做设置wallpaper，作为进程间传递的对象，应该需要要做Bitmap的copy：
+```
+static jobject Bitmap_copy(JNIEnv* env, jobject, jlong srcHandle,
+                           jint dstConfigHandle, jboolean isMutable) {
+    SkBitmap src;
+    reinterpret_cast<BitmapWrapper*>(srcHandle)->getSkBitmap(&src);
+
+	......
+}
+
+void Bitmap::getSkBitmap(SkBitmap* outBitmap) {
+#ifdef __ANDROID__ // Layoutlib does not support hardware acceleration
+    if (isHardware()) {
+        outBitmap->allocPixels(mInfo);
+        uirenderer::renderthread::RenderProxy::copyHWBitmapInto(this, outBitmap); //需要从HwBitmap中copy一份出来
+        ALOGE("test this bitmap =%p", this);
+        //这些是做debug用，检测GPU的输出是否正确，当然这个需要有正确的参考值，比较，否则图片的raw data是无法判断是否是正确的值。
+        //       char* test = (char*)outBitmap->getPixels();
+        //       for (int i=2000; i<2100; i++) {
+        //          ALOGE("getSkBitmap test i=%d, test=0x%x", i, test[i]);
+        //       }
+        return;
+    }
+#endif
+    ......
+}
+
+int RenderProxy::copyHWBitmapInto(Bitmap* hwBitmap, SkBitmap* bitmap) {
+    ATRACE_NAME("HardwareBitmap readback");
+    RenderThread& thread = RenderThread::getInstance();
+    //如果是renderthread线程的话，就直接做copy，否则需要抛task到RenderThread线程中做copy
+    if (gettid() == thread.getTid()) {
+        // TODO: fix everything that hits this. We should never be triggering a readback ourselves.
+        return (int)thread.readback().copyHWBitmapInto(hwBitmap, bitmap);
+    } else {
+        return thread.queue().runSync(
+                [&]() -> int { return (int)thread.readback().copyHWBitmapInto(hwBitmap, bitmap); });
+    }
+}
+
+CopyResult Readback::copyImageInto(const sk_sp<SkImage>& image, Matrix4& texTransform,
+                                   const Rect& srcRect, SkBitmap* bitmap) {
+.....
+	//拿到GrConext作为上下文的环境
+    sk_sp<GrContext> grContext = sk_ref_sp(mRenderThread.getGrContext());
+
+    if (bitmap->colorType() == kRGBA_F16_SkColorType &&
+        !grContext->colorTypeSupportedAsSurface(bitmap->colorType())) {
+        ALOGW("Can't copy surface into bitmap, RGBA_F16 config is not supported");
+        return CopyResult::DestinationInvalid;
+    }
+......
+    Layer layer(mRenderThread.renderState(), nullptr, 255, SkBlendMode::kSrc);
+    layer.setSize(displayedWidth, displayedHeight);
+    texTransform.copyTo(layer.getTexTransform());
+    layer.setImage(image);
+.....
+    if (copyLayerInto(&layer, &skiaSrcRect, &skiaDestRect, bitmap)) {
+        copyResult = CopyResult::Success;
+    }
+}
+
+bool Readback::copyLayerInto(Layer* layer, const SkRect* srcRect, const SkRect* dstRect,
+                             SkBitmap* bitmap) {
+	sk_sp<SkSurface> tmpSurface = SkSurface::MakeRenderTarget(mRenderThread.getGrContext(),
+                                                              SkBudgeted::kYes, bitmap->info(), 0,
+                                                              kTopLeft_GrSurfaceOrigin, nullptr);
+
+	// if we can't generate a GPU surface that matches the destination bitmap (e.g. 565) then we
+    // attempt to do the intermediate rendering step in 8888
+    if (!tmpSurface.get()) {
+        SkImageInfo tmpInfo = bitmap->info().makeColorType(SkColorType::kN32_SkColorType);
+        tmpSurface = SkSurface::MakeRenderTarget(mRenderThread.getGrContext(), SkBudgeted::kYes,
+                                                 tmpInfo, 0, kTopLeft_GrSurfaceOrigin, nullptr);
+        .....
+    }
+	//这边使用GPU做绘制的操作，是在做gpu的环境的初始化，然后再做readpixel的操作。
+	if (!skiapipeline::LayerDrawable::DrawLayer(mRenderThread.getGrContext(),
+											tmpSurface->getCanvas(), layer, srcRect, dstRect,
+											false)) {
+        ......
+    }
+
+    if (!tmpSurface->readPixels(*bitmap, 0, 0)) {
+        // if we fail to readback from the GPU directly (e.g. 565) then we attempt to read into
+        // 8888 and then convert that into the destination format before giving up.
+        SkBitmap tmpBitmap;
+        SkImageInfo tmpInfo = bitmap->info().makeColorType(SkColorType::kN32_SkColorType);
+        if (bitmap->info().colorType() == SkColorType::kN32_SkColorType ||
+                !tmpBitmap.tryAllocPixels(tmpInfo) ||
+                !tmpSurface->readPixels(tmpBitmap, 0, 0) ||
+                !tmpBitmap.readPixels(bitmap->info(), bitmap->getPixels(),
+                                      bitmap->rowBytes(), 0, 0)) {
+  ......
+        }
+    }
+
+}
+
+```
+
+这边的DrawLayer的调用如下，是走Skia的环境，调用Opengl的指令：
+```
+bool LayerDrawable::DrawLayer(GrContext* context, SkCanvas* canvas, Layer* layer,
+                              const SkRect* srcRect, const SkRect* dstRect,
+                              bool useLayerTransform) {
+	sk_sp<SkImage> layerImage = layer->getImage(); //这个就是一开始的时候生成的SkImage的对像
+            if (layer->getForceFilter() ||
+                shouldFilterRect(totalMatrix, skiaSrcRect, skiaDestRect)) {
+                paint.setFilterQuality(kLow_SkFilterQuality); //设置绘制texture的属性，GL_LINEAR
+            }
+            canvas->drawImageRect(layerImage.get(), skiaSrcRect, skiaDestRect, &paint,
+                                  SkCanvas::kFast_SrcRectConstraint); //这个应该是做缩放的时候调用的
+        } else {
+            SkRect imageRect = SkRect::MakeIWH(layerImage->width(), layerImage->height());
+            if (layer->getForceFilter() || shouldFilterRect(totalMatrix, imageRect, imageRect)) {
+                paint.setFilterQuality(kLow_SkFilterQuality);
+            }
+            canvas->drawImage(layerImage.get(), 0, 0, &paint);//这个是按照图片的原始大小绘制图片
+        }
+}
+
+```
+
+在gpu绘制好这个图片的时候，就需要把这个图片从GPU上读取出来，比如这边在Java层dump bitmap的时候，需要用到raw数据保存下来，确保这个图片解码是否正确。一般是用来debug，特殊的情况下是用来进程之间传递的。
+
+```
+bool SkSurface::readPixels(const SkPixmap& pm, int srcX, int srcY) {
+    return this->getCanvas()->readPixels(pm, srcX, srcY);
+}
+
+bool SkCanvas::readPixels(const SkPixmap& pm, int x, int y) {
+    SkBaseDevice* device = this->getDevice();
+    return device && pm.addr() && device->readPixels(pm, x, y);
+}
+
+
+```
+
+SkBaseDevice中readPixels会调用子类的onReadPixels
+```
+bool SkGpuDevice::onReadPixels(const SkPixmap& pm, int x, int y) {
+    ASSERT_SINGLE_OWNER
+
+    ALOGE("SkGpuDevice::onReadPixels 11");
+    if (!SkImageInfoValidConversion(pm.info(), this->imageInfo())) {
+        return false;
+    }
+    ALOGE("SkGpuDevice::onReadPixels 22");
+
+    return fRenderTargetContext->readPixels(pm.info(), pm.writable_addr(), pm.rowBytes(), {x, y});
+}
+
+GrSurfaceContext是fRenderTargetContext的父类
+bool GrSurfaceContext::readPixels(const GrImageInfo& origDstInfo, void* dst, size_t rowBytes,
+                                  SkIPoint pt, GrContext* direct) {
+    ALOGE("GrSurfaceContext readpixels 6666");
+    if (!direct->priv().getGpu()->readPixels(srcSurface, pt.fX, pt.fY, dstInfo.width(),
+                                             dstInfo.height(), this->colorInfo().colorType(),
+                                             supportedRead.fColorType, readDst, readRB)) {
+        return false;
+    }
+}
+
+GrGpu调用了GrGLGpu的onReadPixels
+
+bool GrGLGpu::onReadPixels(GrSurface* surface, int left, int top, int width, int height,
+                           GrColorType surfaceColorType, GrColorType dstColorType, void* buffer,
+                           size_t rowBytes) {
+    return this->readOrTransferPixelsFrom(surface, left, top, width, height, surfaceColorType,
+                                          dstColorType, buffer, rowPixelWidth);
+}
+
+
+bool GrGLGpu::readOrTransferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
+                                       GrColorType surfaceColorType, GrColorType dstColorType,
+                                       void* offsetOrPtr, int rowWidthInPixels) {
+    GL_CALL(PixelStorei(GR_GL_PACK_ALIGNMENT, 1));
+	GL_CALL(ReadPixels(readRect.fX, readRect.fY, readRect.fWidth, readRect.fHeight,
+                       externalFormat, externalType, offsetOrPtr));
+}
+
+
+```
+
+综上：从HWUI中的这些流程来看，bitmap去分配hardwareBuffer的时候，走GPU这边逛了一圈儿。
+其实就是raw数据给了gpu，然后gpu把这个数据做了简单的绘制操作，然后HWUI这边又从gpu上把这个数据读了出来。
+其实可以利用GraphicBuffer直接保存这个decode之后的Raw数据，但是为什么非要这么麻烦的在gpu上走一圈。
+个人猜测，
+
+  因为可能上层java需要Bitmap这边需要做缩放的操作，所有走GPU这边可以做缩放或者是裁剪的操作。
+  HWUI的架构决定，HWUI给上层java只暴露了接口，让走allocateHardware, 这样上层不需要直接调用opengGL的接口，封装GraphicBuffer等一系列的操作
+
+  如果bitmap下次真的需要画出来的时候，就不需要进行第2次的upload到GPU的操作，直接绑定这个Texture ID就能直接做draw的操作。
+
+以上是个人学习总结的结果，写出来只是为需要的盆友，做个参考。
+如果有理解不对，请路过的盆友，请帮忙指出。
+————————————————
+
+apk1:
+  name: CommonUI
+  version: T20210226190258
+apk2:
+  name: themestore
+  version: T20210226103132
+apk3:
+  name: usercenter
+  version: V1.0.0.104+
+apk4:
+  name: clock
+  version: V1.0.1.008
+apk5:
+  name: calculator
+  version: T20210226220832
+apk6:
+  name: ScreenRecorder
+  version: V1.1.1
+apk7:
+  name: OtaUpdate
+  version: V1.0.1
+apk8:
+  name: SoundRecorder
+  version: V1.0.01.102

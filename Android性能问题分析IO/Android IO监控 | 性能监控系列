@@ -1,0 +1,245 @@
+# [Android IO监控 | 性能监控系列](https://juejin.cn/post/6900810600188739592)
+
+## 背景
+
+公司的一款app最近在上架厂商的过程中，被对方指出了IO读写过于频繁，然后不给上架。但是IO读写的操作非常零散,而且很多第三方框架内都会有写入操作，所以就变得非常难以监控和修改，有没有一种非常简单的方式可以帮助我们去定位这个问题呢？
+之后我参考了下腾讯的Matrix的IOCanary监控组件,其原理是通过hook(ELF hook)的机制，hook 了 IO的读取/写入的操作，然后打印出调用堆栈，从而帮助开发同学定位问题。
+
+一般来说，一套Apm(Application Performance Monitor)系统是要分成多个部分的，比如开发阶段工具，测试阶段工具以及线上收集数据等等。而IO监控则是其中的开发测试阶段工具。
+
+## IOCanary 原理分析
+
+在开始接介绍IOCanary之前，我们要先介绍一些奇怪的黑科技，通过这些东西我们才能完成IO监控系统，而且能讲明白到底IOCanary是如何实现的。
+
+## 动态Hook
+
+提到这个的话，大家可能以为我要写什么Aop切片啥的。但是不好意思你猜错了，还有很多别的手段可以去做无插入式的Hook代码调用的操作的。Aop切片毕竟还是要做字节码修改操作，同时作为一个调试工具的话，的确是有点太复杂了。
+
+简单的介绍下动态Hook,我们可以通过Art虚拟机的机制，在一个方法调用的前后进行钩子操作，然后进行我们所需要的一些动态的监控的操作，已达到我们对于代码的动态监控能力。由于Hook在的是虚拟机层面，所以能监控的就不仅仅只是我们自己的代码，所有第三方库甚至源代码的调用都可以进行Hook。
+
+比如Xposed，但是这套框架依赖于手机的Root。另外Epic也可以做到在安卓上的动态Hook, ,而听说腾讯的IOCanary则是参考了爱奇艺的xHook的原理。
+
+从上面讲述的ART方法调用原理可以得到一种很自然的Hook办法————直接替换entrypoint。通过把原方法对应的ArtMethod对象的entrypoint替换为目标方法的entrypoint，可以使得原方法被调用过程中取entrypoint的时候拿到的是目标方法的entry，进而直接跳转到目标方法的code段；从而达到Hook的目的。
+
+上述是对Epic的介绍啊，有兴趣的可以直接看下这篇文章。[我为Dexposed续一秒——论ART上运行时 Method AOP实现](http://weishu.me/2017/11/23/dexposed-on-art/)。这篇文章是作者自己分享的，有对其中的原理进行了一次介绍，但是这部分我并没有看懂。作为一个菜逼Android，我还是采取了OOP思想，毕竟这方面门槛太高了，而我则是能用就行了（手动狗头保命）。
+
+
+## IOCanary监控
+
+监控IO是不是意味着只需要有方法能监控到文件的写入读取流就可以了呢？我们先简单的看下腾讯的Matrix的IOCanary是如何实现的。
+![](image/ae87526a544540e59e7b6895ee9eb651_tplv-k3u1fbpfcp-watermark.image)
+
+采用 hook(ELF hook) 的方案收集IO信息，代码无侵入，从而使得开发者可以无感知接入。方案主要通过 hook os posix 的四个关键的文件操作接口：
+```
+int open(const char *pathname, int flags, mode_t mode);//成功时返回值就是fd
+ssize_t read(int fd, void *buf, size_t size);
+ssize_t write(int fd, const void *buf, size_t size);
+int close(int fd);
+```
+
+以上看到，通过 hook 这几个接口，可以拿到大部分关键操作信息。这里举 open 的例子介绍下原理，简单起见，只结合 Android M 的代码以及大家最常用的 FileInputStream 分析。关键要找到 posix open 是在哪里被调用。由上往下列了大致的调用关系
+
+```
+java : FileInputStream -> IoBridge.open -> Libcore.os.open
+-> BlockGuardOs.open -> Posix.open
+                             ↓
+jni : libcore_io_Posix.cpp
+static jobject Posix_open(...) {
+    ...
+    int fd = throwIfMinusOne(env, "open", TEMP_FAILURE_RETRY(open(path.c_str(), flags, mode)));
+    ...
+}
+
+```
+
+以上看到， android 框架的 FileInputStream ，最终是在 libcore_io_Posix.cpp 那里调到了posix的open接口。那么再找它被编到哪个 so ，查阅源码对应的 NativeCode.mk ，
+```
+得到LOCAL_MODULE := libjavacore
+```
+
+于是只要 hook libjavacore.so 的 open 符号就 ok 了。找到 hook 目标 so 的目的是把 hook 的影响范围尽可能地降到最小。 同样， write，read，close 也是大同小异。不同的 Android 版本会有些坑需要填，这里不细述， 目前兼容到Android P。
+由此便可以收集到应用在文件读写时的相关信息：文件路径、fd、buffer 大小等，并可以统计耗时、操作次数等。基于这些信息，就可以设定一些策略进行检测判断。
+其中C++的代码基本就是采用了[xhook](https://github.com/iqiyi/xHook)的类似。比较方便我们学习的是io_canary_jni.cc这个类。
+
+```
+namespace iocanary {
+	// hook 这三个核心的so包，其中所有的IO流式操作全部在这三个SO中。
+    const static char *TARGET_MODULES[] = {
+            "libopenjdkjvm.so",
+            "libjavacore.so",
+            "libopenjdk.so"
+    };
+
+    // hook 流的open操作
+  	int ProxyOpen(const char *pathname, int flags, mode_t mode) {
+    	...
+    }
+
+	// jni 开启动态hook 通过xhook， hook住 io 打开写入关闭等操作
+    Java_com_bilibili_apm_io_core_IOCanaryJniBridge_doHook(JNIEnv *env, jclass type) {
+        __android_log_print(ANDROID_LOG_INFO, kTag, "doHook");
+
+        for (int i = 0; i < TARGET_MODULE_COUNT; ++i) {
+            const char *so_name = TARGET_MODULES[i];
+            __android_log_print(ANDROID_LOG_INFO, kTag, "try to hook function in %s.", so_name);
+			// 将上面需要hook的so包内传递给xhook
+            void *soinfo = xhook_elf_open(so_name);
+            if (!soinfo) {
+                __android_log_print(ANDROID_LOG_WARN, kTag, "Failure to open %s, try next.",
+                                    so_name);
+                continue;
+            }
+			// io 打开操作 并代理成当前类的自定义方法
+            xhook_hook_symbol(soinfo, "open", (void *) ProxyOpen, (void **) &original_open);
+            xhook_hook_symbol(soinfo, "open64", (void *) ProxyOpen64, (void **) &original_open64);
+
+            bool is_libjavacore = (strstr(so_name, "libjavacore.so") != nullptr);
+            if (is_libjavacore) {
+            	// hook read 操作
+                if (xhook_hook_symbol(soinfo, "read", (void *) ProxyRead,
+                                      (void **) &original_read) != 0) {
+                    __android_log_print(ANDROID_LOG_WARN, kTag,
+                                        "doHook hook read failed, try __read_chk");
+                    if (xhook_hook_symbol(soinfo, "__read_chk", (void *) ProxyReadChk,
+                                          (void **) &original_read_chk) != 0) {
+                        __android_log_print(ANDROID_LOG_WARN, kTag,
+                                            "doHook hook failed: __read_chk");
+                        xhook_elf_close(soinfo);
+                        return JNI_FALSE;
+                    }
+                }
+				// hook 写入操作
+                if (xhook_hook_symbol(soinfo, "write", (void *) ProxyWrite,
+                                      (void **) &original_write) != 0) {
+                    __android_log_print(ANDROID_LOG_WARN, kTag,
+                                        "doHook hook write failed, try __write_chk");
+                    if (xhook_hook_symbol(soinfo, "__write_chk", (void *) ProxyWriteChk,
+                                          (void **) &original_write_chk) != 0) {
+                        __android_log_print(ANDROID_LOG_WARN, kTag,
+                                            "doHook hook failed: __write_chk");
+                        xhook_elf_close(soinfo);
+                        return JNI_FALSE;
+                    }
+                }
+            }
+			//hook 关闭操作
+            xhook_hook_symbol(soinfo, "close", (void *) ProxyClose, (void **) &original_close);
+
+            xhook_elf_close(soinfo);
+        }
+
+        __android_log_print(ANDROID_LOG_INFO, kTag, "doHook done.");
+        return JNI_TRUE;
+    }
+}
+
+```
+上面是腾讯的Matrix的官方说明啊，我只是简单的copy了一下。其实原理就和我们一开始介绍的Epic框架基本类似，通过动态Hook底层的实现的方式，让我们可以对于某些方法进行动态的监控。
+这里给大家简单的列一下sdk整体流程：
+
+* 1.初始化IOCanaryJniBridge，然后完成基础初始化。
+* 2.JNI调用Native xhook的代码，hook原生so libopenjdkjvm.so,libjavacore.so,libopenjdk.so 的open write read close方法。
+
+
+当读写操作被调用之后，通过jni native调用java方法记录。
+
+
+当close方法被触发之后，记录一个io数据结构。
+
+## 在IOCanary的基础上进行二次封装
+
+Matrix的IOCanary由于只兼容到Android9版本，所以我们在实际的使用中其实碰到了很多问题。同时由于hook的不安全性和不稳定性，建议各位不要把这种功能带到线上去，而是在为debug版本的一个调试能力存在。
+我们在实际使用中IOCanary只监控了主线程的IO读写操作，并不足矣帮助我们去定位项目内的所有IO读写操作，所以我们队其进行了二次开发操作。
+
+* 去除掉线程判断逻辑
+* 把IO的堆栈从close，变更到open操作中
+* 在java层汇总所有的流写入操作，然后统一对写入大小进行计算。
+
+```
+ssize_t ProxyWriteChk(int fd, const void *buf, size_t count, size_t buf_size) {
+  /*  if (!IsMainThread()) {
+        return original_write_chk(fd, buf, count, buf_size);
+    }*/
+
+    int64_t start = GetTickCountMicros();
+
+    ssize_t ret = original_write_chk(fd, buf, count, buf_size);
+
+    long write_cost_us = GetTickCountMicros() - start;
+
+    __android_log_print(ANDROID_LOG_DEBUG, kTag,
+                        "ProxyWrite fd:%d buf:%p size:%d ret:%d cost:%d", fd, buf, buf_size,
+                        ret,
+                        write_cost_us);
+
+    iocanary::IOCanary::Get().OnWrite(fd, buf, count, ret, write_cost_us);
+
+    return ret;
+}
+
+
+```
+在io_canary_jni.cc的c++代码中，我们只要简单的把几个proxy方法中的线程检查逻辑屏蔽掉即可。这样就可以获取到所有线程下IO操作了。
+
+## 堆栈打印
+
+Matrix的IOCanary中，有个IOCanaryJniBridge，这个就是其中的jni调用的类。他还有另外一个功能，就是把hook到的IO操作中的堆栈进行转化。
+首先内部定义了一个实体类，这个类在构造的时候会抛出一个异常，其实这个异常就是负责获取到当前IO操作的堆栈信息的。因为代码的调用顺序其实是会被收集在线程内部的，而这个构造则是在我们IO监控的Open方法内被执行的。
+
+```
+private static final class JavaContext {
+    private final String stack;
+    private String threadName;
+
+    private JavaContext() {
+        stack = IOCanaryUtil.getThrowableStack(new Throwable());
+        if (null != Thread.currentThread()) {
+            threadName = Thread.currentThread().getName();
+        }
+        HasakiLog.i(TAG, "JavaContext:" + threadName);
+    }
+}
+
+```
+Matrix的IOCanary是在一个流Close的时候才会将JavaContext对象上报，其中才会有内存的堆栈，但是我们在实际的测试中发现，在高版本的设备上xHook的IO close操作并没有被很好的触发，这块我真的不是特别擅长，所以我们在构造的时候就对堆栈进行了打印。
+
+## 大小计算调整
+
+由于实际开发中，我们碰到了很多设备由于Close函数没有触发，导致了IO监控数据不准确的问题。我们在write函数增加了额外的jni调用。
+
+```
+
+// 声明 writeFrame方法
+ static jmethodID kMethodIDWriteFrame;
+
+ // 通过jni 获取到java 类的writeFrame方法
+ kMethodIDWriteFrame = env->GetStaticMethodID(kJavaBridgeClass, "writeFrame",
+                                                     "(Ljava/lang/String;Ljava/lang/String;)V");
+
+ void writeFrame(int frame, long size) {
+        JNIEnv *env = NULL;
+        // 判断实例是否存在
+        kJvm->GetEnv((void **) &env, JNI_VERSION_1_6);
+        if (env == NULL || !kInitSuc) {
+            __android_log_print(ANDROID_LOG_ERROR, kTag, "writeFrame env null or kInitSuc:%d",
+                                kInitSuc);
+        } else {
+        	// 将写入时间 和写入大小调用java方法记录
+            __android_log_print(ANDROID_LOG_DEBUG, kTag,
+                                "writeFrame  size:%d frame:%d", size, frame);
+            char charSize[256];
+            char charFrame[256];
+            sprintf(charSize, "%d", size);
+            sprintf(charFrame, "%d", frame);
+            jstring str1 = env->NewStringUTF(charFrame);
+            jstring str2 = env->NewStringUTF(charSize);
+            env->CallStaticVoidMethod(kJavaBridgeClass, kMethodIDWriteFrame, str1, str2);
+        }
+    }
+
+```
+
+我们在proxyWrite方法内进行了一部分改造，将所有的写入大小和时间等在java层进行汇总计算。由于写入放开了线程的限制，所以我们把这部分记录操作放在了一个 Executors.newSingleThreadExecutor()中记录。
+
+# 总结
+作为一个c++菜鸡来说，现在也只是会使用这些hook框架，但是其中原理和如何优化之类的，还是一头雾水。改完了这个监控之后，起码让我对JNI调用有了一个比较深入的了解，但是还是要感慨一句，水太深了，不要欺负我7年老安卓，so的一下实在太快了。
