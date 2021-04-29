@@ -1,42 +1,37 @@
 
-Android系统应用开发工程师岗位
+1. Recovery codes
 
-岗位职责：
-1.参与需求评审和模块设计，参与工作量评估；
-2.按时按质量完成开发任务；
-3.项目相关文档的编写及维护。
+Recovery codes are used to access your account in the event you cannot receive two-factor authentication codes.
+Download, print, or copy your recovery codes before continuing two-factor authentication setup below
 
-岗位要求：
-1. 2年以上Android开发经验.
-2. 熟悉Andriod开发平台及框架原理，精通java 语言.
-3. 有较强的责任心、自驱力与独立解决问题的能力，有良好的团队合作精神，沟通协作意识良好，能够承担工作压力.
+6f4d8-fb5af
+65973-a2c9f
+b4777-91d50
+5807c-e166f
+530f4-7c2e3
+6f321-1832d
+a863d-b86d4
+7bef4-1ebd3
+78981-b101e
+38599-87c27
+aa810-405e9
+c8a03-8ddb9
+f608f-23f96
+c8b98-60ad5
+01d8f-8efb0
+e2f63-9e009
 
-有以下经验者之一着优先：
-1: 有高通,MTK手机系统app开发工作经验者尤佳.
-2. 有SystemUI,Keyguard开发开发和维护经验.
-3. 有Launcher APP开发和维护经验.
-4. 有完整的图库Gallery应用项目开发和维护经验.
-5. 有Setting/PackageInstaller APP开发和维护经验.
-6. 有phone,mms,contact开发和维护经验.
-7. 有内存和app管理app开发和维护经验.
-8. 有音视频播放器开发和维护经验.
-9. 有原生Camera开发和维护经验
-10.有原生输入系统开发和维护经验
-11.有MMI测试软件,工厂模式,log工具开发和维护经验
-12.有OTA 开发和维护经验
-13.有FileManger App开发和维护经验.
 
-------------------------
-Androi Framework/系统工程师
 
-岗位职责：
-1.Android Framework功能开发、需求分析、框架设计、调试等；
-2.负责Android系统模块的优化和系统稳定性维护；
+
+
+
+
 
 
 岗位要求：
 1.良好的Java/C++语言基础，熟悉设计模式；
-2.了解Android基本框架及整个Android基本流程，有2年以上系统Framework开发经验；
+2.了解Android基本框架，有2年以上系统Framework开发经验；
 
 有以下工作经验之一者优先
 1: 有高通,MTK手机系统FrameWork开发维护经验着尤佳.
@@ -47,111 +42,91 @@ Androi Framework/系统工程师
 6. 有手机功耗处理经验,熟悉手机外设(屏幕，Camera，Audio，RF，memory)工作原理及常用功耗优化手段.
 7. 有Android输入系统开发和维护经验,熟悉Android原生输入法.
 8. 熟悉蓝牙、WIFI、以太网、Camera、GPS及NFC模块，有相关开发工作经验.
-9. 熟悉Android DAC权限管理,selinux权限,runtime权限,fuse文件系统等.
+9. 熟悉Android DAC权限管理,Selinux权限,Runtime权限,Fuse文件系统等.
 10. 有系统常见异常如重启、卡死、黑屏、闪退、休眠/唤醒、第三方应用报错等工作经验.
 11. 有OTA 开发和维护经验, 熟悉dm verity,手机加密等功能.
-12. 了解ARM trust Zone,有ＴＥＥ开发经验优先.
+12. 了解ARM trust Zone,有ＴＥＥ开发经验.
+13. 熟悉Audio/Media service流程，有AudioFlinger，MediaCodec等工作经验优先。
 
 
 
 
 
-1: 调用 mRingtoneManager.addCustomExternalRingtone();把外部资源转化成系统alam,并生成相应的URI
-2: 调用 RingtoneManager.setActualDefaultRingtoneUri(mUserContext, getRingtoneType(), ringtoneUri); 设置系统了铃声.
-
-
-$************************************************************\n
-Your API changes are triggering API Lint warnings or errors.\nTo make these errors go away, fix the code according to the\n
-error and/or warning messages above.\n\nIf it is not possible to do so, there are workarounds:
-\n\n
-1. You can suppress the errors with @SuppressLint("<id>")\n
-2. You can update the baseline by executing the following\n
-command:\n
-cp \\\n
-"/home/huzhongyang/code/zone_android11$/out/soong/.intermediates/frameworks/base/api-stubs-docs/android_common/api_lint_baseline.txt" \\\n
-"/home/huzhongyang/code/zone_android11$/frameworks/base/api/lint-baseline.txt"\n
- To submit the revised baseline.txt to the main Android\n
-  repository, you will need approval.\n************************************************************\n
 
 
 
 
 
-  1:如下修改在
-
-  if (fs_prepare_dir(mSdcardFsDefault.c_str(), 0777, AID_ROOT, AID_ROOT) ||
-    fs_prepare_dir(mSdcardFsRead.c_str(), 0777, AID_ROOT, AID_ROOT) ||
-    fs_prepare_dir(mSdcardFsWrite.c_str(), 0777, AID_ROOT, AID_ROOT) ||
-    fs_prepare_dir(mSdcardFsFull.c_str(), 0777, AID_ROOT, AID_ROOT)) {
-    PLOG(ERROR) << getId() << " failed to create mount points";
-    return -errno;
-}
 
 
 
 
 
-02-22 17:41:16.660  4059  4059 W QQ_SUB  : type=1400 audit(0.0:3019): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:18.740  4030  4030 W FileTracer: type=1400 audit(0.0:3889): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:18.743  4030  4030 W FileTracer: type=1400 audit(0.0:3890): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:18.743  4030  4030 W FileTracer: type=1400 audit(0.0:3891): avc: denied { getattr } for path="/storage" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:18.743  4030  4030 W FileTracer: type=1400 audit(0.0:3892): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:18.743  4030  4030 W FileTracer: type=1400 audit(0.0:3893): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:20.486  4059  4059 W encent.mobileqq: type=1400 audit(0.0:4071): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:20.486  4059  4059 W encent.mobileqq: type=1400 audit(0.0:4072): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:20.486  4059  4059 W encent.mobileqq: type=1400 audit(0.0:4073): avc: denied { getattr } for path="/storage" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:20.486  4059  4059 W encent.mobileqq: type=1400 audit(0.0:4074): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
-02-22 17:41:20.486  4059  4059 W encent.mobileqq: type=1400 audit(0.0:4075): avc: denied { search } for name="9876" dev="tmpfs" ino=51042 scontext=u:r:untrusted_app_27:s0:c660,c806 tcontext=u:object_r:mnt_pass_through_file:s0 tclass=dir permissive=0
 
 
 
-boolean isCloneapp =false;
-String[] packageNames= {"com.tencent.mm","com.taobao.taobao","com.tencent.mobileqq","com.android.gallery3d"};
-
-for (String s : packageNames) {
-    if (s.equals(pkg.packageName)){
-        isCloneapp = true;
-    }
-}
-
-if(isCloneAppForCommon(pkg.packageName)) {
-    int index = pkg.requestedPermissions.indexOf(INTERACT_ACROSS_USERS_FULL_PERMISSION);
-    if (index == -1) {
-        pkg.requestedPermissions.add(INTERACT_ACROSS_USERS_FULL_PERMISSION);
-    }
-
-    index = pkg.requestedPermissions.indexOf(INTERACT_ACROSS_USERS_PERMISSION);
-    if (index == -1) {
-        pkg.requestedPermissions.add(INTERACT_ACROSS_USERS_PERMISSION);
-    }
-    Slog.w(TAG, " -add -INTERACT_ACROSS_USERS_FULL_PERMISSION packageNames = " + pkg.packageName);
-}
 
 
-//            boolean isCloneapp =false;
-//            String[] packageNames= {"com.tencent.mm","com.taobao.taobao","com.tencent.mobileqq","com.android.gallery3d"};
-//            for (String s : packageNames) {
-//                if (s.equals(pkg.getPackageName())){
-//                    isCloneapp = true;
-//                }
-//            }
 
-ScreenRecorder_V1.0.9.zip
 
-17:25:09.620  1532  6320 E DatabaseUtils: Writing exception to parcel
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: java.lang.IllegalArgumentException: You cannot change private secure settings.
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.warnOrThrowForUndesiredSecureSettingsMutationForTargetSdk(SettingsProvider.java:2150)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.enforceRestrictedSystemSettingsMutationForCallingPackage(SettingsProvider.java:1937)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.mutateSystemSetting(SettingsProvider.java:1764)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.insertSystemSetting(SettingsProvider.java:1717)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at com.android.providers.settings.SettingsProvider.call(SettingsProvider.java:413)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.content.ContentProvider.call(ContentProvider.java:2455)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.content.ContentProvider$Transport.call(ContentProvider.java:518)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.content.ContentProviderNative.onTransact(ContentProviderNative.java:295)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.os.Binder.execTransactInternal(Binder.java:1159)
-03-02 17:25:09.620  1532  6320 E DatabaseUtils: 	at android.os.Binder.execTransact(Binder.java:1123)
-03-02 17:25:10.154  1532  1555 D ColorDisplayService: DisplayWhiteBalanceTintController Animation cancelled: false to matrix:
-03-02 17:25:10.154  1532  1555 D ColorDisplayService:        0.978310-0.000463 0.000091 0.000000 0.015711 0.955448 0.000325 0.000000 0.000268-0.000757 0.999584 0.000000 0.000000 0.000000 0.000000 1.000000 min matrix coefficients:
-03-02 17:25:10.154  1532  1555 D ColorDisplayService:        0.974188-0.000742-0.000178 0.000000 0.015711 0.937279-0.000175 0.000000 0.000268-0.000757 0.929254 0.000000 0.000000 0.000000 0.000000 1.000000 max matrix coefficients:
-03-02 17:25:10.154  1532  1555 D ColorDisplayService:        0.978310 0.000000 0.000091 0.000000 0.025372 0.955448 0.000325 0.000000 0.000440 0.000138 0.999584 0.000000 0.000000 0.000000 0.000000 1.000000
-03-02 17:25:10.396   942  1035 D VSC     : @ 1026.659: [WO] tilt angle 84
+
+1.WiFi/BT/GPS/FM四合一模块
+2.fingerprint(指纹)
+3. 系统启动
+4. sensor/NFC   通信框架工程师
+
+任职要求:
+1.本科及以上学历，计算机相关专业；
+2.熟悉Linux和Android体系架构，熟悉操作系统原理；
+3.熟悉ARM体系机构以及总线接口协议，具备硬件基础知识，能看懂原理图，会使用示波器；
+4.精通Linux下的CCjava开发；
+6.良好的英语读、写能力，有良好的团队精神和敬业精神。 
+
+有以下工作经验之一者优先
+1.有WiFi/BT/GPS/FM四合一模块工作经验
+2.有fingerprint(指纹)模块工作经验
+3. 有lk，kernel系统启动模块工作经验
+4. 有sensor/NFC   通信框架工作经
+
+
+岗位要求：
+1.熟悉Modem/RIL/PRC等部分技术；
+2.有高通平台Modem的开发经验，熟悉高通平台modem架构；
+3.3年以上通信产品研发工作经验，熟悉3GPP或者3GPP2协议，熟悉GSM/WCDMA/1x/EVDO/LTE/USIM相关通信协议，有搜网注册、PS域业务、CS域业务（通话，短信，补充业务等等）等经验者优先；
+4.通信与电子、计算机相关专业，了解通信原理，本科以上学历。
+岗位职责：
+1.负责4G、5G协议研究；
+2.Modem技术架构深度优化；
+3.解决网络稳定性和功耗问题；
+4.负责智能产品modem侧软件的开发、调试以及维护工作；
+5.负责modem侧QCN和MBN的管理与维护；
+6.参与涉及协议相关的需求评估、分析、设计及实现；
+7.负责分析处理CDMA/GSM/WCDMA/TDSCDMA/LTE相关协议认证及外场问题，解决问题或者给出优化设计方案并设计实现。；
+8.RF的driver调试；
+9.提出新的技术研究方向，撰写核心专利、标准提案。
+
+
+
+1.熟悉Modem/RIL/PRC等部分技术；
+2.有高通平台Modem的开发经验，熟悉高通平台modem架构；
+3.3年以上通信产品研发工作经验，熟悉3GPP或者3GPP2协议，熟悉GSM/WCDMA/1x/EVDO/LTE/USIM相关通信协议，有搜网注册、PS域业务、CS域业务（通话，短信，补充业务等等）等经验者优先；
+4.通信与电子、计算机相关专业，了解通信原理，本科以上学历；
+岗位职责：
+1.负责4G、5G协议研究；FlipCover 应用是配合 twin 手机皮套使用的 apk 。 在盖上皮套之后,可以更好的显示提示信
+息和 music play 的操作,这个文档主要介绍 FlipCover 的工作原理和实现方法。
+2.Modem技术架构深度优化；
+3.解决网络稳定性和功耗问题；
+4.负责智能产品modem侧软件的开发、调试以及维护工作；
+5.负责modem侧QCN和MBN的管理与维护；
+6.参与涉及协议相关的需求评估、分析、设计及实现；
+7.负责分析处理CDMA/GSM/WCDMA/TDSCDMA/LTE相关协议认证及外场问题，解决问题或者给出优化设计方案并设计实现。
+8.RF的driver调试
+9.提出新的技术研究方向，撰写核心专利、标准提案；
+
+
+FlipCover 应用是配合 twin 手机皮套使用的 apk 。 在盖上皮套之后,可以更好的显示提示信
+息和 music play 的操作,这个文档主要介绍 FlipCover 的工作原理和实现方法。
+xiangmu
+TCL 代号为"twin "手机项目 Android 2.3系统
+Android 手机项目 FlipCover app开发：
+2011年 Android

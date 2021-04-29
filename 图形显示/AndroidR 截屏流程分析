@@ -1,0 +1,906 @@
+## 缘起
+最近App开发同事提出了一个需求，需要系统团队提供一个截屏的时候，可以过滤一些特定Layer中的内容，我这顺便记录一下调试过程。
+
+
+## 流程
+截屏流程一般通过 SurfaceControl.screenshot(frame, dw, dh, false, ROTATION_0);函数返回一个bitmap的图片。
+参数包含裁剪区域sourceCrop 和旋转角度。
+
+frameworks/base/core/java/android/view/SurfaceControl.java
+```
+public static Bitmap screenshot(Rect sourceCrop 和, int width, int height,
+        boolean useIdentityTransform, int rotation) {
+    // TODO: should take the display as a parameter
+    final IBinder displayToken = SurfaceControl.getInternalDisplayToken();
+    if (displayToken == null) {
+        Log.w(TAG, "Failed to take screenshot because internal display is disconnected");
+        return null;
+    }
+
+    if (rotation == ROTATION_90 || rotation == ROTATION_270) {
+        rotation = (rotation == ROTATION_90) ? ROTATION_270 : ROTATION_90;
+    }
+
+    SurfaceControl.rotateCropForSF(sourceCrop, rotation);
+    final ScreenshotGraphicBuffer buffer = screenshotToBuffer(displayToken, sourceCrop, width,
+            height, useIdentityTransform, rotation);
+
+    if (buffer == null) {
+        Log.w(TAG, "Failed to take screenshot");
+        return null;
+    }
+    return Bitmap.wrapHardwareBuffer(buffer.getGraphicBuffer(), buffer.getColorSpace());
+}
+```
+值得留意的2点
+1.displayToken  固定截取为第一个物理屏幕设备，如果我们需要截取第2个物理屏怎么办？
+2.通过screenshotToBuffer 会返回一个buf，然后使用Bitmap的warp功能转换成图片上传给app。
+
+这样我们跟踪起来，流程就显得很简单了，我们只需要跟踪buffer（实际是就是一块GraphicBuffer的封装）的流转就好了。
+
+```
+public static ScreenshotGraphicBuffer screenshotToBuffer(IBinder display, Rect sourceCrop,
+        int width, int height, boolean useIdentityTransform, int rotation) {
+    if (display == null) {
+        throw new IllegalArgumentException("displayToken must not be null");
+    }
+
+    return nativeScreenshot(display, sourceCrop, width, height, useIdentityTransform, rotation,
+            false /* captureSecureLayers */);
+}
+```
+
+nativeScreenshot 是一个native函数，通过jni进入native世界
+frameworks/base/core/jni/android_view_SurfaceControl.cpp
+```
+static jobject nativeScreenshot(JNIEnv* env, jclass clazz,
+        jobject displayTokenObj, jobject sourceCropObj, jint width, jint height,
+        bool useIdentityTransform, int rotation, bool captureSecureLayers) {
+    sp<IBinder> displayToken = ibinderForJavaObject(env, displayTokenObj);
+    if (displayToken == NULL) {
+        return NULL;
+    }
+    const ui::ColorMode colorMode = SurfaceComposerClient::getActiveColorMode(displayToken);
+    const ui::Dataspace dataspace = pickDataspaceFromColorMode(colorMode);
+
+    Rect sourceCrop = rectFromObj(env, sourceCropObj);
+    sp<GraphicBuffer> buffer;
+    bool capturedSecureLayers = false;
+    status_t res = ScreenshotClient::capture(displayToken, dataspace,
+            ui::PixelFormat::RGBA_8888,
+            sourceCrop, width, height,
+            useIdentityTransform, ui::toRotation(rotation),
+            captureSecureLayers, &buffer, capturedSecureLayers);
+    if (res != NO_ERROR) {
+        return NULL;
+    }
+
+    const jint namedColorSpace = fromDataspaceToNamedColorSpaceValue(dataspace);
+    return env->CallStaticObjectMethod(gScreenshotGraphicBufferClassInfo.clazz,
+            gScreenshotGraphicBufferClassInfo.builder,
+            buffer->getWidth(),
+            buffer->getHeight(),
+            buffer->getPixelFormat(),
+            (jint)buffer->getUsage(),
+            (jlong)buffer.get(),
+            namedColorSpace,
+            capturedSecureLayers);
+}
+
+```
+ScreenshotClient::capture 为static函数，最终通过getComposerService函数调用SurfaceFlinger的captureScreen函数。
+env->CallStaticObjectMethod 是native层调用静态java的方法，把native的GraphicBuffer  buffer对象转化成java层的 ScreenshotGraphicBuffer对象，上传到app。
+
+```
+status_t ScreenshotClient::capture(const sp<IBinder>& display, ui::Dataspace reqDataSpace,
+                                   ui::PixelFormat reqPixelFormat, const Rect& sourceCrop,
+                                   uint32_t reqWidth, uint32_t reqHeight, bool useIdentityTransform,
+                                   ui::Rotation rotation, bool captureSecureLayers,
+                                   sp<GraphicBuffer>* outBuffer, bool& outCapturedSecureLayers) {
+    sp<ISurfaceComposer> s(ComposerService::getComposerService());
+    if (s == nullptr) return NO_INIT;
+    status_t ret = s->captureScreen(display, outBuffer, outCapturedSecureLayers, reqDataSpace,
+                                    reqPixelFormat, sourceCrop, reqWidth, reqHeight,
+                                    useIdentityTransform, rotation, captureSecureLayers);
+    if (ret != NO_ERROR) {
+        return ret;
+    }
+    return ret;
+}
+
+```
+其中ComposerService s 服务实际上就是Surfaceflinger，如下
+
+frameworks/native/libs/gui/SurfaceComposerClient.cpp
+```
+ComposerService::ComposerService()
+: Singleton<ComposerService>() {
+    Mutex::Autolock _l(mLock);
+    connectLocked();
+}
+
+void ComposerService::connectLocked() {
+    const String16 name("SurfaceFlinger");
+    while (getService(name, &mComposerService) != NO_ERROR) {
+        usleep(250000);
+  }
+
+```
+所以这里通过binder 调用SurfaceFlinger 进程的captureScreen函数。
+
+```
+status_t SurfaceFlinger::captureScreen(const sp<IBinder>& displayToken,
+                                       sp<GraphicBuffer>* outBuffer, bool& outCapturedSecureLayers,
+                                       Dataspace reqDataspace, ui::PixelFormat reqPixelFormat,
+                                       const Rect& sourceCrop, uint32_t reqWidth,
+                                       uint32_t reqHeight, bool useIdentityTransform,
+                                       ui::Rotation rotation, bool captureSecureLayers) {
+    ATRACE_CALL();
+
+    if (!displayToken) return BAD_VALUE;
+
+    auto renderAreaRotation = ui::Transform::toRotationFlags(rotation);
+    if (renderAreaRotation == ui::Transform::ROT_INVALID) {
+        ALOGE("%s: Invalid rotation: %s", __FUNCTION__, toCString(rotation));
+        renderAreaRotation = ui::Transform::ROT_0;
+    }
+
+    sp<DisplayDevice> display;
+    {
+        Mutex::Autolock lock(mStateLock);
+
+        display = getDisplayDeviceLocked(displayToken);
+        if (!display) return NAME_NOT_FOUND;
+
+        // set the requested width/height to the logical display viewport size
+        // by default
+        if (reqWidth == 0 || reqHeight == 0) {
+            reqWidth = uint32_t(display->getViewport().width());
+            reqHeight = uint32_t(display->getViewport().height());
+        }
+    }
+
+    DisplayRenderArea renderArea(display, sourceCrop, reqWidth, reqHeight, reqDataspace,
+                                 renderAreaRotation, captureSecureLayers);
+    auto traverseLayers = std::bind(&SurfaceFlinger::traverseLayersInDisplay, this, display,
+                                    std::placeholders::_1);
+    return captureScreenCommon(renderArea, traverseLayers, outBuffer, reqPixelFormat,
+                               useIdentityTransform, outCapturedSecureLayers);
+}
+```
+主要工作都是在captureScreenCommon函数中完成，其他都是一些Display和RenderArea区域的赋值。
+在看captureScreenCommon之前，我们看一下参数 traverseLayersInDisplay.
+```
+void SurfaceFlinger::traverseLayersInDisplay(const sp<const DisplayDevice>& display,
+                                             const LayerVector::Visitor& visitor) {
+    // We loop through the first level of layers without traversing,
+    // as we need to determine which layers belong to the requested display.
+    for (const auto& layer : mDrawingState.layersSortedByZ) {
+        if (!layer->belongsToDisplay(display->getLayerStack(), false)) {
+            continue;
+        }
+        // relative layers are traversed in Layer::traverseInZOrder
+        layer->traverseInZOrder(LayerVector::StateSet::Drawing, [&](Layer* layer) {
+            if (!layer->belongsToDisplay(display->getLayerStack(), false)) {
+                return;
+            }
+            if (!layer->isVisible()) {
+                return;
+            }
+            visitor(layer);
+        });
+    }
+}
+```
+故名思议，traverseLayersInDisplay的作用是遍历mDrawingState 中可用的layer .后面通过opengl把每层layer的内容绘制到buff中，当然这是后话。
+
+我们接着看captureScreenCommon，最终调用renderScreenImplLocked函数
+
+```
+void SurfaceFlinger::renderScreenImplLocked(const RenderArea& renderArea,
+                                            TraverseLayersFunction traverseLayers,
+                                            ANativeWindowBuffer* buffer, bool useIdentityTransform,
+                                            bool regionSampling, int* outSyncFd) {
+    ATRACE_CALL();
+
+    const auto reqWidth = renderArea.getReqWidth();
+    const auto reqHeight = renderArea.getReqHeight();
+    const auto sourceCrop = renderArea.getSourceCrop();
+    const auto transform = renderArea.getTransform();
+    const auto rotation = renderArea.getRotationFlags();
+    const auto& displayViewport = renderArea.getDisplayViewport();
+
+    renderengine::DisplaySettings clientCompositionDisplay;
+    std::vector<compositionengine::LayerFE::LayerSettings> clientCompositionLayers;
+
+    // assume that bounds are never offset, and that they are the same as the
+    // buffer bounds.
+    clientCompositionDisplay.physicalDisplay = Rect(reqWidth, reqHeight);
+    clientCompositionDisplay.clip = sourceCrop;
+    clientCompositionDisplay.orientation = rotation;
+
+    clientCompositionDisplay.outputDataspace = renderArea.getReqDataSpace();
+    clientCompositionDisplay.maxLuminance = DisplayDevice::sDefaultMaxLumiance;
+
+    const float alpha = RenderArea::getCaptureFillValue(renderArea.getCaptureFill());
+
+    compositionengine::LayerFE::LayerSettings fillLayer;
+    fillLayer.source.buffer.buffer = nullptr;
+    fillLayer.source.solidColor = half3(0.0, 0.0, 0.0);
+    fillLayer.geometry.boundaries =
+            FloatRect(sourceCrop.left, sourceCrop.top, sourceCrop.right, sourceCrop.bottom);
+    fillLayer.alpha = half(alpha);
+    clientCompositionLayers.push_back(fillLayer);
+
+    const auto display = renderArea.getDisplayDevice();
+    std::vector<Layer*> renderedLayers;
+    Region clearRegion = Region::INVALID_REGION;
+    traverseLayers([&](Layer* layer) {
+        const bool supportProtectedContent = false;
+        Region clip(renderArea.getBounds());
+        compositionengine::LayerFE::ClientCompositionTargetSettings targetSettings{
+                clip,
+                useIdentityTransform,
+                layer->needsFilteringForScreenshots(display.get(), transform) ||
+                        renderArea.needsFiltering(),
+                renderArea.isSecure(),
+                supportProtectedContent,
+                clearRegion,
+                displayViewport,
+                clientCompositionDisplay.outputDataspace,
+                true,  /* realContentIsVisible */
+                false, /* clearContent */
+        };
+        std::vector<compositionengine::LayerFE::LayerSettings> results =
+                layer->prepareClientCompositionList(targetSettings);
+        if (results.size() > 0) {
+            for (auto& settings : results) {
+                settings.geometry.positionTransform =
+                        transform.asMatrix4() * settings.geometry.positionTransform;
+                // There's no need to process blurs when we're executing region sampling,
+                // we're just trying to understand what we're drawing, and doing so without
+                // blurs is already a pretty good approximation.
+                if (regionSampling) {
+                    settings.backgroundBlurRadius = 0;
+                }
+            }
+            clientCompositionLayers.insert(clientCompositionLayers.end(),
+                                           std::make_move_iterator(results.begin()),
+                                           std::make_move_iterator(results.end()));
+            renderedLayers.push_back(layer);
+        }
+    });
+
+    std::vector<const renderengine::LayerSettings*> clientCompositionLayerPointers(
+            clientCompositionLayers.size());
+    std::transform(clientCompositionLayers.begin(), clientCompositionLayers.end(),
+                   clientCompositionLayerPointers.begin(),
+                   std::pointer_traits<renderengine::LayerSettings*>::pointer_to);
+
+    clientCompositionDisplay.clearRegion = clearRegion;
+    // Use an empty fence for the buffer fence, since we just created the buffer so
+    // there is no need for synchronization with the GPU.
+    base::unique_fd bufferFence;
+    base::unique_fd drawFence;
+    //huzy3 add for
+    getRenderEngine().useProtectedContext(false);
+    getRenderEngine().drawLayers(clientCompositionDisplay, clientCompositionLayerPointers, buffer,
+                                 /*useFramebufferCache=*/false, std::move(bufferFence), &drawFence);
+
+    *outSyncFd = drawFence.release();
+
+    if (*outSyncFd >= 0) {
+        sp<Fence> releaseFence = new Fence(dup(*outSyncFd));
+        for (auto* layer : renderedLayers) {
+            layer->onLayerDisplayed(releaseFence);
+        }
+    }
+}
+```
+主要步骤
+
+* 1.通过traverseLayers 把需要合成的layer 添加到 clientCompositionLayers
+
+* 2.调用getRenderEngine().drawLayers 把所有layer通过OpengL 离屏幕渲染绘制到buffer 中。
+
+我们先看看RenderEngine  是什么
+
+```
+renderengine::RenderEngine& SurfaceFlinger::getRenderEngine() const {
+    return mCompositionEngine->getRenderEngine();
+}
+```
+mCompositionEngine对象是在SurfaceFlinger对象初始化的时候创建
+
+```
+SurfaceFlinger::SurfaceFlinger(Factory& factory, SkipInitializationTag)
+      : mFactory(factory),
+        mInterceptor(mFactory.createSurfaceInterceptor(this)),
+        mTimeStats(std::make_shared<impl::TimeStats>()),
+        mFrameTracer(std::make_unique<FrameTracer>()),
+        mEventQueue(mFactory.createMessageQueue()),
+        mCompositionEngine(mFactory.createCompositionEngine()),
+```
+
+```
+std::unique_ptr<compositionengine::CompositionEngine> createCompositionEngine() {
+    return std::make_unique<CompositionEngine>();
+}
+```
+
+```
+renderengine::RenderEngine& CompositionEngine::getRenderEngine() const {
+    return *mRenderEngine.get();
+}
+```
+mRenderEngine 是在Surfaceflinger的init函数中初始化的。
+```
+void SurfaceFlinger::init() {
+    ALOGI(  "SurfaceFlinger's main thread ready to run. "
+            "Initializing graphics H/W...");
+    Mutex::Autolock _l(mStateLock);
+
+    // Get a RenderEngine for the given display / config (can't fail)
+    // TODO(b/77156734): We need to stop casting and use HAL types when possible.
+    // Sending maxFrameBufferAcquiredBuffers as the cache size is tightly tuned to single-display.
+    mCompositionEngine->setRenderEngine(renderengine::RenderEngine::create(
+            renderengine::RenderEngineCreationArgs::Builder()
+                .setPixelFormat(static_cast<int32_t>(defaultCompositionPixelFormat))
+                .setImageCacheSize(maxFrameBufferAcquiredBuffers)
+                .setUseColorManagerment(useColorManagement)
+                .setEnableProtectedContext(enable_protected_contents(false))
+                .setPrecacheToneMapperShaderOnly(false)
+                .setSupportsBackgroundBlur(mSupportsBlur)
+                .setContextPriority(useContextPriority
+                        ? renderengine::RenderEngine::ContextPriority::HIGH
+                        : renderengine::RenderEngine::ContextPriority::MEDIUM)
+                .build()));
+```
+
+
+继续跟踪 RenderEngine 的 create函数
+frameworks/native/libs/renderengine/RenderEngine.cpp
+```
+std::unique_ptr<impl::RenderEngine> RenderEngine::create(const RenderEngineCreationArgs& args) {
+    char prop[PROPERTY_VALUE_MAX];
+    property_get(PROPERTY_DEBUG_RENDERENGINE_BACKEND, prop, "gles");
+    if (strcmp(prop, "gles") == 0) {
+        ALOGD("RenderEngine GLES Backend");
+        return renderengine::gl::GLESRenderEngine::create(args);
+    }
+    ALOGE("UNKNOWN BackendType: %s, create GLES RenderEngine.", prop);
+    return renderengine::gl::GLESRenderEngine::create(args);
+}
+
+```
+
+frameworks/native/libs/renderengine/gl/GLESRenderEngine.cpp
+
+```
+std::unique_ptr<GLESRenderEngine> GLESRenderEngine::create(const RenderEngineCreationArgs& args) {
+    // initialize EGL for the default display
+    EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (!eglInitialize(display, nullptr, nullptr)) {
+        LOG_ALWAYS_FATAL("failed to initialize EGL");
+    }
+
+    const auto eglVersion = eglQueryStringImplementationANDROID(display, EGL_VERSION);
+    if (!eglVersion) {
+        checkGlError(__FUNCTION__, __LINE__);
+        LOG_ALWAYS_FATAL("eglQueryStringImplementationANDROID(EGL_VERSION) failed");
+    }
+
+    const auto eglExtensions = eglQueryStringImplementationANDROID(display, EGL_EXTENSIONS);
+    if (!eglExtensions) {
+        checkGlError(__FUNCTION__, __LINE__);
+        LOG_ALWAYS_FATAL("eglQueryStringImplementationANDROID(EGL_EXTENSIONS) failed");
+    }
+
+    GLExtensions& extensions = GLExtensions::getInstance();
+    extensions.initWithEGLStrings(eglVersion, eglExtensions);
+
+    // The code assumes that ES2 or later is available if this extension is
+    // supported.
+    EGLConfig config = EGL_NO_CONFIG;
+    if (!extensions.hasNoConfigContext()) {
+        config = chooseEglConfig(display, args.pixelFormat, /*logConfig*/ true);
+    }
+
+    bool useContextPriority =
+            extensions.hasContextPriority() && args.contextPriority == ContextPriority::HIGH;
+    EGLContext protectedContext = EGL_NO_CONTEXT;
+    if (args.enableProtectedContext && extensions.hasProtectedContent()) {
+        protectedContext = createEglContext(display, config, nullptr, useContextPriority,
+                                            Protection::PROTECTED);
+        ALOGE_IF(protectedContext == EGL_NO_CONTEXT, "Can't create protected context");
+    }
+
+    EGLContext ctxt = createEglContext(display, config, protectedContext, useContextPriority,
+                                       Protection::UNPROTECTED);
+
+    // if can't create a GL context, we can only abort.
+    LOG_ALWAYS_FATAL_IF(ctxt == EGL_NO_CONTEXT, "EGLContext creation failed");
+
+    EGLSurface dummy = EGL_NO_SURFACE;
+    if (!extensions.hasSurfacelessContext()) {
+        dummy = createDummyEglPbufferSurface(display, config, args.pixelFormat,
+                                             Protection::UNPROTECTED);
+        LOG_ALWAYS_FATAL_IF(dummy == EGL_NO_SURFACE, "can't create dummy pbuffer");
+    }
+    EGLBoolean success = eglMakeCurrent(display, dummy, dummy, ctxt);
+    LOG_ALWAYS_FATAL_IF(!success, "can't make dummy pbuffer current");
+    extensions.initWithGLStrings(glGetString(GL_VENDOR), glGetString(GL_RENDERER),
+                                 glGetString(GL_VERSION), glGetString(GL_EXTENSIONS));
+
+    EGLSurface protectedDummy = EGL_NO_SURFACE;
+    if (protectedContext != EGL_NO_CONTEXT && !extensions.hasSurfacelessContext()) {
+        protectedDummy = createDummyEglPbufferSurface(display, config, args.pixelFormat,
+                                                      Protection::PROTECTED);
+        ALOGE_IF(protectedDummy == EGL_NO_SURFACE, "can't create protected dummy pbuffer");
+    }
+
+    // now figure out what version of GL did we actually get
+    GlesVersion version = parseGlesVersion(extensions.getVersion());
+
+    LOG_ALWAYS_FATAL_IF(args.supportsBackgroundBlur && version < GLES_VERSION_3_0,
+        "Blurs require OpenGL ES 3.0. Please unset ro.surface_flinger.supports_background_blur");
+
+    // initialize the renderer while GL is current
+    std::unique_ptr<GLESRenderEngine> engine;
+    switch (version) {
+        case GLES_VERSION_1_0:
+        case GLES_VERSION_1_1:
+            LOG_ALWAYS_FATAL("SurfaceFlinger requires OpenGL ES 2.0 minimum to run.");
+            break;
+        case GLES_VERSION_2_0:
+        case GLES_VERSION_3_0:
+            engine = std::make_unique<GLESRenderEngine>(args, display, config, ctxt, dummy,
+                                                        protectedContext, protectedDummy);
+            break;
+    }
+
+    ALOGI("OpenGL ES informations:");
+    ALOGI("vendor    : %s", extensions.getVendor());
+    ALOGI("renderer  : %s", extensions.getRenderer());
+    ALOGI("version   : %s", extensions.getVersion());
+    ALOGI("extensions: %s", extensions.getExtensions());
+    ALOGI("GL_MAX_TEXTURE_SIZE = %zu", engine->getMaxTextureSize());
+    ALOGI("GL_MAX_VIEWPORT_DIMS = %zu", engine->getMaxViewportDims());
+
+    return engine;
+}
+```
+可以看到renderengine 为OPENGL 渲染引擎GLESRenderEngine对象。其中几个重要EGL变量，这个简单介绍一下
+* EGLDisplay ——系统显示 ID 或句柄，可以理解为一个前端的显示窗口
+* EGLConfig ——Surface的EGL配置，可以理解为绘制目标framebuffer的配置属性
+* EGLSurface ——系统窗口或 frame buffer 句柄 ，可以理解为一个后端的渲染目标窗口。
+* EGLContext ——OpenGL ES 图形上下文，它代表了OpenGL状态机；如果没有它，OpenGL指令就没有执行的环境。
+
+关于Android OPENGL和EGL后面会另起文章介绍。上面找一大圈，  主要得到getRenderEngine().drawLayers函数，最终会实现是GLESRenderEngine中的drawLayers函数。
+
+```
+status_t GLESRenderEngine::drawLayers(const DisplaySettings& display,
+                                      const std::vector<const LayerSettings*>& layers,
+                                      ANativeWindowBuffer* const buffer,
+                                      const bool useFramebufferCache, base::unique_fd&& bufferFence,
+                                      base::unique_fd* drawFence) {
+    ATRACE_CALL();
+    if (layers.empty()) {
+        ALOGV("Drawing empty layer stack");
+        return NO_ERROR;
+    }
+
+    if (bufferFence.get() >= 0) {
+        // Duplicate the fence for passing to waitFence.
+        base::unique_fd bufferFenceDup(dup(bufferFence.get()));
+        if (bufferFenceDup < 0 || !waitFence(std::move(bufferFenceDup))) {
+            ATRACE_NAME("Waiting before draw");
+            sync_wait(bufferFence.get(), -1);
+        }
+    }
+
+    if (buffer == nullptr) {
+        ALOGE("No output buffer provided. Aborting GPU composition.");
+        return BAD_VALUE;
+    }
+
+    std::unique_ptr<BindNativeBufferAsFramebuffer> fbo;
+    // Gathering layers that requested blur, we'll need them to decide when to render to an
+    // offscreen buffer, and when to render to the native buffer.
+    std::deque<const LayerSettings*> blurLayers;
+    if (CC_LIKELY(mBlurFilter != nullptr)) {
+        for (auto layer : layers) {
+            if (layer->backgroundBlurRadius > 0) {
+                blurLayers.push_back(layer);
+            }
+        }
+    }
+    const auto blurLayersSize = blurLayers.size();
+
+    if (blurLayersSize == 0) {
+        fbo = std::make_unique<BindNativeBufferAsFramebuffer>(*this, buffer, useFramebufferCache);
+        if (fbo->getStatus() != NO_ERROR) {
+            ALOGE("Failed to bind framebuffer! Aborting GPU composition for buffer (%p).",
+                  buffer->handle);
+            checkErrors();
+            return fbo->getStatus();
+        }
+        setViewportAndProjection(display.physicalDisplay, display.clip);
+    } else {
+        setViewportAndProjection(display.physicalDisplay, display.clip);
+        auto status =
+                mBlurFilter->setAsDrawTarget(display, blurLayers.front()->backgroundBlurRadius);
+        if (status != NO_ERROR) {
+            ALOGE("Failed to prepare blur filter! Aborting GPU composition for buffer (%p).",
+                  buffer->handle);
+            checkErrors();
+            return status;
+        }
+    }
+
+    // clear the entire buffer, sometimes when we reuse buffers we'd persist
+    // ghost images otherwise.
+    // we also require a full transparent framebuffer for overlays. This is
+    // probably not quite efficient on all GPUs, since we could filter out
+    // opaque layers.
+    clearWithColor(0.0, 0.0, 0.0, 0.0);
+
+    setOutputDataSpace(display.outputDataspace);
+    setDisplayMaxLuminance(display.maxLuminance);
+
+    const mat4 projectionMatrix =
+            ui::Transform(display.orientation).asMatrix4() * mState.projectionMatrix;
+    if (!display.clearRegion.isEmpty()) {
+        glDisable(GL_BLEND);
+        fillRegionWithColor(display.clearRegion, 0.0, 0.0, 0.0, 1.0);
+    }
+
+    Mesh mesh = Mesh::Builder()
+                        .setPrimitive(Mesh::TRIANGLE_FAN)
+                        .setVertices(4 /* count */, 2 /* size */)
+                        .setTexCoords(2 /* size */)
+                        .setCropCoords(2 /* size */)
+                        .build();
+    for (auto const layer : layers) {
+        if (blurLayers.size() > 0 && blurLayers.front() == layer) {
+            blurLayers.pop_front();
+
+            auto status = mBlurFilter->prepare();
+            if (status != NO_ERROR) {
+                ALOGE("Failed to render blur effect! Aborting GPU composition for buffer (%p).",
+                      buffer->handle);
+                checkErrors("Can't render first blur pass");
+                return status;
+            }
+
+            if (blurLayers.size() == 0) {
+                // Done blurring, time to bind the native FBO and render our blur onto it.
+                fbo = std::make_unique<BindNativeBufferAsFramebuffer>(*this, buffer,
+                                                                      useFramebufferCache);
+                status = fbo->getStatus();
+                setViewportAndProjection(display.physicalDisplay, display.clip);
+            } else {
+                // There's still something else to blur, so let's keep rendering to our FBO
+                // instead of to the display.
+                status = mBlurFilter->setAsDrawTarget(display,
+                                                      blurLayers.front()->backgroundBlurRadius);
+            }
+            if (status != NO_ERROR) {
+                ALOGE("Failed to bind framebuffer! Aborting GPU composition for buffer (%p).",
+                      buffer->handle);
+                checkErrors("Can't bind native framebuffer");
+                return status;
+            }
+
+            status = mBlurFilter->render(blurLayersSize > 1);
+            if (status != NO_ERROR) {
+                ALOGE("Failed to render blur effect! Aborting GPU composition for buffer (%p).",
+                      buffer->handle);
+                checkErrors("Can't render blur filter");
+                return status;
+            }
+        }
+
+        mState.maxMasteringLuminance = layer->source.buffer.maxMasteringLuminance;
+        mState.maxContentLuminance = layer->source.buffer.maxContentLuminance;
+        mState.projectionMatrix = projectionMatrix * layer->geometry.positionTransform;
+
+        const FloatRect bounds = layer->geometry.boundaries;
+        Mesh::VertexArray<vec2> position(mesh.getPositionArray<vec2>());
+        position[0] = vec2(bounds.left, bounds.top);
+        position[1] = vec2(bounds.left, bounds.bottom);
+        position[2] = vec2(bounds.right, bounds.bottom);
+        position[3] = vec2(bounds.right, bounds.top);
+
+        setupLayerCropping(*layer, mesh);
+        setColorTransform(display.colorTransform * layer->colorTransform);
+
+        bool usePremultipliedAlpha = true;
+        bool disableTexture = true;
+        bool isOpaque = false;
+        if (layer->source.buffer.buffer != nullptr) {
+            disableTexture = false;
+            isOpaque = layer->source.buffer.isOpaque;
+
+            sp<GraphicBuffer> gBuf = layer->source.buffer.buffer;
+            bindExternalTextureBuffer(layer->source.buffer.textureName, gBuf,
+                                      layer->source.buffer.fence);
+
+            usePremultipliedAlpha = layer->source.buffer.usePremultipliedAlpha;
+            Texture texture(Texture::TEXTURE_EXTERNAL, layer->source.buffer.textureName);
+            mat4 texMatrix = layer->source.buffer.textureTransform;
+
+            texture.setMatrix(texMatrix.asArray());
+            texture.setFiltering(layer->source.buffer.useTextureFiltering);
+
+            texture.setDimensions(gBuf->getWidth(), gBuf->getHeight());
+            setSourceY410BT2020(layer->source.buffer.isY410BT2020);
+
+            renderengine::Mesh::VertexArray<vec2> texCoords(mesh.getTexCoordArray<vec2>());
+            texCoords[0] = vec2(0.0, 0.0);
+            texCoords[1] = vec2(0.0, 1.0);
+            texCoords[2] = vec2(1.0, 1.0);
+            texCoords[3] = vec2(1.0, 0.0);
+            setupLayerTexturing(texture);
+        }
+
+        const half3 solidColor = layer->source.solidColor;
+        const half4 color = half4(solidColor.r, solidColor.g, solidColor.b, layer->alpha);
+        // Buffer sources will have a black solid color ignored in the shader,
+        // so in that scenario the solid color passed here is arbitrary.
+        setupLayerBlending(usePremultipliedAlpha, isOpaque, disableTexture, color,
+                           layer->geometry.roundedCornersRadius);
+        if (layer->disableBlending) {
+            glDisable(GL_BLEND);
+        }
+        setSourceDataSpace(layer->sourceDataspace);
+
+        if (layer->shadow.length > 0.0f) {
+            handleShadow(layer->geometry.boundaries, layer->geometry.roundedCornersRadius,
+                         layer->shadow);
+        }
+        // We only want to do a special handling for rounded corners when having rounded corners
+        // is the only reason it needs to turn on blending, otherwise, we handle it like the
+        // usual way since it needs to turn on blending anyway.
+        else if (layer->geometry.roundedCornersRadius > 0.0 && color.a >= 1.0f && isOpaque) {
+            handleRoundedCorners(display, *layer, mesh);
+        } else {
+            drawMesh(mesh);
+        }
+
+        // Cleanup if there's a buffer source
+        if (layer->source.buffer.buffer != nullptr) {
+            disableBlending();
+            setSourceY410BT2020(false);
+            disableTexturing();
+        }
+    }
+
+    if (drawFence != nullptr) {
+        *drawFence = flush();
+    }
+    // If flush failed or we don't support native fences, we need to force the
+    // gl command stream to be executed.
+    if (drawFence == nullptr || drawFence->get() < 0) {
+        bool success = finish();
+        if (!success) {
+            ALOGE("Failed to flush RenderEngine commands");
+            checkErrors();
+            // Chances are, something illegal happened (either the caller passed
+            // us bad parameters, or we messed up our shader generation).
+            return INVALID_OPERATION;
+        }
+        mLastDrawFence = nullptr;
+    } else {
+        // The caller takes ownership of drawFence, so we need to duplicate the
+        // fd here.
+        mLastDrawFence = new Fence(dup(drawFence->get()));
+    }
+    mPriorResourcesCleaned = false;
+
+    checkErrors();
+    return NO_ERROR;
+}
+```
+
+这里面函数众多，大多是关于opengl的，这里不作介绍，主要是2个步骤
+* mesh相关信息初始化，包括顶点，纹理，纹理坐标 ，crop等。
+* 调用drawMesh(mesh)回执绘制网格。
+
+其中buffer在这函数通过 BindNativeBufferAsFramebuffer 把buff 转化成Framebuffer。
+```
+fbo = std::make_unique<BindNativeBufferAsFramebuffer>(*this, buffer,
+                                                         useFramebufferCache);
+
+```
+并且通过mEngine.bindFrameBuffer(mFramebuffer) ，绑定FBO,一旦FBO被绑定，之后的所有的OpenGL操作都会对当前所绑定的FBO造成影响.
+即之后绘制的内容都会在FBO上面进行。
+```
+class BindNativeBufferAsFramebuffer {
+public:
+    BindNativeBufferAsFramebuffer(RenderEngine& engine, ANativeWindowBuffer* buffer,
+                                  const bool useFramebufferCache)
+          : mEngine(engine), mFramebuffer(mEngine.getFramebufferForDrawing()), mStatus(NO_ERROR) {
+        mStatus = mFramebuffer->setNativeWindowBuffer(buffer, mEngine.isProtected(),
+                                                      useFramebufferCache)
+                ? mEngine.bindFrameBuffer(mFramebuffer)
+                : NO_MEMORY;
+    }
+    ~BindNativeBufferAsFramebuffer() {
+        mFramebuffer->setNativeWindowBuffer(nullptr, false, /*arbitrary*/ true);
+        mEngine.unbindFrameBuffer(mFramebuffer);
+    }
+    status_t getStatus() const { return mStatus; }
+
+private:
+    RenderEngine& mEngine;
+    Framebuffer* mFramebuffer;
+    status_t mStatus;
+};
+```
+
+在opengl里面网格(Mesh)代表的是单个的可绘制实体.
+
+```
+void GLESRenderEngine::drawMesh(const Mesh& mesh) {
+    ATRACE_CALL();
+    if (mesh.getTexCoordsSize()) {
+        glEnableVertexAttribArray(Program::texCoords);
+        glVertexAttribPointer(Program::texCoords, mesh.getTexCoordsSize(), GL_FLOAT, GL_FALSE,
+                              mesh.getByteStride(), mesh.getTexCoords());
+    }
+
+    glVertexAttribPointer(Program::position, mesh.getVertexSize(), GL_FLOAT, GL_FALSE,
+                          mesh.getByteStride(), mesh.getPositions());
+
+    if (mState.cornerRadius > 0.0f) {
+        glEnableVertexAttribArray(Program::cropCoords);
+        glVertexAttribPointer(Program::cropCoords, mesh.getVertexSize(), GL_FLOAT, GL_FALSE,
+                              mesh.getByteStride(), mesh.getCropCoords());
+    }
+
+    if (mState.drawShadows) {
+        glEnableVertexAttribArray(Program::shadowColor);
+        glVertexAttribPointer(Program::shadowColor, mesh.getShadowColorSize(), GL_FLOAT, GL_FALSE,
+                              mesh.getByteStride(), mesh.getShadowColor());
+
+        glEnableVertexAttribArray(Program::shadowParams);
+        glVertexAttribPointer(Program::shadowParams, mesh.getShadowParamsSize(), GL_FLOAT, GL_FALSE,
+                              mesh.getByteStride(), mesh.getShadowParams());
+    }
+
+    Description managedState = mState;
+    // By default, DISPLAY_P3 is the only supported wide color output. However,
+    // when HDR content is present, hardware composer may be able to handle
+    // BT2020 data space, in that case, the output data space is set to be
+    // BT2020_HLG or BT2020_PQ respectively. In GPU fall back we need
+    // to respect this and convert non-HDR content to HDR format.
+    if (mUseColorManagement) {
+        Dataspace inputStandard = static_cast<Dataspace>(mDataSpace & Dataspace::STANDARD_MASK);
+        Dataspace inputTransfer = static_cast<Dataspace>(mDataSpace & Dataspace::TRANSFER_MASK);
+        Dataspace outputStandard =
+                static_cast<Dataspace>(mOutputDataSpace & Dataspace::STANDARD_MASK);
+        Dataspace outputTransfer =
+                static_cast<Dataspace>(mOutputDataSpace & Dataspace::TRANSFER_MASK);
+        bool needsXYZConversion = needsXYZTransformMatrix();
+
+        // NOTE: if the input standard of the input dataspace is not STANDARD_DCI_P3 or
+        // STANDARD_BT2020, it will be  treated as STANDARD_BT709
+        if (inputStandard != Dataspace::STANDARD_DCI_P3 &&
+            inputStandard != Dataspace::STANDARD_BT2020) {
+            inputStandard = Dataspace::STANDARD_BT709;
+        }
+
+        if (needsXYZConversion) {
+            // The supported input color spaces are standard RGB, Display P3 and BT2020.
+            switch (inputStandard) {
+                case Dataspace::STANDARD_DCI_P3:
+                    managedState.inputTransformMatrix = mDisplayP3ToXyz;
+                    break;
+                case Dataspace::STANDARD_BT2020:
+                    managedState.inputTransformMatrix = mBt2020ToXyz;
+                    break;
+                default:
+                    managedState.inputTransformMatrix = mSrgbToXyz;
+                    break;
+            }
+
+            // The supported output color spaces are BT2020, Display P3 and standard RGB.
+            switch (outputStandard) {
+                case Dataspace::STANDARD_BT2020:
+                    managedState.outputTransformMatrix = mXyzToBt2020;
+                    break;
+                case Dataspace::STANDARD_DCI_P3:
+                    managedState.outputTransformMatrix = mXyzToDisplayP3;
+                    break;
+                default:
+                    managedState.outputTransformMatrix = mXyzToSrgb;
+                    break;
+            }
+        } else if (inputStandard != outputStandard) {
+            // At this point, the input data space and output data space could be both
+            // HDR data spaces, but they match each other, we do nothing in this case.
+            // In addition to the case above, the input data space could be
+            // - scRGB linear
+            // - scRGB non-linear
+            // - sRGB
+            // - Display P3
+            // - BT2020
+            // The output data spaces could be
+            // - sRGB
+            // - Display P3
+            // - BT2020
+            switch (outputStandard) {
+                case Dataspace::STANDARD_BT2020:
+                    if (inputStandard == Dataspace::STANDARD_BT709) {
+                        managedState.outputTransformMatrix = mSrgbToBt2020;
+                    } else if (inputStandard == Dataspace::STANDARD_DCI_P3) {
+                        managedState.outputTransformMatrix = mDisplayP3ToBt2020;
+                    }
+                    break;
+                case Dataspace::STANDARD_DCI_P3:
+                    if (inputStandard == Dataspace::STANDARD_BT709) {
+                        managedState.outputTransformMatrix = mSrgbToDisplayP3;
+                    } else if (inputStandard == Dataspace::STANDARD_BT2020) {
+                        managedState.outputTransformMatrix = mBt2020ToDisplayP3;
+                    }
+                    break;
+                default:
+                    if (inputStandard == Dataspace::STANDARD_DCI_P3) {
+                        managedState.outputTransformMatrix = mDisplayP3ToSrgb;
+                    } else if (inputStandard == Dataspace::STANDARD_BT2020) {
+                        managedState.outputTransformMatrix = mBt2020ToSrgb;
+                    }
+                    break;
+            }
+        }
+
+        // we need to convert the RGB value to linear space and convert it back when:
+        // - there is a color matrix that is not an identity matrix, or
+        // - there is an output transform matrix that is not an identity matrix, or
+        // - the input transfer function doesn't match the output transfer function.
+        if (managedState.hasColorMatrix() || managedState.hasOutputTransformMatrix() ||
+            inputTransfer != outputTransfer) {
+            managedState.inputTransferFunction =
+                    Description::dataSpaceToTransferFunction(inputTransfer);
+            managedState.outputTransferFunction =
+                    Description::dataSpaceToTransferFunction(outputTransfer);
+        }
+    }
+
+    ProgramCache::getInstance().useProgram(mInProtectedContext ? mProtectedEGLContext : mEGLContext,
+                                           managedState);
+
+    if (mState.drawShadows) {
+        glDrawElements(mesh.getPrimitive(), mesh.getIndexCount(), GL_UNSIGNED_SHORT,
+                       mesh.getIndices());
+    } else {
+        glDrawArrays(mesh.getPrimitive(), 0, mesh.getVertexCount());
+    }
+
+    if (mUseColorManagement && outputDebugPPMs) {
+        static uint64_t managedColorFrameCount = 0;
+        std::ostringstream out;
+        out << "/data/texture_out" << managedColorFrameCount++;
+        writePPM(out.str().c_str(), mVpWidth, mVpHeight);
+    }
+
+    if (mesh.getTexCoordsSize()) {
+        glDisableVertexAttribArray(Program::texCoords);
+    }
+
+    if (mState.cornerRadius > 0.0f) {
+        glDisableVertexAttribArray(Program::cropCoords);
+    }
+
+    if (mState.drawShadows) {
+        glDisableVertexAttribArray(Program::shadowColor);
+        glDisableVertexAttribArray(Program::shadowParams);
+    }
+}
+```
+最终执行绘制 的是 glDrawElements 或者glDrawArrays 函数。到此绘制流程已经完成。
+
+# 总结
+
+![](image/screenshot.png)

@@ -1,0 +1,386 @@
+对于HWC 合成流程的颜色处理，我们直接从Display::setColorTransform函数开始。
+
+frameworks/native/services/surfaceflinger/CompositionEngine/src/Display.cpp
+
+```
+void Display::setColorTransform(const compositionengine::CompositionRefreshArgs& args) {
+    Output::setColorTransform(args);
+
+    if (!mId || CC_LIKELY(!args.colorTransformMatrix)) {
+        return;
+    }
+
+    auto& hwc = getCompositionEngine().getHwComposer();
+    status_t result = hwc.setColorTransform(*mId, *args.colorTransformMatrix);
+    ALOGE_IF(result != NO_ERROR, "Failed to set color transform on display \"%s\": %d",
+             mId ? to_string(*mId).c_str() : "", result);
+}
+```
+实际上是调用hwc.setColorTransform 设置的,要知道hwc是什么对象，先得确认getCompositionEngine 是什么.如下
+
+frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+```
+SurfaceFlinger::SurfaceFlinger(Factory& factory, SkipInitializationTag)
+      : mFactory(factory),
+        mInterceptor(mFactory.createSurfaceInterceptor(this)),
+        mTimeStats(std::make_shared<impl::TimeStats>()),
+        mFrameTracer(std::make_unique<FrameTracer>()),
+        mEventQueue(mFactory.createMessageQueue()),
+        mCompositionEngine(mFactory.createCompositionEngine()),
+        mInternalDisplayDensity(getDensityFromProperty("ro.sf.lcd_density", true)),
+        mEmulatedDisplayDensity(getDensityFromProperty("qemu.sf.lcd_density", false)) {}
+
+```
+mCompositionEngine 是通过mFactory.createCompositionEngine() 初始化，如下
+```
+std::unique_ptr<compositionengine::CompositionEngine> createCompositionEngine() {
+    return std::make_unique<CompositionEngine>();
+}
+```
+CompositionEngine 只是一个壳类，他的所有功能，要不是是委托mHwComposer 去实现，要不就是委托mRenderEngine去实现。它的成员都在SurfaceFlinger::init
+中初始化，也包括HwComposer.
+
+native/services/surfaceflinger/SurfaceFlinger.cpp
+```
+void SurfaceFlinger::init() {
+    ALOGI(  "SurfaceFlinger's main thread ready to run. "
+            "Initializing graphics H/W...");
+    Mutex::Autolock _l(mStateLock);
+
+    // Get a RenderEngine for the given display / config (can't fail)
+    // TODO(b/77156734): We need to stop casting and use HAL types when possible.
+    // Sending maxFrameBufferAcquiredBuffers as the cache size is tightly tuned to single-display.
+    mCompositionEngine->setRenderEngine(renderengine::RenderEngine::create(
+            renderengine::RenderEngineCreationArgs::Builder()
+                .setPixelFormat(static_cast<int32_t>(defaultCompositionPixelFormat))
+                .setImageCacheSize(maxFrameBufferAcquiredBuffers)
+                .setUseColorManagerment(useColorManagement)
+                .setEnableProtectedContext(enable_protected_contents(false))
+                .setPrecacheToneMapperShaderOnly(false)
+                .setSupportsBackgroundBlur(mSupportsBlur)
+                .setContextPriority(useContextPriority
+                        ? renderengine::RenderEngine::ContextPriority::HIGH
+                        : renderengine::RenderEngine::ContextPriority::MEDIUM)
+                .build()));
+    mCompositionEngine->setTimeStats(mTimeStats);
+
+    LOG_ALWAYS_FATAL_IF(mVrFlingerRequestsDisplay,
+            "Starting with vr flinger active is not currently supported.");
+    mCompositionEngine->setHwComposer(getFactory().createHWComposer(getBE().mHwcServiceName));
+    mCompositionEngine->getHwComposer().setConfiguration(this, getBE().mComposerSequenceId);
+```
+getBE().mHwcServiceName默认为 default
+
+```
+std::unique_ptr<HWComposer> DefaultFactory::createHWComposer(const std::string& serviceName) {
+    return std::make_unique<android::impl::HWComposer>(serviceName);
+}
+
+```
+android::impl::HWComposer 定义在frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.h 里面，
+如下：
+```
+namespace impl {
+
+class HWComposer final : public android::HWComposer {
+public:
+
+    void setConfiguration(HWC2::ComposerCallback* callback, int32_t sequenceId) override;
+
+    bool getDisplayIdentificationData(hal::HWDisplayId hwcDisplayId, uint8_t* outPort,
+                                      DisplayIdentificationData* outData) const override;
+
+    bool hasCapability(hal::Capability capability) const override;
+    bool hasDisplayCapability(DisplayId displayId,
+                              hal::DisplayCapability capability) const override;
+
+    // Attempts to allocate a virtual display and returns its ID if created on the HWC device.
+    std::optional<DisplayId> allocateVirtualDisplay(uint32_t width, uint32_t height,
+                                                    ui::PixelFormat* format) override;
+
+    // Called from SurfaceFlinger, when the state for a new physical display needs to be recreated.
+    void allocatePhysicalDisplay(hal::HWDisplayId hwcDisplayId, DisplayId displayId) override;
+
+    // Attempts to create a new layer on this display
+    HWC2::Layer* createLayer(DisplayId displayId) override;
+    // Destroy a previously created layer
+    void destroyLayer(DisplayId displayId, HWC2::Layer* layer) override;
+
+    status_t getDeviceCompositionChanges(
+            DisplayId, bool frameUsesClientComposition,
+            std::optional<DeviceRequestedChanges>* outChanges) override;
+
+    status_t setClientTarget(DisplayId displayId, uint32_t slot, const sp<Fence>& acquireFence,
+                             const sp<GraphicBuffer>& target, ui::Dataspace dataspace) override;
+
+    // Present layers to the display and read releaseFences.
+    status_t presentAndGetReleaseFences(DisplayId displayId) override;
+
+    // set power mode
+    status_t setPowerMode(DisplayId displayId, hal::PowerMode mode) override;
+
+    // Sets a color transform to be applied to the result of composition
+    status_t setColorTransform(DisplayId displayId, const mat4& transform) override;
+
+    ...
+};
+
+} // namespace impl
+```
+至此 hwc.setColorTransform 函数调用的是如下方法。
+
+frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+```
+status_t HWComposer::setColorTransform(DisplayId displayId, const mat4& transform) {
+    RETURN_IF_INVALID_DISPLAY(displayId, BAD_INDEX);
+
+    auto& displayData = mDisplayData[displayId];
+    bool isIdentity = transform == mat4();
+    auto error = displayData.hwcDisplay
+                         ->setColorTransform(transform,
+                                             isIdentity ? hal::ColorTransform::IDENTITY
+                                                        : hal::ColorTransform::ARBITRARY_MATRIX);
+    RETURN_IF_HWC_ERROR(error, displayId, UNKNOWN_ERROR);
+    return NO_ERROR;
+}
+```
+displayData 为android::impl::HWComposer的一个内部类，这里好找，关键在 displayData.hwcDisplay是什么对象，是在哪里赋值的。
+```
+struct DisplayData {
+  ...
+    std::unique_ptr<HWC2::Display> hwcDisplay;
+};
+
+```
+从HWC2::Display 名字已经可以看出，它是HWC层定义一对象，是一张显示屏的具体实现，用来在HWC层和SurfaceFlinger中进行通讯的桥梁。
+frameworks/native/services/surfaceflinger/DisplayHardware/HWC2.cpp
+```
+void HWComposer::allocatePhysicalDisplay(hal::HWDisplayId hwcDisplayId, DisplayId displayId) {
+    if (!mInternalHwcDisplayId) {
+        mInternalHwcDisplayId = hwcDisplayId;
+    } else if (mInternalHwcDisplayId != hwcDisplayId && !mExternalHwcDisplayId) {
+        mExternalHwcDisplayId = hwcDisplayId;
+    }
+
+    auto& displayData = mDisplayData[displayId];
+    auto newDisplay =
+            std::make_unique<HWC2::impl::Display>(*mComposer.get(), mCapabilities, hwcDisplayId,
+                                                  hal::DisplayType::PHYSICAL);
+    newDisplay->setConnected(true);
+    displayData.hwcDisplay = std::move(newDisplay);
+    mPhysicalDisplayIdMap[hwcDisplayId] = displayId;
+}
+
+```
+此函数实在 HWComposer::onHotplugConnect 的时候调用的，即底层检测LCD屏幕的时候，通过allocatePhysicalDisplay为此LCD分配相应的displayData对象。记住mComposer.get() 对象，后面displayData为HWC2::impl::Display 类的对象，同样定义在HWC2.cpp 中，所以displayData.hwcDisplay->setColorTransform的实现如下：
+
+```
+Error Display::setColorTransform(const android::mat4& matrix, ColorTransform hint) {
+    auto intError = mComposer.setColorTransform(mId, matrix.asArray(), hint);
+    return static_cast<Error>(intError);
+}
+```
+mComposer 最终实现如下，为一个Hwc2::impl::Composer 对象
+
+frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+```
+HWComposer::HWComposer(const std::string& composerServiceName)
+      : mComposer(std::make_unique<Hwc2::impl::Composer>(composerServiceName)) {
+}
+```
+这里已经从android::impl::HWComposer  切换到Hwc2::impl::Composer  命名空间。尴尬现在Pix4L代码的Hwc没有源码，只能MTK基线来了才能分析。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+---
+frameworks/native/services/surfaceflinger/CompositionEngine/src/Output.cpp
+
+```
+void Output::present(const compositionengine::CompositionRefreshArgs& refreshArgs) {
+    ATRACE_CALL();
+    ALOGV(__FUNCTION__);
+
+    updateColorProfile(refreshArgs);
+    updateAndWriteCompositionState(refreshArgs);
+    setColorTransform(refreshArgs);
+    beginFrame();
+    prepareFrame();
+    devOptRepaintFlash(refreshArgs);
+    finishFrame(refreshArgs);
+    postFramebuffer();
+}
+
+```
+
+frameworks/native/services/surfaceflinger/CompositionEngine/src/Output.cpp
+
+```
+void Output::finishFrame(const compositionengine::CompositionRefreshArgs& refreshArgs) {
+    ATRACE_CALL();
+    ALOGV(__FUNCTION__);
+
+    if (!getState().isEnabled) {
+        return;
+    }
+
+    // Repaint the framebuffer (if needed), getting the optional fence for when
+    // the composition completes.
+    auto optReadyFence = composeSurfaces(Region::INVALID_REGION, refreshArgs);
+    if (!optReadyFence) {
+        return;
+    }
+
+    // swap buffers (presentation)
+    mRenderSurface->queueBuffer(std::move(*optReadyFence));
+}
+
+```
+
+
+frameworks/native/services/surfaceflinger/CompositionEngine/src/RenderSurface.cpp
+```
+void RenderSurface::queueBuffer(base::unique_fd readyFence) {
+    auto& state = mDisplay.getState();
+
+    if (state.usesClientComposition || state.flipClientTarget) {
+        // hasFlipClientTargetRequest could return true even if we haven't
+        // dequeued a buffer before. Try dequeueing one if we don't have a
+        // buffer ready.
+        if (mGraphicBuffer == nullptr) {
+            ALOGI("Attempting to queue a client composited buffer without one "
+                  "previously dequeued for display [%s]. Attempting to dequeue "
+                  "a scratch buffer now",
+                  mDisplay.getName().c_str());
+            // We shouldn't deadlock here, since mGraphicBuffer == nullptr only
+            // after a successful call to queueBuffer, or if dequeueBuffer has
+            // never been called.
+            base::unique_fd unused;
+            dequeueBuffer(&unused);
+        }
+
+        if (mGraphicBuffer == nullptr) {
+            ALOGE("No buffer is ready for display [%s]", mDisplay.getName().c_str());
+        } else {
+            status_t result =
+                    mNativeWindow->queueBuffer(mNativeWindow.get(),
+                                               mGraphicBuffer->getNativeBuffer(), dup(readyFence));
+            if (result != NO_ERROR) {
+                ALOGE("Error when queueing buffer for display [%s]: %d", mDisplay.getName().c_str(),
+                      result);
+                // We risk blocking on dequeueBuffer if the primary display failed
+                // to queue up its buffer, so crash here.
+                if (!mDisplay.isVirtual()) {
+                    LOG_ALWAYS_FATAL("ANativeWindow::queueBuffer failed with error: %d", result);
+                } else {
+                    mNativeWindow->cancelBuffer(mNativeWindow.get(),
+                                                mGraphicBuffer->getNativeBuffer(), dup(readyFence));
+                }
+            }
+
+            mGraphicBuffer = nullptr;
+        }
+    }
+
+    status_t result = mDisplaySurface->advanceFrame();
+    if (result != NO_ERROR) {
+        ALOGE("[%s] failed pushing new frame to HWC: %d", mDisplay.getName().c_str(), result);
+    }
+}
+```
+
+
+frameworks/native/services/surfaceflinger/DisplayHardware/FramebufferSurface.cpp
+```
+status_t FramebufferSurface::advanceFrame() {
+    uint32_t slot = 0;
+    sp<GraphicBuffer> buf;
+    sp<Fence> acquireFence(Fence::NO_FENCE);
+    Dataspace dataspace = Dataspace::UNKNOWN;
+    status_t result = nextBuffer(slot, buf, acquireFence, dataspace);
+    mDataSpace = dataspace;
+    if (result != NO_ERROR) {
+        ALOGE("error latching next FramebufferSurface buffer: %s (%d)",
+                strerror(-result), result);
+    }
+    return result;
+}
+```
+
+
+```
+status_t FramebufferSurface::nextBuffer(uint32_t& outSlot,
+        sp<GraphicBuffer>& outBuffer, sp<Fence>& outFence,
+        Dataspace& outDataspace) {
+    Mutex::Autolock lock(mMutex);
+
+    BufferItem item;
+    status_t err = acquireBufferLocked(&item, 0);
+    if (err == BufferQueue::NO_BUFFER_AVAILABLE) {
+        mHwcBufferCache.getHwcBuffer(mCurrentBufferSlot, mCurrentBuffer, &outSlot, &outBuffer);
+        return NO_ERROR;
+    } else if (err != NO_ERROR) {
+        ALOGE("error acquiring buffer: %s (%d)", strerror(-err), err);
+        return err;
+    }
+
+    // If the BufferQueue has freed and reallocated a buffer in mCurrentSlot
+    // then we may have acquired the slot we already own.  If we had released
+    // our current buffer before we call acquireBuffer then that release call
+    // would have returned STALE_BUFFER_SLOT, and we would have called
+    // freeBufferLocked on that slot.  Because the buffer slot has already
+    // been overwritten with the new buffer all we have to do is skip the
+    // releaseBuffer call and we should be in the same state we'd be in if we
+    // had released the old buffer first.
+    if (mCurrentBufferSlot != BufferQueue::INVALID_BUFFER_SLOT &&
+        item.mSlot != mCurrentBufferSlot) {
+        mHasPendingRelease = true;
+        mPreviousBufferSlot = mCurrentBufferSlot;
+        mPreviousBuffer = mCurrentBuffer;
+    }
+    mCurrentBufferSlot = item.mSlot;
+    mCurrentBuffer = mSlots[mCurrentBufferSlot].mGraphicBuffer;
+    mCurrentFence = item.mFence;
+
+    outFence = item.mFence;
+    mHwcBufferCache.getHwcBuffer(mCurrentBufferSlot, mCurrentBuffer, &outSlot, &outBuffer);
+    outDataspace = static_cast<Dataspace>(item.mDataSpace);
+    status_t result = mHwc.setClientTarget(mDisplayId, outSlot, outFence, outBuffer, outDataspace);
+    if (result != NO_ERROR) {
+        ALOGE("error posting framebuffer: %d", result);
+        return result;
+    }
+
+    return NO_ERROR;
+}
+
+```

@@ -1,0 +1,179 @@
+## 广色域照片闪亮登场 Android: 开发者需知两三事
+```
+作者: Lin Peiyong, 软件工程师
+```
+Android 现已迎来新一轮的图像革新，由于 sRGB 的每个色彩通道只有 8 个比特，因此标准 sRGB 色域无法充分体现屏幕与摄像头最新技术的优势所在。Android 一直在努力实现对广色域图像的端到端支持，例如，呈现数据更多、色域更宽的画面。这意味着，用户最终能够捕捉到实景的丰富色彩，在手机上观赏并与朋友分享广色域图片。从 Android Q 开始，这一切将成为可能: 广色域图片即将亮相 Android。因此，让应用做好支持准备极为重要。本文介绍的两项测试可用于判定应用是否具备相应的条件与能力来显示广色域图片。另外，本文还会提供一些技术上的建议，帮助您为应用添加广色域支持。
+
+切入正题之前，让我先解答一下大家的疑惑: 为什么要支持广色域呢？实际上，移动设备的屏幕与摄像头传感器每年都在更新换代，越来越多的新机型即将搭载校准显示面板，其中部分还会提供广色域支持。现代摄像头感应器能够捕捉到 sRGB 范围以外的颜色，然后生成广色域图片。屏幕与传感器的双重升级将带给用户端到端的摄影体验，让他们用更鲜明的色彩留影真实世界。
+
+从技术层面来说，这意味着应用需要处理的图片与之前不同了。图片内嵌的 ICC 配置文件将不再采用 sRGB 色彩空间，而是转用其它色域更加丰富的格式，如 Display P3 和 Adobe RGB。对于消费者而言，广色域能让照片看上去更加真实。
+![](image/16b53bb10158f18b.webp)
+![](image/16b53bb4a2b31d13.webp)
+△ 上图: Display P3，下图: sRGB
+
+![](image/16b53bca70bf6a0c.webp)
+
+△ 左图: Display P3，右图: sRGB
+
+以上两组图片为同一张照片的 Display P3 和 sRGB 版本。如果您正在使用已校准且支持广色域的显示屏上阅读本文，您会发现两者存在明显差别。
+
+## 色彩测试
+
+您可通过以下两项测试来判定应用是否已做好支持准备。第一项是色彩校正测试，另一项则是广色域测试。
+
+色彩校正测试: 您的应用能够兼容广色域吗？
+
+如果应用能够主动进行颜色管理，那就说明它已经准备好支持广色域了。在收到图片之后，应用首先会检查图片的色彩空间，然后再根据自身的广色域显色能力，进行必要转换。在这种情况下，即使应用无法处理广色域，图片中的 sRGB 色域仍旧能够正常显示，不存在色彩失真的问题。
+
+下图为内嵌 Display P3 ICC 配置文件的图片进行色彩校正之后的效果。
+![](image/16b53bd9db3ff3e5.webp)
+但是，如果应用不具备色彩校正条件，那么它往往会在色彩空间转换不当的情况下对显示图片进行处理，最终导致图片颜色失真。比如说，您可能会得到下面这种显得褪色且失真的图片。
+![](image/16b53be06a3c9a29.webp)
+
+## 广色域测试: 您的应用能够支持广色域吗？
+
+如果应用可以显示 sRGB 色彩空间之外的颜色，那就证明它具备支持广色域的能力。您可以利用下面这张图片来测试应用能否支持广色域图像: 若能看到 Android 机器人图标，则说明您的应用可以支持。请注意，该测试需要在具备广色域硬件支持的设备上进行，如 Pixel 3 或三星 Galaxy S10。
+![](image/16b53c133f3d794e.webp)
+
+## 您需要做哪些准备？
+
+如需正确处理广色域图像，您的应用至少需要通过广色域兼容测试，即色彩校正测试。如果您的应用已测试成功，那就太棒了！尚未通过测试的开发者们也不用着急，您可以按照以下步骤为应用添加支持:
+
+如何才能确保应用做好准备并且满足未来需求呢？关键点在于，应用不可以假设输入的外部图片使用 sRGB 色彩空间，也就是说，应用必须自行检查已解码图片的色彩空间，并进行必要转换。如果没有做到这一点，可能会导致色彩失真，或者色彩配置文件在某个环节不被接受。
+
+### 必要: 色彩校正
+
+通过色彩校正测试为最低要求。如果应用无法采用广色域，您很有可能只需要把每张图片解码为 sRGB 色彩空间。您可借助 BitmapFactory 或者 ImageDecoder 来实现这个逻辑。
+
+### 使用 BitmapFactory
+
+在 API 26 中，我们为 BitmapFactory.Option 添加了 inPreferredColorSpace，允许您为已解码的 Bitmap 文件指定目标色彩空间。假设您现在想要解码一个文件，那么您可以用下面的代码进行色彩管理:
+
+
+```
+final BitmapFactory.Options options = new BitmapFactory.Options();
+// Decode this file to sRGB color space.
+options.inPreferredColorSpace = ColorSpace.get(Named.SRGB);
+Bitmap bitmap = BitmapFactory.decodeFile(FILE_PATH, options);
+```
+
+### 使用 ImageDecoder
+
+从 Android P (API 等级 28) 开始，我们引入了现代化图片解码工具 ImageDecoder。如果您已将 APK 升级至 API 等级 28 或更高，我们建议您使用 ImageDecoder，而非 BitmapFactory 或 BitmapFactory.Option API。
+
+在以下示例代码中，我们使用 ImageDecoder#decodeBitmap API 将图片转换为 sRGB 位图。
+```
+
+ImageDecoder.Source source =
+        ImageDecoder.createSource(FILE_PATH);
+try {
+    bitmap = ImageDecoder.decodeBitmap(source,
+            new ImageDecoder.OnHeaderDecodedListener() {
+                @Override
+                public void onHeaderDecoded(ImageDecoder decoder,
+                        ImageDecoder.ImageInfo info,
+                        ImageDecoder.Source source) {
+                    decoder.setTargetColorSpace(ColorSpace.get(Named.SRGB));
+                }
+            });
+} catch (IOException e) {
+    // handle exception.
+}
+
+```
+
+ImageDecoder 的另一个优势在于: 通过传入一个 ImageDecoder.OnHeaderDecodedListener 并检查 ImageDecoder.ImageInfo#getColorSpace()，您可以在获取最终的位图之前，就能知道图像的编码色彩空间。这样一来，您便能根据应用对色彩空间的处理方式，来检查图像的编码色彩空间，并分别设置相应的目标色彩空间。
+
+```
+ImageDecoder.Source source =
+        ImageDecoder.createSource(FILE_PATH);
+try {
+    bitmap = ImageDecoder.decodeBitmap(source,
+            new ImageDecoder.OnHeaderDecodedListener() {
+                @Override
+                public void onHeaderDecoded(ImageDecoder decoder,
+                        ImageDecoder.ImageInfo info,
+                        ImageDecoder.Source source) {
+                    ColorSpace cs = info.getColorSpace();
+                    // Do something...
+                }
+            });
+} catch (IOException e) {
+    // handle exception.
+}
+```
+
+更多使用技巧，请参阅[ ImageDecoder API 官方文档](https://developer.android.com/reference/android/graphics/ImageDecoder)。
+
+### 已知不良做法
+
+典型的不良做法包括但不限于:
+
+  * 总是假定图片处于 sRGB 色彩空间
+  * 没有进行必要转换，便将图片上传为纹理
+  * 在压缩时忽略 ICC 配置文件
+
+以上做法均会严重影响用户的视觉体验，令色彩失真。例如，以下示例代码会导致应用色彩校正错误:
+```
+// This is bad, don't do it!
+final BitmapFactory.Options options = new BitmapFactory.Options();
+
+final Bitmap bitmap = BitmapFactory.decodeFile(FILE_PATH, options);
+
+glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES31.GL_RGBA, bitmap.getWidth(),
+        bitmap.getHeight(), 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null);
+
+GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, bitmap,
+        GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE);
+```
+
+在将位图作为纹理上传之前，应用并没有检查色彩空间，因此色彩校正测试的结果会是下面这张失真图片。
+
+![](image/16b53ef29001af66.webp)
+
+
+###  可选: 支持广色域
+
+为了妥善处理图片，除上述必要变更之外，如果您的应用是一个图像类应用，您可能希望通过采取一些额外措施，例如在清单文件中启用广域模式或创建一个 Display P3 surface，来实现图片的全彩色域显示。
+
+如需在 activity 中启用广色域，请将 AndroidManifest.xml 文件中的 colorMode 属性设定为 wideColorGamut。请注意，您需要为每一个启用广色域模式的 activity 重复以上设置。
+```
+android:colorMode="wideColorGamut"
+```
+
+您也可以通过程序的方式在 activity 中设定色彩模式，具体方法为: 调用 setColorMode(int) 方法并传入 COLOR_MODE_WIDE_COLOR_GAMUT。
+
+在渲染广色域图像时，除了具体的广色域内容之外，您还需要创建一个广色域 surface，以 OpenGL 为例，应用必须先检查以下扩展:
+
+  * EXT_gl_colorspace_display_p3_passthrough
+  * EXT_gl_colorspace_display_p3
+
+然后，在创建 surface 时请求 Display P3 作为色彩空间，具体代码见下:
+
+```
+private static final int EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT = 0x3490;
+
+public EGLSurface createWindowSurface(EGL10 egl, EGLDisplay display,
+                                      EGLConfig config, Object nativeWindow) {
+  EGLSurface surface = null;
+  try {
+    int attribs[] = {
+      EGL_GL_COLORSPACE_KHR, EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT,
+      egl.EGL_NONE
+    };
+    surface = egl.eglCreateWindowSurface(display, config, nativeWindow, attribs);
+  } catch (IllegalArgumentException e) {}
+  return surface;
+}
+```
+如果您想了解如何在原生代码中采用广色域，请参阅官方文档[使用广色域内容增强图形](https://developer.android.com/training/wide-color-gamut)。
+
+
+## 图片库 API 设计指南
+
+最后，如果您拥有或维护一个图片编解码库，通过色彩校正测试依旧是最低要求。为了现代化您的图片库，我们强烈建议您进行下列两项工作以扩展色彩管理 API:
+```
+    在设计新 API 或扩展现有 API 时，请显式传入 ColorSpace 参数。相比于硬编码一个色彩空间，显式的 ColorSpace 参数更能满足未来开发工作的需求。
+    所有旧版本 API 应该显式将位图解码为 sRGB 色彩空间。在 Android 8.0 (API 等级 26) 引入色彩管理之前，所有内容都被设定为 sRGB 色域。此项操作有助于您确保客户应用向后兼容。
+```
+完成上述工作后，就请着手开展前文所述的两项色彩测试工作吧！

@@ -32,10 +32,66 @@ https://blog.csdn.net/liwenjie28/article/details/113103342
 Android Freetype的学习过程总结
 https://blog.csdn.net/liwenjie28/article/details/105016661
 
-
+https://blog.csdn.net/alijaja/article/details/105949351
 Skia深入分析1——skia上下文
 https://blog.csdn.net/jxt1234and2010/article/details/42572559
 
 
 AndroidR上关于TextureView的刷新流程
 https://blog.csdn.net/liwenjie28/article/details/110955095
+
+========================
+
+
+护眼模式
+Android 高级UI解密 (二) ：Paint滤镜 与 颜色过滤（矩阵变换）
+[](https://www.freesion.com/article/7018748019/)
+
+
+
+OpenCV入门教程之六】 创建Trackbar & 图像对比度、亮度值调整
+https://blog.csdn.net/poem_qianmo/article/details/
+
+
+// The supported input color spaces are standard RGB, Display P3 and BT2020.
+
+
+https://www.jianshu.com/p/843ff310ae4a
+色域标准：sRGB Adobe RGB DCI P3 Display P3
+
+
+Android Q 色彩（颜色）模式解析（一）
+https://blog.csdn.net/chaojiangluo/article/details/100137357
+
+
+https://zhuanlan.zhihu.com/p/102169437
+Android Q深色模式及源码解析
+
+
+https://shenguojun.github.io/post/android-dark-mode/
+Android深色模式适配原理分析
+
+
+https://blog.csdn.net/weixin_40190883/article/details/112843227?utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromMachineLearnPai2%7Edefault-1.control&dist_request_id=&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromMachineLearnPai2%7Edefault-1.control
+什么是色彩管理，OPPO 全链路色彩管理全在哪？
+
+
+如何快速成长为图形学工程师
+https://blog.csdn.net/GitChat/article/details/79102568?utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7Edefault-17.control&dist_request_id=1331988.12699.16188154595104171&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7Edefault-17.control
+
+
+Wide Color Photos Are Coming to Android: Things You Need to Know to be Prepared
+https://android-developers.googleblog.com/2019/05/wide-color-photos-are-coming-to-android.html
+
+中文版
+http://kmanong.top/kmn/qxw/form/article?id=12098&cate=63
+
+
+【Android系统】Android P3 广色域开发建议
+https://developer.huawei.com/consumer/cn/forum/topic/0201433415684790073
+
+ICC色彩特性文件
+https://zh.wikipedia.org/wiki/ICC%E8%89%B2%E5%BD%A9%E7%89%B9%E6%80%A7%E6%96%87%E4%BB%B6
+
+多屏幕刷新率(refresh rate)模式下的帧显示流水线
+https://blog.csdn.net/alijaja/article/details/105949351

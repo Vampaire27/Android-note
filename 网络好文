@@ -17,6 +17,10 @@
 
 [面试官：如何监测应用的 FPS ？ ](https://mp.weixin.qq.com/s/vJAonOhW79d9VXzvQlm1Gg)
 
+[StrictMode 机制以及性能调优](https://www.dazhuanlan.com/2020/03/28/5e7f253ee9e9a/)
+
+[Android 分析Native库的加载过程及x86系统运行arm库的原理](https://blog.csdn.net/asd1031/article/details/82716148)
+
 ## IO
 
 [Android IO监控 | 性能监控系列](https://juejin.cn/post/6900810600188739592)
@@ -38,3 +42,7 @@
 
 
 [Android P图形显示系统（一）硬件合成HWC2](https://www.jianshu.com/p/824a9ddf68b9）
+
+
+## kernel
+[魅族内核团队](http://kernel.meizu.com/tags.html)

@@ -1,0 +1,332 @@
+## Android原生模糊效果原理
+
+
+
+![](image/05c4425385144099ba8fd8c9de97cd9b.png)
+上图是Android S上面的原生模糊效果图，在AndroidS提供了如下setBackgroundBlurRadius 函数给到app是添加模糊效果。
+
+>  public void setBackgroundBlurRadius (int blurRadius)
+
+>Blurs the screen behind the window within the bounds of the window. The density of the blur is set by the blur radius. The radius defines the size of the neighbouring area, from which pixels will be averaged to form the final color for each pixel. The operation approximates a Gaussian blur. A radius of 0 means no blur. The higher the radius, the denser the blur. The window background drawable is drawn on top of the blurred region. The blur region bounds and rounded corners will mimic those of the background drawable. For the blur region to be visible, the window has to be translucent. See R.styleable.Window_windowIsTranslucent. Note the difference with WindowManager.LayoutParams.blurBehindRadius, which blurs the whole screen behind the window. Background blur blurs the screen behind only within the bounds of the window.
+
+
+[setBackgroundBlurRadius API](https://developer.android.google.cn/reference/android/view/Window#setBackgroundBlurRadius(int))
+
+
+对于 API的使用我们这里介绍，我们这里主要分析一下此功能的实现原理。从如下2个方面入手
+* 图片模糊原理 (这部分是CV https://sq.163yun.com/blog/article/198931389860806656 )
+* Android R 模糊效果流程实现
+
+
+
+##  一）.图片模糊原理
+
+### 卷积
+
+卷积（Convolution）是图像处理中最基本的操作，就是一个二维原图像素矩阵A（MxN）和一个二维图像滤波矩阵B（mxn）做若干操作，生成一个滤波后的新像素矩阵C（MxN），其中m和n远小于M和N，B称为卷积核（kernel），又称滤波器矩阵。
+
+这里举个卷积的例子，如图：
+
+![](image/201809141341523d73c6ca-ba50-4ec4-bb65-f3670f702f39.png)
+
+
+图中，最左边的是源矩阵（8x8），中间是卷积核（3x3，半径为1），最右边是通过对前面两个矩阵做卷积生成的结果矩阵。图中，如果我们要求出结果矩阵中第二行第二列的元素的值，则把卷积核的中心元素（值为0）和源矩阵的第二行第二列（值为6）对齐，然后求加权和，即图中的公式，最后得到-3。
+
+对图像边界像素的操作应特别注意，由于周边没有足够的点，通常有三种的处理方法：
+* 1）对称处理：就是把已有的点拷贝到另一面的对应位置，模拟出完整的矩阵；
+* 2）赋0：想象图像是无限长的图像的一部分，除了我们给定值的部分，其他部分的像素值都是0；
+* 3）赋边界值：想象图像是无限制长，但是默认赋值的不是0而是对应边界点的值。
+
+一般认为图像是连续的数据，所以一般用图像边界的值进行拓展，计算边界的像素值。计算示例如下：
+![](image/2018091413420224d2743d-992e-4e06-932d-a882235242d4.jpg)
+
+值得注意的是，通常来说卷积核需要满足如下条件：
+* 宽和高都为奇数，这样才会有半径和中心的概念。
+    元素总和为1。
+
+
+### 滤波器
+####均值滤波器
+
+均值滤波器（Mean Filter）是最简单的一种滤波器，它是最粗糙的一种模糊图像的方法。均值滤波器的卷积核通常是m*m的矩阵，其中每个元素为1/(m^2)，可以看出卷积核的元素总和为1。比如3x3的均值滤波器，卷积核的每个元素就是1/9。如下图所示
+
+![](image/2018091413421668cfb9cb-4e5b-4f77-9aab-b0122a973fc9.png)
+
+#### 高斯滤波器
+
+
+高斯滤波器是均值滤波器的高级版本，唯一的区别在于，均值滤波器的卷积核的每个元素都相同，而高斯滤波器的卷积核的元素服从高斯分布。这样的话越在模糊半径外围的像素权重越低，造成的影响就越小，越在内侧的像素得到的权重最高，因为内侧像素更加重要，他们的颜色应该与我们要处理的中心像素更接近，更密切。
+
+下图一个一维高斯分布的图，我们都知道，取μ越近的值概率大，而取离μ越远的值的概率越小；σ越小，分布越集中在μ附近，σ越大，分布越分散。从图中可以看出，在3σ的时候只有0.1%的权重。
+![](image/201809141342279587c105-619a-4fb5-ad8d-acac626a951b.png)
+
+  然而我们需要处理的图像是二维数组，当选择一个中心像素时，我们需要平均该中心周围所有的像素来得到模糊值，而不仅仅是左边和右边的像素。所以我们需要用到二维高斯分布，其公式和分布图如下：
+  ![](image/20180914134238af726812-a315-4344-931d-5598fe6e0e9e.png)
+
+  在上面的公式中x和y表示周边像素对于中心像素的相对坐标，σ控制曲线的平缓程度，值越大，越平缓，最高点越低。当x=0且y=0时值最大，即卷积核的中心点权重最大。一般经验，卷积核的半径定为3σ。
+
+#### Kawase模糊（Kawase Blur
+  Kawase Blur于Masaki Kawase 在GDC2003的分享《Frame Buffer Postprocessing Effects in DOUBLE-S.T.E.A.L (Wreckless)》中提出。Kawase Blur最初用于Bloom后处理特效，但其可以推广作为专门的模糊算法使用，且在模糊外观表现上与高斯模糊非常接近。 Kawase Blur的思路是对距离当前像素越来越远的地方对四个角进行采样，且在两个大小相等的纹理之间进行乒乓式的blit。创新点在于，采用了随迭代次数移动的blur kernel，而不是类似高斯模糊，或box blur一样从头到尾固定的blur kernel。
+  ![](image/2020040621471780.png)
+
+  ![](image/20200406214727518.png)
+
+  实践数据表明，在相似的模糊表现下，Kawase Blur比经过优化的高斯模糊的性能约快1.5倍到3倍。
+
+具体思路是在runtime层，基于当前迭代次数，对每次模糊的半径进行设置，而Shader层实现一个4 tap的Kawase Filter即可：
+
+```
+half4 KawaseBlur(TEXTURE2D_ARGS(tex, samplerTex), float2 uv, float2 texelSize, half pixelOffset)
+{
+	half4 o = 0;
+	o += SAMPLE_TEXTURE2D(tex, samplerTex, uv + float2(pixelOffset +0.5, pixelOffset +0.5) * texelSize);
+	o += SAMPLE_TEXTURE2D(tex, samplerTex, uv + float2(-pixelOffset -0.5, pixelOffset +0.5) * texelSize);
+	o += SAMPLE_TEXTURE2D(tex, samplerTex, uv + float2(-pixelOffset -0.5, -pixelOffset -0.5) * texelSize);
+	o += SAMPLE_TEXTURE2D(tex, samplerTex, uv + float2(pixelOffset +0.5, -pixelOffset -0.5) * texelSize);
+	return o * 0.25;
+}
+```
+
+
+
+## 二.）Android R 模糊效果流程实现
+
+前面提到Android S 上面已经提供 setBackgroundBlurRadius 函数，苦于我这使用的Android R版本，那就将就一下。
+
+### 控制开关
+
+```
+property_get("ro.surface_flinger.supports_background_blur", value, "0");
+bool supportsBlurs = atoi(value);
+mSupportsBlur = supportsBlurs;
+
+```
+Android R上面 需要打开ro.surface_flinger.supports_background_blur 才能使用模糊效果，默认是关闭的。
+
+### 代码流程
+
+我们直接从Launcher3 的模糊效果开始，
+
+packages/apps/Launcher3/quickstep/src/com/android/launcher3/statehandlers/DepthController.java
+```
+private void setDepth(float depth) {
+
+     boolean supportsBlur = BlurUtils.supportsBlursOnWindows();
+     if (supportsBlur && (mSurface == null || !mSurface.isValid())) {
+         return;
+     }
+
+         new TransactionCompat()
+                 .setBackgroundBlurRadius(mSurface, blur)
+                 .apply();
+     }
+
+ }
+
+```
+模糊效果始于setBackgroundBlurRadius 函数，这个函数的功能很简单，只是向下设置一个模糊半径backgroundBlurRadius，我们在分析的时候，会跳过一些函数中转，只会列出一些关键的类和方法。
+
+ frameworks/native/libs/gui/SurfaceComposerClient.cpp
+
+```
+SurfaceComposerClient::Transaction& SurfaceComposerClient::Transaction::setBackgroundBlurRadius(
+        const sp<SurfaceControl>& sc, int backgroundBlurRadius) {
+    layer_state_t* s = getLayerState(sc);
+    if (!s) {
+        mStatus = BAD_INDEX;
+        return *this;
+    }
+    s->what |= layer_state_t::eBackgroundBlurRadiusChanged;
+    s->backgroundBlurRadius = backgroundBlurRadius;
+    return *this;
+}
+```
+* 这里函数  const sp\<SurfaceControl\> 为一个控制类 ，每个viewRootImpl 都又一个
+
+  frameworks/base/core/java/android/view/ViewRootImpl.java
+  ```
+  private final SurfaceControl mSurfaceControl = new SurfaceControl();
+  public SurfaceControl getSurfaceControl() {
+      return mSurfaceControl;
+  }
+    ```
+* layer_state_t 定义了当前Layer的属性，其中就包括backgroundBlurRadius。
+
+  frameworks/native/include/gui/LayerState.h
+
+  ```
+  struct layer_state_t {
+  ...
+  sp<IBinder> surface;
+     uint64_t what;
+     float x;
+     float y;
+     int32_t z;
+     uint32_t w;
+     uint32_t h;
+     uint32_t layerStack;
+     float alpha;
+     uint8_t flags;
+     uint8_t mask;
+     uint8_t reserved;
+     matrix22_t matrix;
+     Rect crop_legacy;
+     float cornerRadius;
+     uint32_t backgroundBlurRadius;
+     sp<IBinder> barrierHandle_legacy;
+     sp<IBinder> reparentHandle;
+     uint64_t frameNumber_legacy;
+     int32_t overrideScalingMode;
+
+     sp<IGraphicBufferProducer> barrierGbp_legacy;
+
+     sp<IBinder> relativeLayerHandle;
+
+     sp<IBinder> parentHandleForChild;
+
+     half3 color;
+
+     // non POD must be last. see write/read
+     Region transparentRegion;
+
+     uint32_t transform;
+     bool transformToDisplayInverse;
+     Rect crop;
+     Rect frame;
+     sp<GraphicBuffer> buffer;
+     sp<Fence> acquireFence;
+     ui::Dataspace dataspace;
+     HdrMetadata hdrMetadata;
+     Region surfaceDamageRegion;
+     int32_t api;
+     sp<NativeHandle> sidebandStream;
+     mat4 colorTransform;
+     ...
+     }
+  ```
+  至此，整个设置流程已经走完，把状态更新到Layer 对应 layer_state_t  的backgroundBlurRadius 中。我们接着分析一下Surfaceflinger 中的blur 效果流程。
+ * 1.blur相关初始化
+  ```
+  void SurfaceFlinger::init() {
+      ALOGI(  "SurfaceFlinger's main thread ready to run. "
+              "Initializing graphics H/W...");
+      Mutex::Autolock _l(mStateLock);
+
+      // Get a RenderEngine for the given display / config (can't fail)
+      // TODO(b/77156734): We need to stop casting and use HAL types when possible.
+      // Sending maxFrameBufferAcquiredBuffers as the cache size is tightly tuned to single-display.
+      mCompositionEngine->setRenderEngine(renderengine::RenderEngine::create(
+              renderengine::RenderEngineCreationArgs::Builder()
+                  .setPixelFormat(static_cast<int32_t>(defaultCompositionPixelFormat))
+                  .setImageCacheSize(maxFrameBufferAcquiredBuffers)
+                  .setUseColorManagerment(useColorManagement)
+                  .setEnableProtectedContext(enable_protected_contents(false))
+                  .setPrecacheToneMapperShaderOnly(false)
+                  .setSupportsBackgroundBlur(mSupportsBlur)
+                  .setContextPriority(useContextPriority
+                          ? renderengine::RenderEngine::ContextPriority::HIGH
+                          : renderengine::RenderEngine::ContextPriority::MEDIUM)
+
+  ```
+在SurfaceFlinger的init函数中调用setSupportsBackgroundBlur，其中参数mSupportsBlur 是从ro.surface_flinger.supports_background_blur 中读取，
+
+frameworks/native/libs/renderengine/include/renderengine/RenderEngine.h
+  ```
+  Builder& setSupportsBackgroundBlur(bool supportsBackgroundBlur) {
+    this->supportsBackgroundBlur = supportsBackgroundBlur;
+    return *this;
+}
+
+  ```
+上面函数知识初始化RenderEngine 中的supportsBackgroundBlur变量。在GLESRenderEngine对象创建的时候，根据supportsBackgroundBlur来决定是否创建BlurFilter.
+  ```
+GLESRenderEngine::GLESRenderEngine(const RenderEngineCreationArgs& args, EGLDisplay display,
+                                 EGLConfig config, EGLContext ctxt, EGLSurface dummy,
+                                 EGLContext protectedContext, EGLSurface protectedDummy)
+    : renderengine::impl::RenderEngine(args),
+
+    if (args.supportsBackgroundBlur) {
+        mBlurFilter = new BlurFilter(*this);
+       checkErrors("BlurFilter creation");
+}
+  ```
+
+BlurFilter 为实现模糊效果的主要类。Android R模糊效果使用效率更高的 Kawase blur. 其Shader层实现如下
+
+frameworks/native/libs/renderengine/gl/filters/BlurFilter.cpp
+```
+string BlurFilter::getFragmentShader() const {
+    return R"SHADER(#version 310 es
+        precision mediump float;
+
+        uniform sampler2D uTexture;
+        uniform vec2 uOffset;
+
+        in highp vec2 vUV;
+        out vec4 fragColor;
+
+        void main() {
+            fragColor  = texture(uTexture, vUV, 0.0);
+            fragColor += texture(uTexture, vUV + vec2( uOffset.x,  uOffset.y), 0.0);
+            fragColor += texture(uTexture, vUV + vec2( uOffset.x, -uOffset.y), 0.0);
+            fragColor += texture(uTexture, vUV + vec2(-uOffset.x,  uOffset.y), 0.0);
+            fragColor += texture(uTexture, vUV + vec2(-uOffset.x, -uOffset.y), 0.0);
+
+            fragColor = vec4(fragColor.rgb * 0.2, 1.0);
+        }
+    )SHADER";
+}
+```
+接着分析绘制流程，blur效果的全部绘制流程在如下函数中实现
+
+frameworks/native/libs/renderengine/gl/GLESRenderEngine.cpp
+```
+status_t GLESRenderEngine::drawLayers(const DisplaySettings& display,
+                                      const std::vector<const LayerSettings*>& layers,
+                                      ANativeWindowBuffer* const buffer,
+                                      const bool useFramebufferCache, base::unique_fd&& bufferFence,
+                                      base::unique_fd* drawFence) {
+
+ 1.遍历当前Display 的layers，把设置了模糊半径的layer 保存到blurLayers中.
+        std::deque<const LayerSettings*> blurLayers;
+        if (CC_LIKELY(mBlurFilter != nullptr)) {
+            for (auto layer : layers) {
+                if (layer->backgroundBlurRadius > 0) {
+                    blurLayers.push_back(layer);
+                }
+            }
+        }
+   ...
+2. 设置mBlurFilter 中的 Fbo为本次绘制的目标buff
+
+   auto status =
+                mBlurFilter->setAsDrawTarget(display, blurLayers.front()->backgroundBlurRadius);
+
+        for (auto const layer : layers) {
+               if (blurLayers.size() > 0 && blurLayers.front() == layer) {
+                   blurLayers.pop_front();
+
+                  3. 对于每个blurLayer 调用mBlurFilter->prepare()，初始化OpenGL 状态机环境变量
+
+                   auto status = mBlurFilter->prepare();
+                ...
+               4.调用mBlurFilter 的sharder 进行渲染
+                   status = mBlurFilter->render(blurLayersSize > 1);
+                   if (status != NO_ERROR) {
+                       ALOGE("Failed to render blur effect! Aborting GPU composition for buffer (%p).",
+                             buffer->handle);
+                       checkErrors("Can't render blur filter");
+                       return status;
+                   }
+               }
+
+
+```
+模糊效果只是在GPU合成流程中添加了一些步骤。
+* 1. 遍历当前Display 的layers，把设置了模糊半径的layer 保存到blurLayers中.
+*  2.  设置mBlurFilter 中的 Fbo为本次绘制的目标buff
+*  3. 对于每个blurLayer 调用mBlurFilter->prepare()，初始化OpenGL 状态机环境变量
+*  4. 调用mBlurFilter 的sharder 进行渲染
+
+## 总结
+![](image/Blur.png)
