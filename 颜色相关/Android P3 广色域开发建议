@@ -157,7 +157,7 @@ ADOBE_RGB 很少涉及，因此您主要考虑 SRGB 和 DISPLAY_P3 两种图片�
 
 ```
 final BitmapFactory.Options options = new BitmapFactory.Options();
-
+LOCAL_STATIC_JAVA_LIBRARIES
 
 // Set sRGB colorspace when decoding by setting Options.inPreferredColorSpace
 
@@ -167,7 +167,7 @@ options.inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB);
 
 // Decode this file to P3 color space
 
-
+LOCAL_STATIC_JAVA_LIBRARIES
 // options.inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.DISPLAY_P3);
 
 
@@ -175,7 +175,7 @@ Rect rect = new Rect(100, 100); // create a rect region
 
 
 // Decodes a rectangle region in the image specified by rect
-
+LOCAL_STATIC_JAVA_LIBRARIES
 
 BitmapRegionDecoder regionDecoder = BitmapRegionDecoder.newInstance(is, false);
 
@@ -183,7 +183,7 @@ BitmapRegionDecoder regionDecoder = BitmapRegionDecoder.newInstance(is, false);
 
 上述代码把目标色域空间设置成 SRGB 或者 P3， 保存在 options 参数里。然后调用解码 API  decodeRegion进行解码。
 
-### ImageDecoder
+### ImageDecoderLOCAL_STATIC_JAVA_LIBRARIES
 
 从 Android P (API 等级 28) 开始，Android 引入了现代化图片解码工具 ImageDecoder。如果您已将
 
@@ -192,7 +192,7 @@ APK 升级至 API 等级 28 或更高，我们建议您使用 ImageDecoder，而
 针对 ImageDecoder 可以通过 ImageDecoder.setTargetColorSpace 实现目标色彩空间转换：
 
 ```
-ImageDecoder.Source source = ImageDecoder.createSource(FILE_PATH);
+ImageDecoder.Source source = ImageDecoder.createSourcLOCAL_STATIC_JAVA_LIBRARIESe(FILE_PATH);
 
 try {
 

@@ -1,0 +1,325 @@
+Android 色彩（颜色）模式解析（一）
+
+Android Q 在系统设置中提供了可设置的色彩模式，当然这功能很多厂商早就有了～，落后归落后，我们还是看看Android是怎么实现的！
+
+Android Q提供了4种色彩模式：
+
+    Natural 自然色
+    Boosted 效果增强
+    Saturated 饱和色
+    Adaptive 自动调节
+
+  ## FrameWork色彩模式的定义及实现
+
+  为了实现色彩模式的切换，Android Framework设计了ColorDisplayManager及对应的服务，提供可切换的色彩模式和对应的设置接口。四种色彩模式对应的值如下：
+
+  ```
+  public static final int COLOR_MODE_NATURAL = 0;
+
+public static final int COLOR_MODE_BOOSTED = 1;
+
+public static final int COLOR_MODE_SATURATED = 2;
+
+public static final int COLOR_MODE_AUTOMATIC = 3;
+
+  ```
+Settings中通过ColorDisplayManager的setColorMode接口进行色彩模式的切换，对应的代码如下：
+
+```
+* packages/apps/Settings/src/com/android/settings/display/ColorModePreferenceFragment.java
+
+    @Override
+    protected boolean setDefaultKey(String key) {
+        switch (key) {
+            case KEY_COLOR_MODE_NATURAL:
+                mColorDisplayManager.setColorMode(ColorDisplayManager.COLOR_MODE_NATURAL);
+                break;
+            case KEY_COLOR_MODE_BOOSTED:
+                mColorDisplayManager.setColorMode(ColorDisplayManager.COLOR_MODE_BOOSTED);
+                break;
+            case KEY_COLOR_MODE_SATURATED:
+                mColorDisplayManager.setColorMode(ColorDisplayManager.COLOR_MODE_SATURATED);
+                break;
+            case KEY_COLOR_MODE_AUTOMATIC:
+                mColorDisplayManager.setColorMode(ColorDisplayManager.COLOR_MODE_AUTOMATIC);
+                break;
+        }
+        return true;
+    }
+
+```
+
+在ColorDisplayManager中，设计了一个内部类ColorDisplayManagerInternal，通过内部类和对应的系统服务COLOR_DISPLAY_SERVICE进行交互。
+
+```
+*  frameworks/base/core/java/android/hardware/display/ColorDisplayManager.java
+
+    public void setColorMode(int colorMode) {
+        mManager.setColorMode(colorMode);
+    }
+
+```
+最后通过onDisplayColorModeChanged函数来处理。
+```
+* frameworks/base/services/core/java/com/android/server/display/color/ColorDisplayService.java
+
+    private void onDisplayColorModeChanged(int mode) {
+        if (mode == NOT_SET) {
+            return;
+        }
+
+        mNightDisplayTintController.cancelAnimator();
+        mDisplayWhiteBalanceTintController.cancelAnimator();
+
+        if (mNightDisplayTintController.isAvailable(getContext())) {
+            mNightDisplayTintController
+                    .setUp(getContext(), DisplayTransformManager.needsLinearColorMatrix(mode));
+            mNightDisplayTintController
+                    .setMatrix(mNightDisplayTintController.getColorTemperatureSetting());
+        }
+
+        updateDisplayWhiteBalanceStatus();
+
+        final DisplayTransformManager dtm = getLocalService(DisplayTransformManager.class);
+        dtm.setColorMode(mode, mNightDisplayTintController.getMatrix());
+    }
+
+```
+
+
+这里涉及到夜光屏和白平衡，说白了，这些的实现都是跟色彩和亮度有关。我们先留下夜光屏幕和白平衡，单看色彩模式的流程。色彩模式，通过 DisplayTransformManager 的setColorMode接口继续往下传：
+```
+* frameworks/base/services/core/java/com/android/server/display/color/DisplayTransformManager.java
+
+    public boolean setColorMode(int colorMode, float[] nightDisplayMatrix) {
+        if (colorMode == ColorDisplayManager.COLOR_MODE_NATURAL) {
+            applySaturation(COLOR_SATURATION_NATURAL);
+            setDisplayColor(DISPLAY_COLOR_MANAGED);
+        } else if (colorMode == ColorDisplayManager.COLOR_MODE_BOOSTED) {
+            applySaturation(COLOR_SATURATION_BOOSTED);
+            setDisplayColor(DISPLAY_COLOR_MANAGED);
+        } else if (colorMode == ColorDisplayManager.COLOR_MODE_SATURATED) {
+            applySaturation(COLOR_SATURATION_NATURAL);
+            setDisplayColor(DISPLAY_COLOR_UNMANAGED);
+        } else if (colorMode == ColorDisplayManager.COLOR_MODE_AUTOMATIC) {
+            applySaturation(COLOR_SATURATION_NATURAL);
+            setDisplayColor(DISPLAY_COLOR_ENHANCED);
+        }
+        setColorMatrix(LEVEL_COLOR_MATRIX_NIGHT_DISPLAY, nightDisplayMatrix);
+
+        updateConfiguration();
+
+        return true;
+    }
+
+```
+
+重点来了，前面我们说到的4种色彩模式，主要通过两个参数的调节来实现的
+
+  * Saturation饱和度
+
+    饱和度两种可选模式：自然模式和增强模式
+
+    ```
+    private static final float COLOR_SATURATION_NATURAL = 1.0f;
+    private static final float COLOR_SATURATION_BOOSTED = 1.1f;
+    ```
+  * DisplayColor显示颜色
+
+    显示颜色有3种模式：Managed，UnManaged以及增强模式
+    ```
+    private static final int DISPLAY_COLOR_MANAGED = 0;
+    private static final int DISPLAY_COLOR_UNMANAGED = 1;
+    private static final int DISPLAY_COLOR_ENHANCED = 2;
+
+我们的4中色彩模式：
+
+|**|COLOR_SATURATION_NATURAL|COLOR_SATURATION_BOOSTED|
+|--|--|--|
+|DISPLAY_COLOR_MANAGED|自然色 COLOR_MODE_NATURAL |效果增强 COLOR_MODE_BOOSTED|
+|DISPLAY_COLOR_UNMANAGED|饱和色 COLOR_MODE_SATURATED||
+|DISPLAY_COLOR_ENHANCED|自动调节 COLOR_MODE_AUTOMATIC||
+
+
+这两个参数的设置是通过binder直接设置到SurfaceFlinger的，对应的Binder 命令分别为SURFACE_FLINGER_TRANSACTION_SATURATION和 SURFACE_FLINGER_TRANSACTION_DISPLAY_COLOR。相应的代码如下：
+饱和度的设置通过applySaturation函数
+```
+* frameworks/base/services/core/java/com/android/server/display/color/DisplayTransformManager.java
+
+    private void applySaturation(float saturation) {
+        SystemProperties.set(PERSISTENT_PROPERTY_SATURATION, Float.toString(saturation));
+        final IBinder flinger = ServiceManager.getService(SURFACE_FLINGER);
+        if (flinger != null) {
+            final Parcel data = Parcel.obtain();
+            data.writeInterfaceToken("android.ui.ISurfaceComposer");
+            data.writeFloat(saturation);
+            try {
+                flinger.transact(SURFACE_FLINGER_TRANSACTION_SATURATION, data, null, 0);
+            } catch (RemoteException ex) {
+                Slog.e(TAG, "Failed to set saturation", ex);
+            } finally {
+                data.recycle();
+            }
+        }
+    }
+```
+
+显示颜色的设置通过setDisplayColor函数
+
+```
+private void setDisplayColor(int color) {
+    SystemProperties.set(PERSISTENT_PROPERTY_DISPLAY_COLOR, Integer.toString(color));
+    final IBinder flinger = ServiceManager.getService(SURFACE_FLINGER);
+    if (flinger != null) {
+        final Parcel data = Parcel.obtain();
+        data.writeInterfaceToken("android.ui.ISurfaceComposer");
+        data.writeInt(color);
+        try {
+            flinger.transact(SURFACE_FLINGER_TRANSACTION_DISPLAY_COLOR, data, null, 0);
+        } catch (RemoteException ex) {
+            Slog.e(TAG, "Failed to set display color", ex);
+        } finally {
+            data.recycle();
+        }
+    }
+}
+```
+
+**小结一下**，Android提供了4种色彩模式：自然色，效果增强，饱和色和自动调节。而Framework中，是通过两个参数来实现的：饱和度和显示颜色，具体实现，，，往下看！
+
+
+
+## SurfaceFlinger对色彩模式的支持和实现
+
+通过前面的分析，我们其实只需关心饱和度和显示颜色！SurfaceFlinger中，饱和度用饱和因子mGlobalSaturationFactor来定义，显示颜色用mDisplayColorSetting进行描述。
+
+```
+status_t SurfaceFlinger::onTransact(uint32_t code, const Parcel& data, Parcel* reply,
+                                    uint32_t flags) {
+    ... ...
+    status_t err = BnSurfaceComposer::onTransact(code, data, reply, flags);
+    if (err == UNKNOWN_TRANSACTION || err == PERMISSION_DENIED) {
+        ... ...
+        int n;
+        switch (code) {
+            ... ...
+            case 1022: { // Set saturation boost
+                Mutex::Autolock _l(mStateLock);
+                mGlobalSaturationFactor = std::max(0.0f, std::min(data.readFloat(), 2.0f));
+
+                updateColorMatrixLocked();
+
+                ALOGE("xm-gfx: 1022 mGlobalSaturationFactor:%f\n", mGlobalSaturationFactor);
+                return NO_ERROR;
+            }
+            case 1023: { // Set native mode
+                mDisplayColorSetting = static_cast<DisplayColorSetting>(data.readInt32());
+                invalidateHwcGeometry();
+                repaintEverything();
+                ALOGE("xm-gfx: 1023 mDisplayColorSetting:%d\n", mDisplayColorSetting);
+                return NO_ERROR;
+  }
+```
+
+饱和因子是一个float值，默认为1.0，系统最初始的值，可以通过属性persist.sys.sf.color_saturation进行设置。饱和因子影响到的是显示的颜色矩阵，具体的算法在这个函数中：
+
+```
+void SurfaceFlinger::updateColorMatrixLocked() {
+    mat4 colorMatrix;
+    if (mGlobalSaturationFactor != 1.0f) {
+        // Rec.709 luma coefficients
+        float3 luminance{0.213f, 0.715f, 0.072f};
+        luminance *= 1.0f - mGlobalSaturationFactor;
+        mat4 saturationMatrix = mat4(
+            vec4{luminance.r + mGlobalSaturationFactor, luminance.r, luminance.r, 0.0f},
+            vec4{luminance.g, luminance.g + mGlobalSaturationFactor, luminance.g, 0.0f},
+            vec4{luminance.b, luminance.b, luminance.b + mGlobalSaturationFactor, 0.0f},
+            vec4{0.0f, 0.0f, 0.0f, 1.0f}
+        );
+        colorMatrix = mClientColorMatrix * saturationMatrix * mDaltonizer();
+    } else {
+        colorMatrix = mClientColorMatrix * mDaltonizer();
+    }
+
+    if (mCurrentState.colorMatrix != colorMatrix) {
+        mCurrentState.colorMatrix = colorMatrix;
+        mCurrentState.colorMatrixChanged = true;
+        setTransactionFlags(eTransactionNeeded);
+    }
+}
+```
+根据饱和因子，生成一个饱和度的矩阵saturationMatrix，再和其他的颜色矩阵相乘，得到需要的矩阵。至于这个矩阵colorMatrix怎么生效的，我们稍后再看！
+
+显示颜色mDisplayColorSetting，最后值可以通过persist.sys.sf.native_mode属性来设置。
+
+## 看屏幕是否支持颜色管理
+
+SurfaceFlinger定义useColorManagement来描述SurfaceFlinger是否管理颜色。
+```
+bool use_color_management(bool defaultValue) {
+    auto tmpuseColorManagement = SurfaceFlingerProperties::use_color_management();
+    auto tmpHasHDRDisplay = SurfaceFlingerProperties::has_HDR_display();
+    auto tmpHasWideColorDisplay = SurfaceFlingerProperties::has_wide_color_display();
+
+    auto tmpuseColorManagementVal = tmpuseColorManagement.has_value() ? *tmpuseColorManagement :
+        defaultValue;
+    auto tmpHasHDRDisplayVal = tmpHasHDRDisplay.has_value() ? *tmpHasHDRDisplay :
+        defaultValue;
+    auto tmpHasWideColorDisplayVal = tmpHasWideColorDisplay.has_value() ? *tmpHasWideColorDisplay :
+        defaultValue;
+
+    return tmpuseColorManagementVal || tmpHasHDRDisplayVal || tmpHasWideColorDisplayVal;
+}
+
+```
+
+## 屏幕的ColorProfile
+
+颜色管理，是针对屏幕的，不是对单个Layer的！每次一次开始合成时，都会去做屏幕颜色的处理，在calculateWorkingSet函数中。
+
+```
+void SurfaceFlinger::calculateWorkingSet() {
+    ... ...
+
+    // Set the per-frame data
+    for (const auto& [token, displayDevice] : mDisplays) {
+        auto display = displayDevice->getCompositionDisplay();
+        const auto displayId = display->getId();
+        if (!displayId) {
+            continue;
+        }
+        auto* profile = display->getDisplayColorProfile();
+
+        if (mDrawingState.colorMatrixChanged) {
+            display->setColorTransform(mDrawingState.colorMatrix);
+        }
+        Dataspace targetDataspace = Dataspace::UNKNOWN;
+        if (useColorManagement) {
+            ColorMode colorMode;
+            RenderIntent renderIntent;
+            pickColorMode(displayDevice, &colorMode, &targetDataspace, &renderIntent);
+            display->setColorMode(colorMode, targetDataspace, renderIntent);
+        }
+
+```
+
+
+SurfaceFlinger中，Profile封装了传输给显示屏幕颜色的所有的状态和功能！ColorMode只是显示屏众多特性中的一个。SurfaceFlinger中用ColorModeValue进行描述：
+```
+* frameworks/native/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/DisplayColorProfile.h
+
+    struct ColorModeValue {
+        ui::Dataspace dataspace;
+        ui::ColorMode colorMode;
+        ui::RenderIntent renderIntent;
+    };
+
+```
+
+
+所以这里的流程梳理下：
+
+    屏幕初始化时，获取屏幕支持的hwcDataspace, hwcColorMode, hwcIntent，转换为SurfaceFlinger中的RenderIntenthedataspace的key来保存
+    上层设置的DisplayColorSetting转换为对应的RenderIntent
+    根据显示内容，确定最合适的besedataspace
+    根据RenderIntent和besedataspace，选取对应的hwcDataspace, hwcColorMode, hwcIntent。

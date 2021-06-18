@@ -31,7 +31,7 @@ APM(Application perfmance monitor)就是应用性能监控。在移动互联网�
 
 Choreographer中文翻译过来是"舞蹈指挥"，字面上的意思就是优雅地指挥以上三个UI操作一起跳一支舞。这个词可以概括这个类的工作，如果android系统是一场芭蕾舞，他就是Android UI显示这出精彩舞剧的编舞，指挥台上的演员们相互合作，精彩演出。Google的工程师看来挺喜欢舞蹈的！
 
-其中关于Choreographer的介绍相关的可以参考这篇文章，面试中也经常会问到这个问题，ViewRootImp和Vsync等等，但是我们还是比较专注于数据的采集和上报，所以关注的重点还是有点不同。
+其中关于Choreographer的介绍相关的可以参考这篇文章[ 面试官：如何监测应用的 FPS ?](https://juejin.cn/post/6890407553457963022)，面试中也经常会问到这个问题，ViewRootImp和Vsync等等，但是我们还是比较专注于数据的采集和上报，所以关注的重点还是有点不同。
 一般常规的Fps采集可以通过Choreographer既UI线程绘制的编舞者，Choreographer是一个ThreadLocal的单例，接收vsync信号进行界面的渲染，我们只要对其添加一个CallBack，就可以巧妙的计算出这一帧的绘制时长。
 Matrix对于核心Choreographer是对CallbackQueue的hook，通过hook addCallbackLocked分别在不同类型的回调队列的头部添加自定义的FrameCallback。这样
 ```

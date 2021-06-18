@@ -1,0 +1,20 @@
+
+
+1:修改liblog 库之后，编译报错
+
+```
+error: VNDK library: liblog's ABI has INCOMPATIBLE CHANGES Please check compatibility report at: out/soong/.intermediates/system/core/liblog/liblog/android_arm_armv8-a_shared/liblog.so.abidiff
+******************************************************
+error: Please update ABI references with: $ANDROID_BUILD_TOP/development/vndk/tools/header-checker/utils/create_reference_dumps.py --llndk -l liblog
+[  0% 239/37249] //system/core/liblog:liblog header-abi-diff liblog.so.abidiff
+FAILED: out/soong/.intermediates/system/core/liblog/liblog/android_arm64_armv8-a_shared/liblog.so.abidiff
+(prebuilts/clang-tools/linux-x86/bin/header-abi-diff -allow-unreferenced-changes -allow-unreferenced-elf-symbol-changes -consider-opaque-types-different -lib liblog -arch arm64 -o out/soong/.intermediates/system/core/liblog/liblog/android_arm64_armv8-a_shared/liblog.so.abidiff -new out/soong/.intermediates/system/core/liblog/liblog/android_arm64_armv8-a_shared/liblog.so.lsdump -old prebuilts/abi-dumps/ndk/30/64/arm64_armv8-a/source-based/liblog.so.lsdump)|| (echo 'error: Please update ABI references with: $ANDROID_BUILD_TOP/development/vndk/tools/header-checker/utils/create_reference_dumps.py --llndk -l liblog' && (mkdir -p $DIST_DIR/abidiffs && cp out/soong/.intermediates/system/core/liblog/liblog/android_arm64_armv8-a_shared/liblog.so.abidiff $DIST_DIR/abidiffs/) && exit 1)
+******************************************************
+error: VNDK library: liblog's ABI has INCOMPATIBLE CHANGES Please check compatibility report at: out/soong/.intermediates/system/core/liblog/liblog/android_arm64_armv8-a_shared/liblog.so.abidiff
+******************************************************
+error: Please update ABI references with: $ANDROID_BUILD_TOP/development/vndk/tools/header-checker/utils/create_reference_dumps.py --llndk -l liblog
+17:02:35 ninja failed with: exit status 1
+
+```
+参考：供应商原生开发套件 (VNDK)
+https://source.android.google.cn/devices/architecture/vndk/abi-stability?hl=zh-cn

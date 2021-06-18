@@ -1,0 +1,74 @@
+### 1： Caused by: java.lang.ClassNotFoundException: Didn't find class ".BugleApplication" on path:
+```
+021-06-01 12:39:36.328 7261-7261/com.baoneng.messaging E/AndroidRuntime: FATAL EXCEPTION: main
+    Process: com.baoneng.messaging, PID: 7261
+    java.lang.RuntimeException: Unable to instantiate application com.baoneng.messaging.BugleApplication: java.lang.ClassNotFoundException: Didn't find class "com.baoneng.messaging.BugleApplication" on path: DexPathList[[zip file "/product/app/messaging/messaging_bn.apk"],nativeLibraryDirectories=[/product/app/messaging/lib/arm64, /system/lib64, /system_ext/lib64]]
+        at android.app.LoadedApk.makeApplication(LoadedApk.java:1244)
+        at android.app.ActivityThread.handleBindApplication(ActivityThread.java:6684)
+        at android.app.ActivityThread.access$1300(ActivityThread.java:238)
+        at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1914)
+        at android.os.Handler.dispatchMessage(Handler.java:106)
+        at android.os.Looper.loop(Looper.java:228)
+        at android.app.ActivityThread.main(ActivityThread.java:7701)
+        at java.lang.reflect.Method.invoke(Native Method)
+        at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592)
+        at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947)
+     Caused by: java.lang.ClassNotFoundException: Didn't find class "com.baoneng.messaging.BugleApplication" on path: DexPathList[[zip file "/product/app/messaging/messaging_bn.apk"],nativeLibraryDirectories=[/product/app/messaging/lib/arm64, /system/lib64, /system_ext/lib64]]
+        at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:207)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:379)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:312)
+        at android.app.AppComponentFactory.instantiateApplication(AppComponentFactory.java:76)
+        at androidx.core.app.CoreComponentFactory.instantiateApplication(CoreComponentFactory.java:52)
+        at android.app.Instrumentation.newApplication(Instrumentation.java:1158)
+        at android.app.LoadedApk.makeApplication(LoadedApk.java:1236)
+        at android.app.ActivityThread.handleBindApplication(ActivityThread.java:6684) 
+        at android.app.ActivityThread.access$1300(ActivityThread.java:238) 
+        at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1914) 
+        at android.os.Handler.dispatchMessage(Handler.java:106) 
+        at android.os.Looper.loop(Looper.java:228) 
+        at android.app.ActivityThread.main(ActivityThread.java:7701) 
+        at java.lang.reflect.Method.invoke(Native Method) 
+        at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:592) 
+        at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:947) 
+        ```
+
+        1: I tried to disable MultiDex
+        2: 反编译app代码查看BugleApplication是否存在
+        3: Application 为整个app中第一个调用类。所以，可能是所有class文件都找不到。
+
+```
+
+  ### 2.：  vendor/bn/app/Messaging/Android.bp:46:1: dependency "libstdc++" of "libxypatch" missing variant:
+
+  ```
+  error: vendor/bn/app/Messaging/Android.bp:64:1: dependency "libxypatch" of "messaging" missing variant:
+    os:android, arch:arm64_armv8-a, sdk:sdk, link:shared
+  available variants:
+    os:android, image:, arch:arm64_armv8-a, sdk:, link:shared, version:
+    os:android, image:, arch:arm64_armv8-a, sdk:, link:static, version:
+    os:android, image:, arch:arm_armv8-a, sdk:, link:shared, version:
+    os:android, image:, arch:arm_armv8-a, sdk:, link:static, version:
+  16:02:10 soong bootstrap failed with: exit status 1
+
+
+  ```
+添加 sdk_version: "current",
+  ```
+  cc_prebuilt_library_shared {
+      name: "libxypatch",
+      arch: {
+          arm64: {
+              srcs: ["app/src/main/jniLibs/arm64-v8a/libxypatch.so"],
+          },
+
+          arm: {
+             srcs: ["app/src/main/jniLibs/armeabi/libxypatch.so"],
+          },
+
+      },
+      sdk_version: "current",
+      shared_libs: ["libc","libdl","liblog","libm","libz",],
+      product_specific: true,
+  }
+
+  ```

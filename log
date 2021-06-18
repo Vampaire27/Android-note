@@ -1,83 +1,29 @@
-LOCAL_PATH := $(call my-dir)
-include $(CLEAR_VARS)
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := bncommonui
+用户设置Display色温自动调节
+
+色温传感器感应当前环境色温T
+
+色温T经过校准算法，色温函数转换。
+得到色温矩阵colorMatrix。
+
+colorMatrix*显示图像，得到最终
+的显示效果，在屏幕上显示。
 
 
+1： 后台日志管理系统开发工作讨论.
 
-LOCAL_SRC_FILES := $(call all-java-files-under, src)
+2： 上周工作总结和下周工作安排
 
-res_dirs := res
+3：《Pixel手机Camera 历代创新技术》--邱晓彬
 
-LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
+手动上传
 
-LOCAL_AAPT_FLAGS := \
---auto-add-overlay \
+自动上传
 
-
-LOCAL_JACK_ENABLED := disabled
-
-LOCAL_PROGUARD_ENABLED := disabled
-
-LOCAL_STATIC_JAVA_LIBRARIES := android-support-v4
-
-LOCAL_AAPT_FLAGS := \
-    --auto-add-overlay
-
-LOCAL_MANIFEST_FILE := AndroidManifest.xml
-
-include $(BUILD_STATIC_JAVA_LIBRARY)
+BugReport App
 
 
+用户数据采集
 
+发热问题
 
-
-
-
-
-
-
-
-LOCAL_PATH:= $(call my-dir)
-
-# Reusable Camera performance test classes and helpers
-include $(CLEAR_VARS)
-
-LOCAL_MODULE := bncommonui
-
-LOCAL_MODULE_TAGS := optional
-
-
-
-LOCAL_MANIFEST_FILE := AndroidManifest.xml
-
-LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
-
-LOCAL_SRC_FILES := $(call all-java-files-under, src)
-
-LOCAL_SDK_VERSION := test_current
-
-
-include $(BUILD_STATIC_JAVA_LIBRARY)
-
-
-
-
-android_app {
-    name: "CommonUI",
-    static_libs: [
-        "CommonUI-framecore",
-    ],
-    resource_dirs: [],
-
-    platform_apis: true,
-    system_ext_specific: true,
-    certificate: "platform",
-    privileged: true,
-
-    kotlincflags: ["-Xjvm-default=enable"],
-
-    dxflags: ["--multi-dex"],
-    required: ["privapp_whitelist_com.android.commonui"],
-
-}
+卡顿问题

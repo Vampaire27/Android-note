@@ -1,0 +1,313 @@
+![](image/android_fluency_quality_manage.png)
+
+
+## 1、渲染和流畅概念
+
+Google定义：界面呈现是指从应用生成帧并将其显示在屏幕上的动作。要确保用户能够流畅地与应用互动，应用呈现每帧的时间不应超过16ms，以达到每秒60帧的呈现速度（为什么是60fps？）。
+如果应用存在界面呈现缓慢的问题，系统会不得不跳过一些帧，这会导致用户感觉应用不流畅，我们将这种情况称为卡顿。
+* （1）为什么是60fps或16ms？
+
+   来源于：Google Android的为什么是60fps？
+
+  16ms意味着1000/60hz，相当于60fps。这是因为人眼与大脑之间的协作无法感知超过60fps的画面更新。12fps大概类似手动快速翻动书籍的帧率， 这明显是可以感知到不够顺滑的。24fps使得人眼感知的是连续线性的运动，这其实是归功于运动模糊的效果。 24fps是电影胶圈通常使用的帧率，因为这个帧率已经足够支撑大部分电影画面需要表达的内容，同时能够最大的减少费用支出。 但是低于30fps是 无法顺畅表现绚丽的画面内容的，此时就需要用到60fps来达到想要的效果，超过60fps就没有必要了。如果我们的应用没有在16ms内完成屏幕刷新的全部逻辑操作，就会发生卡顿。
+
+* （2）关于渲染原理
+
+  ![](image/img_01.png)
+
+
+  如图所示，屏幕显示1帧图像需要经历5个步骤：
+
+  *    定义布局中的组件
+  *    将ImageView组件映射成UI对象，加载到内存中
+  *    CPU将UI对象经过运算处理成多维矢量图形
+  *    GPU栅格化处理
+ *     显示器显示图像
+
+  常见的丢帧情况： 渲染期间可能出现的情况，渲染大于16ms和小于16ms的情况：
+![](image/img_02.png)
+
+## 2、卡顿的标准
+
+判断APP是否出现卡顿，我们从通用应用和游戏两个纬度的代表公司标准来看，即Google的Android vitals性能指标和地球第一游戏大厂腾讯的PrefDog性能指标
+判断 APP 是否出现卡顿，我们从通用应用和游戏两个纬度的代表公司标准来看，即 Google 的 Android vitals 性能指标和地球第一游戏大厂腾讯的 PrefDog 性能指标。
+
+### （1）通用应用界面卡顿标准
+
+  > 参考：[使用Android Vitals监控应用的技术性能](https://support.google.com/googleplay/android-developer/answer/9844486)
+
+
+* 呈现速度缓慢：在呈现速度缓慢的帧数较多的页面，当超过 50% 的帧呈现时间超过 16ms 毫秒时，用户感官明显卡顿。
+* 帧冻结：帧冻结的绘制耗时超过 700ms，为严重卡顿问题。
+    卡顿忽略 FPS<=2 的页面：因为人的视觉暂留 100~400ms，即 FPS 在 2.5~10 之间时，所以当 FPS 低于 3 时，人眼看到的并不是连续动作，即使有丢帧现象，也不会察觉。
+
+###（2）游戏应用界面卡顿标准
+
+  >  来源：[腾讯 PerfDog 使用说明书](https://bbs.perfdog.qq.com/article-detail.html?id=5)
+
+
+#####  PerfDog Jank计算方法：
+
+  * 普通卡顿Jank(同时满足两条件)：
+      当前帧耗时>前三帧平均耗时2倍。
+      当前帧耗时>两帧电影帧耗时(1000ms/24*2=84ms)。
+
+  * 严重卡顿BigJank(同时满足两条件)：
+      当前帧耗时>前三帧平均耗时2倍。
+      当前帧耗时>三帧电影帧耗时(1000ms/24*3=125ms)。
+
+
+### （3）为什么FPS无法判断是否卡顿？
+
+>  参考：[APP&游戏需要关注Jank卡顿及卡顿率吗？](https://bbs.perfdog.qq.com/article-detail.html?id=6)
+
+   帧率FPS高并不能反映流畅或不卡顿。比如：FPS为50帧，前200ms渲染一帧，后800ms渲染49帧，虽然帧率50，但依然觉得非常卡顿。同时帧率FPS低，并不代表卡顿，比如无卡顿时均匀FPS为15帧。所以平均帧率FPS与卡顿无任何直接关系)
+
+## 3、卡顿评估
+
+当了解卡顿的标准以及渲染原理之后，可以得出结论，只有丢帧情况才能准确判断是否卡顿。
+（1）如何获取丢帧信息？
+
+> 参考：[Android开发者 | 测试界面性能](https://developer.android.com/training/testing/performance)
+
+
+dumpsys 是一种在设备上运行并转储需要关注的系统服务状态信息的 Android 工具。通过向 dumpsys 传递 gfxinfo 命令，可以提供 logcat 格式的输出，其中包含与录制阶段发生的动画帧相关的性能信息。
+```
+# 查看帧时间数据 adb shell dumpsys gfxinfo < PACKAGE_NAME > framestats
+
+# 帧数据重置 adb shell dumpsys gfxinfo < PACKAGE_NAME > reset
+
+```
+#### 聚合帧统计信息
+
+借助 Android 6.0（API 级别 23），该命令可将在整个进程生命周期中收集的帧数据的聚合分析输出到 logcat。例如：
+```
+Stats since: 752958278148ns
+Total frames rendered: 82189
+Janky frames: 35335 (42.99%)
+90th percentile: 34ms
+ 95th percentile: 42ms
+ 99th percentile: 69ms
+ Number Missed Vsync: 4706
+ Number High input latency: 142
+ Number Slow UI thread: 17270
+ Number Slow bitmap uploads: 1542
+  Number Slow draw: 23342
+```
+
+
+这些总体统计信息可以得到期间的FPS、Jank比例、各类渲染异常数量统计。
+
+#### 精确的帧时间信息
+
+命令adb shell dumpsys gfxinfo <PACKAGE_NAME> framestats可提供最近120个帧中，渲染各阶段带有纳秒时间戳的帧时间信息。
+
+```
+flags intended_vsync vsync oldest_input_event newest_input_event handle_input_start animation_start perform_traversals_start draw_start sync_queued sync_start issue_draw_commands_start swap_buffers frame_completed
+0 27965466202353 27965466202353 27965449758000 27965461202353 27965467153286 27965471442505 27965471925682 27965474025318 27965474588547 27965474860786 27965475078599 27965479796151 2796548058906
+```
+
+
+关键参数说明：
+
+  *   flags：FLAGS为0时，总帧时间(ms) = (FRAME_COMPLETED - INTENDED_VSYNC) / 1000000。 如果非零，则该行应该被忽略，因为该帧的预期布局和绘制时间超过16ms，为异常帧。
+  *  INTENDED_VSYNC：帧的的预期起点，监测UI线程是否正常。如果与VSYNC值不同，是由于UI线程中的工作使其无法及时响应垂直同步信号所造成的。
+  *  HANDLE_INPUT_START：
+        将输入事件分派给应用的时间戳。
+        通过观察此时间戳与 ANIMATION_START 之间的时间差，可以测量应用处理输入事件所花的时间。
+        如果这个数字较高（> 2 毫秒），则表明应用处理 View.onTouchEvent() 等输入事件所花的时间太长，这意味着此工作需要进行优化或转交给其他线程。请注意，有些情况下（例如，启动新 Activity 或类似活动的点击事件），这个数字较大是预料之中并且可以接受的。
+  *  ANIMATION_START：
+        在 Choreographer 中注册的动画运行的时间戳。
+        通过观察此时间戳与 PERFORM_TRANVERSALS_START 之间的时间差，可以确定评估正在运行的所有动画（常见动画有 ObjectAnimator、ViewPropertyAnimator 和 Transitions）所用的时间。
+        如果这个数字较高（> 2 毫秒），请检查您的应用是否编写了任何自定义动画，或检查 ObjectAnimator 在对哪些字段设置动画并确保它们适用于动画。
+  *  PERFORM_TRAVERSALS_START：布局和度量阶段完成的时间 = PerformTraversalsStart - DrawStart。滚动或动画期间，期望接近0。
+  *  SYNC_QUEUED：
+        将同步请求发送给 RenderThread 的时间。
+        它标记的是将开始同步阶段的消息发送给 RenderThread 的时间点。如果该时间点与 SYNC_START 的时间差较大（约 > 0.1 毫秒），则意味着 RenderThread 正忙于处理另一帧。它在内部用于区分该帧是因作业负荷过大而超过了 16 毫秒的预算时间，还是该帧由于上一帧超过 16 毫秒的预算时间而停止。
+  *  SYNC_START：
+        绘制同步阶段的开始时间。
+        如果此时间与 ISSUE_DRAW_COMMANDS_START 之间相差较大（约 > 0.4 毫秒），通常表示绘制了大量必须上传到 GPU 的新位图。
+  *  ISSUE_DRAW_COMMANDS_START：
+        硬件渲染器开始向 GPU 发出绘图命令的时间。
+        此时间与 FRAME_COMPLETED 之间的时间差让您可以大致了解应用生成的 GPU 工作量。绘制过度或渲染效果不佳等问题都会在此显示出来。
+  *  FrameCompleted：帧的完整时间。帧耗时 = FrameCompleted - IntendedVsync，要求小于16ms。
+
+##（2）如何判断是否卡顿？
+
+###通用应用卡顿评估
+
+通过gfxinfo输出的帧信息，通过定时reset和打印帧信息，可以得到FPS(帧数/打印间隔时间)、丢帧比例（(janky_frames / total_frames_rendered)*100 %）、是否有帧冻结(帧耗时>700ms)。
+根据第2部分的通用应用卡顿标准，可以通过丢帧比例和帧冻结数量，准确判断当前场景是否卡顿。并且通过定时截图，还可以根据截图定位卡顿的具体场景。
+![](image/img_03.png)
+
+
+### 游戏应用卡顿评估
+
+根据上面对gfxinfo的帧信息解析，可以准确计算出每一帧的耗时。从而可以开发出满足腾讯PerfDog中关于普通卡顿和严重卡顿的判断。
+
+![ 游戏卡顿定义](image/img_04.png)
+
+
+
+依赖定时截图，即可准确定位卡顿场景。如下图所示（此处以PerfDog截图示例）：
+
+![](image/img_05.png)
+
+
+## 4、卡顿定位工具和高效定位方法
+
+通过第3部分的卡顿评估方法，我们可以定位到卡顿场景，但是如何定位到具体卡顿原因呢。
+
+首先了解卡顿问题定位工具，然后再了解常见的卡顿原因，即可通过复现卡顿场景的同时，用工具去定位具体卡顿问题。
+
+（1）卡顿问题定位工具
+
+    * dumpsys gfxinfo ：记录动画帧相关性能信息
+   ![](image/img_06.png)
+
+
+
+
+   * Systrace或Perfetto ：记录短时间内的设备活动，汇总了 Android 内核中的数据，例如 CPU 调度程序、磁盘活动和应用线程。
+
+       Perfetto是Android 10 中引入的全新平台级跟踪工具
+       ![](image/img_07.png)
+
+
+ * LayoutInspect ：检测动态布局层次结构、调查资源属性值在源代码中的来源位置、在运行时对应用的视图层次结构进行高级 3D 可视化。
+ ![](image/img_08.png)
+
+
+ * BlockCanary ：检测主线程上的各种卡顿问题
+ ![](image/img_09.png)
+
+ * CPU性能剖析器 ：监控应用进程中的每个线程，执行的方法 (Java) 或函数 (C/C++)，以及每个方法或函数在其执行期间消耗的 CPU 资源。还可以使用方法和函数跟踪数据来识别调用方和被调用方。可以使用这些信息来确定哪些方法或函数过于频繁地调用通常会消耗大量资源的特定任务，并优化应用的代码以避免不必要的工作。
+ ![](image/img_10.png)
+
+
+* GPU 渲染模式分析工具 ：以滚动直方图的形式直观地显示渲染界面窗口帧所花费的时间（以每帧 16 毫秒的速度作为对比基准），可定位动画渲染阶段的具体问题（比如：输入处理耗时问题、界面线程问题、视图绘制问题等）。
+
+  ![](image/img_11.png)
+
+###（2）如何高效定位卡顿问题
+     重点就是，充分利用gfxinfo输出的帧信息，对卡顿问题进行分类。
+
+    INTENDED_VSYNC
+        线程问题：如果此值不同于 VSYNC，则表示界面线程中发生的工作使其无法及时响应 Vsync 信号。
+        推荐定位工具：CPU性能剖析器查看线程中耗时较多的方法或函数。
+
+    HANDLE_INPUT_START
+        输出时间处理时间长：该值与ANIMATION_START差值>2ms，则表明应用处理 View.onTouchEvent() 等输入事件所花的时间太长，这意味着此工作需要进行优化或转交给其他线程。
+        注意事项：有些情况下（例如，启动新 Activity 或类似活动的点击事件），这个数字较大是预料之中并且可以接受的。
+        推荐定位工具：CPU性能剖析器查看线程中View.onTouchEvent()，并优化代码或转交给其他线程处理。
+
+    ANIMATION_START
+        动画问题：该值与PERFORM_TRANVERSALS_START差值>2ms，自定义动画问题 或 不适合的字段设置动画问题。
+        推荐定位工具：GPU 渲染模式分析工具，可定位输入处理耗时问题、界面线程问题、视图绘制问题等具体的问题范畴。
+
+    PERFORM_TRAVERSALS_START
+        布局问题：该值与DRAW_START如果>0，表明完成布局和测量阶段耗时较多。
+        推荐定位工具：使用GPU渲染分析工具确认是否Draw或Measure/Layout耗时较多，Draw较多说明更新的视图太多或View的OnDraw方法做了耗时操作； Measure/Layout耗时较多，说明布局可能有严重性能问题，使用LayoutInspect检查布局是否过于复杂，减少嵌套层次和控件个数。
+
+    SYNC_QUEUED
+        帧作业负荷较大问题：该值与 SYNC_START 的时间差较大（约 > 0.1 毫秒），则意味着 RenderThread 正忙于处理另一帧。它在内部用于区分该帧是因作业负荷过大而超过了 16 毫秒的预算时间，还是该帧由于上一帧超过 16 毫秒的预算时间而停止。
+        推荐定位工具：如果是因为当前帧作业负荷较大导致耗时较多，观察其他参数具体定位问题。
+
+    SYNC_START
+        需要上传到GPU的新位图较多：如果此时间与 ISSUE_DRAW_COMMANDS_START 之间相差较大（约 > 0.4 毫秒），通常表示绘制了大量必须上传到 GPU 的新位图。
+        推荐定位工具：GPU渲染分析工具，具体定位渲染阶段问题。
+
+###（3）主要卡顿原因
+> 主要参考：[Android卡顿检测及优化](https://blog.csdn.net/u013309870/article/details/106801022)
+
+了解了高效定位卡顿的方法和卡顿问题定位工具，再熟悉一下常见的卡顿原因，可以更熟练的定位和优化卡顿。
+
+####A. 系统层面卡顿原因
+**SurfaceFlinger 主线程耗时**
+
+SurfaceFlinger 负责 Surface 的合成，一旦 SurfaceFlinger 主线程调用超时，就会产生掉帧。
+SurfaceFlinger 主线程耗时会也会导致 hwc service 和 crtc 不能及时完成，也会阻塞应用的 binder 调用，如 dequeueBuffer、queueBuffer 等。
+
+**后台活动进程太多导致系统繁忙**
+
+后台进程活动太多，会导致系统非常繁忙，
+cpu \ io \ memory 等资源都会被占用，这时候很容易出现卡顿问题，这也是系统这边经常会碰到的问题。
+dumpsys cpuinfo 可以查看一段时间内 cpu 的使用情况：
+![](image/img_12.png)
+
+
+**主线程调度不到 , 处于 Runnable 状态**
+
+当线程为 Runnable 状态的时候，调度器如果迟迟不能对齐进行调度，那么就会产生长时间的 Runnable 线程状态，导致错过 Vsync 而产生流畅性问题。
+**System 锁**
+
+system_server 的 AMS 锁和 WMS 锁 , 在系统异常的情况下 , 会变得非常严重 , 如下图所示 , 许多系统的关键任务都被阻塞 , 等待锁的释放 , 这时候如果有 App 发来的 Binder 请求带锁 , 那么也会进入等待状态 , 这时候 App 就会产生性能问题 ; 如果此时做 Window 动画 , 那么 system_server 的这些锁也会导致窗口动画卡顿。
+![](image/img_13.png)
+
+
+## Layer过多导致 SurfaceFlinger Layer Compute 耗时
+
+Android P 修改了 Layer 的计算方法 , 把这部分放到了 SurfaceFlinger 主线程去执行, 如果后台 Layer 过多，就会导致 SurfaceFlinger 在执行 rebuildLayerStacks 的时候耗时 , 导致 SurfaceFlinger 主线程执行时间过长。
+
+![](image/img_14.png)
+
+
+###  B. 应用层面卡顿原因
+**主线程执行时间长**
+
+主线程执行 Input \ Animation \ Measure \ Layout \ Draw \ decodeBitmap 等操作超时都会导致卡顿 。
+
+  * Measure \ Layout 耗时\超时
+ *  draw耗时
+*  Animation回调耗时
+*  View 初始化耗时
+*  List Item 初始化耗时
+*  主线程操作数据库
+
+**主线程 Binder 耗时**
+
+Activity resume 的时候, 与 AMS 通信要持有 AMS 锁, 这时候如果碰到后台比较繁忙的时候, 等锁操作就会比较耗时, 导致部分场景因为这个卡顿, 比如多任务手势操作。
+
+**WebView 性能不足**
+
+应用里面涉及到 WebView 的时候, 如果页面比较复杂, WebView 的性能就会比较差, 从而造成卡顿。
+![](image/img_16.png)
+
+**帧率与刷新率不匹配**
+
+如果屏幕帧率和系统的 fps 不相符 , 那么有可能会导致画面不是那么顺畅. 比如使用 90 Hz 的屏幕搭配 60 fps 的动画。
+![](image/img_17.png)
+
+
+## 5、卡顿优化建议
+
+由上面的分析可知对象分配、垃圾回收(GC)、线程调度以及Binder调用 是Android系统中常见的卡顿原因，因此卡顿优化主要以下几种方法，更多的要结合具体的应用来进行：
+* （1）布局优化
+
+    通过减少冗余或者嵌套布局来降低视图层次结构。比如使用约束布局代替线性布局和相对布局。
+    用 ViewStub 替代在启动过程中不需要显示的 UI 控件。
+    使用自定义 View 替代复杂的 View 叠加。
+    减少嵌套层次和控件个数。
+    使用Tags：Merge标签减少布局嵌套层次，ViewStub标签推迟创建对象、延迟初始化、节省内存等。
+    减少过度绘制
+
+*（2）减少主线程耗时操作
+
+    主线程中不要直接操作数据库，数据库的操作应该放在数据库线程中完成。
+    sharepreference尽量使用apply，少使用commit，可以使用MMKV框架来代替sharepreference。
+    网络请求回来的数据解析尽量放在子线程中，不要在主线程中进行复制的数据解析操作。
+    不要在activity的onResume和onCreate中进行耗时操作，比如大量的计算等。
+
+* （3）列表优化
+
+    RecyclerView使用优化，使用DiffUtil和notifyItemDataSetChanged进行局部更新等。
+
+*（4）内存优化
+
+    减少小对象的频繁分配和回收操作。
+    被频繁调用的紧密的循环里，避免对象分配来降低GC的压力。
+
+
+
+
+[原文路径](https://www.ontheway.cool/posts/14244.html)

@@ -1,0 +1,82 @@
+## 一、SWT
+SWT：software watchdog，监控SystemServer进程，保证核心服务和核心进程卡住后可以复位。
+注意：SWT启动是在SystemServer init 的后期, 如果SystemServer在init的过程中卡死了，意味着watchdog不会起作用。
+
+### <1> watchdog原理
+  Android的Watchdog是一个单例线程，在SystemServer启动的startOtherServices()中就会init &start Watchdog。
+
+watchdog的添加方式：
+Watchdog在初始化时，会构建很多HandlerChecker，大致可以分为两类：
+* 1、Monitor Checker，用于检查是Monitor对象可能发生的死锁, AMS, PKMS, WMS等核心的系统服务都是通过addMonitor()加入Watchdog.mMonitorChecker.mMonitors列表中，该列表会不断调用Monitor.Monitor()函数。通过定期检测monitor对象的锁，以此检测线程是否发生死锁或阻塞。
+
+* 2、Looper Checker，用于检查线程的消息队列是否长时间处于工作状态。Watchdog自身的消息队列，Ui, Io, Display这些全局的消息队列都是被检查的对象。此外，一些重要的线程的消息队列，也会加入到Looper Checker中，譬如AMS, PKMS，这些是在对应的问题			怎么触发信息收集	收集的信息
+NE			1.检测data目录下是否有异常db产生  2.mainlog中查找关键字Fatal signal 11	1.异常db：data/aee_exp或data/aee_exp_backup/mtklog/aee_exp/db.xx 保存上传  2.data/anr data/tombstone  保存上传    3.编译版本时生成德symbol 库 与版本同时保存  ，/out/target/product/${PROJECT}/symbols/ ， 4 main log等上层log
+KE			1.检测data目录下是否有异常db产生     2.  cat/kmsg    log 中搜索关键字 “watchdog”/  "kernel NULL pointer"/"Unble to handle kernel  Paging request at virtual address	1.KE发生会产生异常DB：data/aee_exp或data/aee_exp_backup    以及编译版本时产生的vmlinux与版本同时保存下来， 2.kernel log：  kmsg保存上传
+发热、			手动触发	法一: 依序执行如下: 1. 系统调用dumpsys batterystats --reset。目的:初始化电池相关讯息 2. 系统调用dumpsys batterystats --enable full-wake-history。开启wakelock log 3. 操作手机复现当时场景 4. 系统调用bugreportz 5. 系统调用dumpsys batterystats --disable full-wake-history 6. 抓取/bugreports中的zip文件 和 data/local/traces的*.ctrace
+App Crash			自动触发
+SWT			自动触发	1.db.fatal.02.SWT.dbg 2.logcat
+ANR			自动触发	1:/data/anr/traces.txt 2:logcat
+卡顿问题			在ActivityThread.java的Loop 或者Choreographer中 添加帧绘制时间统计，一旦超时， 开始收集信息。	1、设备整体RAM情况 2、app消耗RAM 情况 3、CPU使用情况 4、当前IO操作的情况 5、当前显示的图层相关信息 6.main Log …等等
+input模块			手动触发	adb shell dumpsys input
+display			手动触发	1.adb shell dumpsys SurfaceFlinge 2.logcat (上层一下display相关的，如surface等) 3.抓kernel log中（屏信息，dsi，DRM，背光，ESD等）
+对象初始化时加入的。
+通过addThread()将对应主线程Handler保存到Watchdog.mHandlerCheckers列表中，同时还会把上面的mMonitorChecker也保存到Watchdog.mHandlerCheckers中，Watchdog会不断判断这些线程的Looper是否空闲，如果一直非空闲，那么必然被blocked住了。
+
+watchdog的运作逻辑大概如下：
+
+* 1、Watchdog运行后，便开始无限循环，依次调用每一个HandlerChecker的scheduleCheckLocked()方法；
+* 2、调度完HandlerChecker之后，便开始定期检查是否超时，每一次检查的间隔时间由CHECK_INTERVAL常量设定，为30秒；
+* 3、每一次检查都会调用evaluateCheckerCompletionLocked()方法来评估一下HandlerChecker的完成状态：
+* a、COMPLETED表示已经完成
+* b、WAITING和WAITED_HALF表示还在等待，但未超时
+* c、OVERDUE表示已经超时。默认情况下，timeout是1分钟，但监测对象可以通过传参自行设定，譬如PKMS的Handler Checker的超时是10分钟
+* 4、如果超时时间到了，还有HandlerChecker处于未完成的状态(OVERDUE)，则通过getBlockedCheckersLocked()方法，获取阻塞的HandlerChecker，生成一问题			怎么触发信息收集	收集的信息
+NE			1.检测data目录下是否有异常db产生  2.mainlog中查找关键字Fatal signal 11	1.异常db：data/aee_exp或data/aee_exp_backup/mtklog/aee_exp/db.xx 保存上传  2.data/anr data/tombstone  保存上传    3.编译版本时生成德symbol 库 与版本同时保存  ，/out/target/product/${PROJECT}/symbols/ ， 4 main log等上层log
+KE			1.检测data目录下是否有异常db产生     2.  cat/kmsg    log 中搜索关键字 “watchdog”/  "kernel NULL pointer"/"Unble to handle kernel  Paging request at virtual address	1.KE发生会产生异常DB：data/aee_exp或data/aee_exp_backup    以及编译版本时产生的vmlinux与版本同时保存下来， 2.kernel log：  kmsg保存上传
+发热、			手动触发	法一: 依序执行如下: 1. 系统调用dumpsys batterystats --reset。目的:初始化电池相关讯息 2. 系统调用dumpsys batterystats --enable full-wake-history。开启wakelock log 3. 操作手机复现当时场景 4. 系统调用bugreportz 5. 系统调用dumpsys batterystats --disable full-wake-history 6. 抓取/bugreports中的zip文件 和 data/local/traces的*.ctrace
+App Crash			自动触发
+SWT			自动触发	1.db.fatal.02.SWT.dbg 2.logcat
+ANR			自动触发	1:/data/anr/traces.txt 2:logcat
+卡顿问题			在ActivityThread.java的Loop 或者Choreographer中 添加帧绘制时间统计，一旦超时， 开始收集信息。	1、设备整体RAM情况 2、app消耗RAM 情况 3、CPU使用情况 4、当前IO操作的情况 5、当前显示的图层相关信息 6.main Log …等等
+input模块			手动触发	adb shell dumpsys input
+display			手动触发	1.adb shell dumpsys SurfaceFlinge 2.logcat (上层一下display相关的，如surface等) 3.抓kernel log中（屏信息，dsi，DRM，背光，ESD等）
+些描述信息；
+* 5、保存日志，包括一些运行时的堆栈信息，这些日志是我们解决Watchdog问题的重要依据。如果判断需要杀掉system_server进程，则给当前进程(system_server)发送signal 9；
+
+###<2>SWT问题分析流程：（以MTK平台为例）
+
+* 1、获取APLog和db文件，使用GAT工具解析db文件；
+
+* 2、首先确认log有效性，确认问题类型。在SYS_ANDROID_EVENT_LOG中check SWT发生的时间点及卡住的线程，在SWT_JBT_TRACES中找到system_server一分钟内的两次backtrace（当SWT的两次有效trace打印的call stack完全一样时，才认为是block issue；如果两次trace打印的call stack不完全一样或者只有一次有效trace，怀疑系统Performance比较差，需要check系统performance状况）；
+
+* 3、线程阻塞问题，需要查看堆栈调用，按以下顺序排查 ：
+
+        ①thread之间是否形成一个环，是否互相持锁形成死锁；
+        ②是否binder对端被锁，如果是，需要找到binder对端线程，查看该线程阻塞情况；
+        ③是否Native Call有问题，找到对应的so文件；
+        ④是否dump时间过久导致。
+
+* 4、怀疑系统性能差，check以下三方面CPU、Low Memory、IO
+————————————————
+##二、ANR
+ANR：Application Not Responding
+只有当应用程序的UI线程响应超时才会引起ANR，超时原因有两种：
+* 1、当前的事件没有得到处理
+* 2、当前的事件处理耗时过长
+
+主要有三种类型：KeyDispatchTimeout（5s）、BroadcastTimeOut（10s）、ServiceTimeOut（20s）
+
+ANR问题分析流程：
+* 1、获取APLog和trace，可以查看trace堆栈调用，查看main thread情况；
+* 2、以inputdispatch ANR为例，首先check inputdispatch type：
+  ```
+  ①No Focus Window：检查activity onResume时间点，如果发生ANR时onResume还未完成，则为APP Related Issue；
+  然后再检查relayout window时间，如果发生ANR时resume activity还未call relayout window，则为APP Related Issue，
+  否则为WMS Issue。
+  ②Waiting Previous Event：APP是否idle，是的话是view issue，否的话是APP Related issue；
+  ```
+* 3、APP Related Issue check
+
+  ![](image/20200605104122365.png)
+
+  * 4、Broadcast/Service ANR大都是APP Related Issue

@@ -93,5 +93,51 @@ https://developer.huawei.com/consumer/cn/forum/topic/0201433415684790073
 ICC色彩特性文件
 https://zh.wikipedia.org/wiki/ICC%E8%89%B2%E5%BD%A9%E7%89%B9%E6%80%A7%E6%96%87%E4%BB%B6
 
+
+https://zhuanlan.zhihu.com/p/30453831
+Skia图片解析流程与图片编码原理初探
+
+Android P新的图片格式 HEIF 调研
+https://segmentfault.com/a/1190000015947004?utm_source=tag-newest
+
+
+
 多屏幕刷新率(refresh rate)模式下的帧显示流水线
 https://blog.csdn.net/alijaja/article/details/105949351
+
+
+颜色空间
+ADisplay_getPreferredWideColorFormat
+
+
+
+https://blog.csdn.net/msf568834002/category_7936416.html
+
+
+
+http://www.360doc.com/content/19/1203/10/10366845_877075957.shtml
+
+
+视频名词浅析——HDR
+https://zhuanlan.zhihu.com/p/38837135
+
+
+https://zhuanlan.zhihu.com/p/36968533
+
+
+
+https://www.jianshu.com/p/d183b4edeb56
+高级UI<第十八篇>：图像处理之颜色矩阵
+
+Android滤镜效果实现及原理分析
+https://zhuanlan.zhihu.com/p/39905972
+
+
+滤镜和颜色通道
+https://www.geek-share.com/detail/2698412554.html
+
+去色原理：只要把RGB三通道的色彩信息设置成一样；即：R＝G
+＝B，那么图像就变成了灰色，并且，为了保证图像亮度不变，
+同一个通道中的R+G+B=1:如：0.213+0.715+0.072＝1；
+RGB=0.213, 0.715, 0.072；
+三个数字是根据色彩光波频率及色彩心理学计算出来的.

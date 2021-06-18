@@ -1,0 +1,500 @@
+
+# 开篇
+ 去年11 月 18 日 OPPO INNODAY 的技术分论坛上。OPPO 第一次对外讲述了它的「全链路色彩管理系统」. 归根接地就是如下2点：
+* 相机能以 10bit 记录 P3 色彩
+* 屏幕能以 10bit 显示 P3 色域
+
+>OPPO 说率先对原生 Android 的解码进行了重构，同时对原生的内存数据进行改造，还增加了渲染适配入口，最终研发出了兼容10bit图片的解决方案.
+
+我们这花点时间趴一趴OPPO的底裤,看他到底改了啥？
+
+我们这只从分析**屏幕能以 10bit 显示 P3 色域**这一点。这里有2层含义
+ * 10bit
+       对于RGB格式图片来说，每一位用10bit来表示，这样，每个颜色通道的色彩级数从8bit的256级提高到了1024级，就可以更细致地表达颜色。
+ *  P3 色域
+     这里三言两语很难说明白，大家可以百度一下，反正就是表示的颜色更广。
+
+Android 10 的设备支持 HEIC 压缩图片格式,我们就从HEIC图片的显示过程入手，来分析这个问题
+
+
+* 什么是HEIF格式
+* HEIF能做什么？
+* Android 对HEIF的支持
+* HEIF解码
+* HEIF渲染
+* Oppo 到底改了什么？
+
+
+## 什么是HEIF格式
+   HEIF全称是High Efficiency Image File Format（高效图像文件格式），是一种高效的图片封装格式，通常的文件后缀名为HEIC。不同于我们最常见到的JPEG格式图片，HEIF是一种封装格式，一般HEIF格式的图片，特指以HEVC（H.265）编码器进行压缩的图像文件。
+
+## HEIF能做什么？
+  1. 由于封装格式与编码方式的相互独立，赋予了HEIF格式更多的功能特性。以往，我们可以通过在JPEG格式图片上附加EXIF信息，来存储照片的拍摄地点、设备参数等数据。而HEIF格式不仅可以存储静态图像、EXIF、景深信息、透明通道等图片信息，还可以存储动画甚至视频、音频等等，这就带来了更多的可玩性
+
+  2. 除了体积小这个优势外，HEIF相比JPG的重要优势是支持的色深更高。色深（Color Depth）也被称之为色位深度.PG格式图片的色深通常为8bit，而HEIF格式拍摄照片色深为10bit。
+
+## Android 对HEIF的支持
+* Android P对HEIF的支持情况？
+
+  Android P只支持静态的显示HEIF，无论什么类型的HEIF
+
+  对HEIF的解析是OK的，不论什么类型都可以解析出
+
+  只能封装静态的HEIF
+
+  由于HEIF的编解码器以hevc,avc,aac为主所以decode和encode一般都是支持的
+
+  支持HEIF扫描
+
+  ![](image/2761537721-5b6bf212757a8_fix732.webp)
+
+  **有几个关心的问题：**
+
+  HEIF的显示，ImageDecoder/BitmapFactory + ImageView
+
+  HEIF转Jpeg，BItmapFactory
+
+  YUV，Surface，Jpeg转HEIF，androidx.heifwriter.HeifWriter
+
+## HEIF解码
+
+解码流程分析直接从如下demo入手，其中FILE_PATH  为一张HEIF格式图片，10bit色深，P3色域。
+
+```
+final BitmapFactory.Options options = new BitmapFactory.Options();
+// Decode this file to sRGB color space.
+options.inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.DISPLAY_P3);
+Bitmap bitmap = BitmapFactory.decodeFile(FILE_PATH, options);
+```
+通过JNI调用Native 方法
+BitmapFactory.cpp
+```
+static jobject nativeDecodeStream(JNIEnv* env, jobject clazz, jobject is, jbyteArray storage,
+        jobject padding, jobject options, jlong inBitmapHandle, jlong colorSpaceHandle) {
+
+    jobject bitmap = NULL;
+    std::unique_ptr<SkStream> stream(CreateJavaInputStreamAdaptor(env, is, storage));
+
+    if (stream.get()) {
+        std::unique_ptr<SkStreamRewindable> bufferedStream(
+                SkFrontBufferedStream::Make(std::move(stream), SkCodec::MinBufferedBytesNeeded()));
+        SkASSERT(bufferedStream.get() != NULL);
+        bitmap = doDecode(env, std::move(bufferedStream), padding, options, inBitmapHandle,
+                          colorSpaceHandle);
+    }
+    return bitmap;
+}
+
+```
+
+ doDecode() 的实现比较长 , 我们只关注核心的解码部分, 且大部分工作都是由 SkAndroidCodec 完成.
+
+
+```
+static jobject doDecode(JNIEnv* env, std::unique_ptr<SkStreamRewindable> stream,
+                        jobject padding, jobject options, jlong inBitmapHandle,
+                        jlong colorSpaceHandle) {
+    // Set default values for the options parameters.
+
+    // [01] 初始化 Option 参数 ，包括颜色空间P3。
+
+    sk_sp<SkColorSpace> prefColorSpace = GraphicsJNI::getNativeColorSpace(colorSpaceHandle);
+
+    ...
+
+    //[02] 创建SkCodec解码器。
+
+    // Create the codec.
+    NinePatchPeeker peeker;
+    std::unique_ptr<SkAndroidCodec> codec;
+    {
+        SkCodec::Result result;
+        std::unique_ptr<SkCodec> c = SkCodec::MakeFromStream(std::move(stream), &result,
+                                                             &peeker);
+
+
+     // [03] 输出的图片大小, 根据采样大小, 缩放比例等因素调整 ()
+     // ...
+     SkISize size = codec->getSampledDimensions(sampleSize);
+
+
+
+     // [04] 输出图片的色彩类型, 根据请求的类型选择最合适的类型
+     // Set the decode colorType
+     SkColorType decodeColorType = codec->computeOutputColorType(prefColorType);
+
+
+    // [05] 构建色码表, 以便解码时使用
+    // ...
+
+    // [06] 设置透明度等, 并构造对应的解码器配置
+    // ...
+
+    // [07] 利用 SkAndroidCodec 完成解码
+    //      CPP 中的 Bitmap, 即 decodingBitmap, 在这一步初步成型
+    // ...
+    SkCodec::Result result = codec->getAndroidPixels(
+                decodeInfo,                 // 解码信息 (长度, 宽度, 色彩类型, 透明度等)
+                decodingBitmap.getPixels(), // Bitmap 的实际内存地址, 即像素们的内存地址
+                decodingBitmap.rowBytes(),  // 每一行的大小, 即每一行所有像素的大小
+                &codecOptions);             // 解码器配置 (色码表, 采样大小等)
+              // ...
+
+
+   // [08] 缩放 decodingBitmap, 实际上可以在上一步解码时同步完成
+   //      放在这里执行主要是为了兼容 Dalvik 虚拟机
+   // ...
+
+
+    // [09] 将 CPP 中的 Bitmap 转换为 Java 中的 Bitmap, 即生成对应的 jobject
+   // ...
+}
+
+```
+其中主要分析2个函数
+  * 1.SkCodec::MakeFromStream 函数为创建解码器得过程
+  * 2.codec->getAndroidPixels 解码 和 生成 Bitmap
+
+external/skia/src/codec/SkCodec.cpp
+```
+std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
+        std::unique_ptr<SkStream> stream, Result* outResult,
+        SkPngChunkReader* chunkReader, SelectionPolicy selectionPolicy) {
+    Result resultStorage;
+
+       // ...
+
+        #ifdef SK_HAS_HEIF_LIBRARY
+                if (SkHeifCodec::IsHeif(buffer, bytesRead)) {
+                    return SkHeifCodec::MakeFromStream(std::move(stream), selectionPolicy, outResult);
+                }
+        #endif
+
+     // ...
+      return nullptr;
+}
+
+```
+我们这是HEIF格式当然走SkHeifCodec::MakeFromStream.
+
+external/skqp/src/codec/SkHeifCodec.cpp
+```
+std::unique_ptr<SkCodec> SkHeifCodec::MakeFromStream(
+        std::unique_ptr<SkStream> stream, Result* result) {
+
+    std::unique_ptr<HeifDecoder> heifDecoder(createHeifDecoder());
+
+
+    heifDecoder->init(new SkHeifStreamWrapper(stream.release(),
+
+
+    std::unique_ptr<SkEncodedInfo::ICCProfile> profile = nullptr;
+
+    auto icc = SkData::MakeWithCopy(frameInfo.mIccData.get(), frameInfo.mIccSize);
+    profile = SkEncodedInfo::ICCProfile::Make(std::move(icc));
+
+    if (profile && profile->profile()->data_color_space != skcms_Signature_RGB) {
+        // This will result in sRGB.
+        profile = nullptr;
+    }
+
+    SkEncodedInfo info = SkEncodedInfo::Make(frameInfo.mWidth, frameInfo.mHeight,
+            SkEncodedInfo::kYUV_Color, SkEncodedInfo::kOpaque_Alpha, 8, std::move(profile));
+
+    return std::unique_ptr<SkCodec>(new SkHeifCodec(std::move(info), heifDecoder.release(),
+                                                    orientation));
+}
+```
+主要是解析 图片的ICCProfile 参数，new SkHeifCodec 对象。其中<HeifDecoder>即实际解码的类。编译在libheif.so中
+```
+HeifDecoder* createHeifDecoder() {
+    return new android::HeifDecoderImpl();
+}
+```
+
+```
+struct HeifDecoderImpl::DecodeThread : public Thread {
+   explicit DecodeThread(HeifDecoderImpl *decoder) : mDecoder(decoder) {}
+
+private:
+   HeifDecoderImpl* mDecoder;
+
+   bool threadLoop();
+
+   DISALLOW_EVIL_CONSTRUCTORS(DecodeThread);
+};
+
+```
+整体流程图如下：
+![](image/3525433938-5bcd76c4a185b_articlex.webp)
+具体的解码工作还是通过Stagefright框架 实现，这里暂不继续分析。我们先看一下setOutputColor函数。
+
+```
+bool HeifDecoderImpl::setOutputColor(HeifColorFormat heifColor) {
+    if (heifColor == mOutputColor) {
+        return true;
+    }
+
+    switch(heifColor) {
+        case kHeifColorFormat_RGB565:
+        {
+            mOutputColor = HAL_PIXEL_FORMAT_RGB_565;
+            break;
+        }
+        case kHeifColorFormat_RGBA_8888:
+        {
+            mOutputColor = HAL_PIXEL_FORMAT_RGBA_8888;
+            break;
+        }
+        case kHeifColorFormat_BGRA_8888:
+        {
+            mOutputColor = HAL_PIXEL_FORMAT_BGRA_8888;
+            break;
+        }
+        default:
+            ALOGE("Unsupported output color format %d", heifColor);
+            return false;
+    }
+
+    if (mFrameDecoded) {
+        return reinit(nullptr);
+    }
+    return true;
+}
+```
+可以知道当前是不支持10bit解码的。所有OPPO在Stagefright框架中重新添加了10bit的支持，其中包括OMX的解码，个人猜测，只是实现了软件解码部分，毕竟OPPO没有设计硬件的能力。
+
+##HEIF渲染
+  对于广色域的渲染流程。
+1. 我们首先确认平台是否支持广色域
+  ```
+   boolean mWcgEnabled = this.getResources().getConfiguration().isScreenWideColorGamut();
+  ```
+  屏幕colorMode有如下地方初始化。
+  frameworks/base/services/core/java/com/android/server/wm/DisplayContent.java
+  ```
+  config.colorMode =
+        ((displayInfo.isHdr() && mWmService.hasHdrSupport())
+                ? Configuration.COLOR_MODE_HDR_YES
+                : Configuration.COLOR_MODE_HDR_NO)
+                | (displayInfo.isWideColorGamut() && mWmService.hasWideColorGamutSupport()
+                ? Configuration.COLOR_MODE_WIDE_COLOR_GAMUT_YES
+                : Configuration.COLOR_MODE_WIDE_COLOR_GAMUT_NO);
+
+```
+其中isWideColorGamut函数可以知道，目前只有 COLOR_MODE_ADOBE_RGB 和COLOR_MODE_DCI_P3 是光色色域
+  frameworks/base/core/java/android/view/DisplayInfo.java
+  ```
+  public boolean isWideColorGamut() {
+      for (int colorMode : supportedColorModes) {
+          if (colorMode == Display.COLOR_MODE_DCI_P3 || colorMode > Display.COLOR_MODE_SRGB) {
+              return true;
+          }
+      }
+      return false;
+  }
+  ```
+最终是更具平台的配置来设置的,这里不再深究
+ ```
+ PRODUCT_DEFAULT_PROPERTY_OVERRIDES += ro.surface_flinger.use_color_management=true
+PRODUCT_DEFAULT_PROPERTY_OVERRIDES += ro.surface_flinger.has_wide_color_display=true
+PRODUCT_DEFAULT_PROPERTY_OVERRIDES += ro.surface_flinger.has_HDR_display=true
+ ```
+2.设置当前app的显示模式为COLOR_MODE_WIDE_COLOR_GAMUT.
+
+对于渲染流程，我们知道 可以在应用 OnCreate的时候进入如下设置来启动广色域featrue.
+```
+getWindow().setColorMode(ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT);
+```
+这个参数最终会在当前app的viewRoot中设置到mThreadedRenderer中 。
+frameworks/base/core/java/android/view/ViewRootImpl.java
+```
+private void enableHardwareAcceleration(WindowManager.LayoutParams attrs) {
+    mAttachInfo.mHardwareAccelerated = false;
+    mAttachInfo.mHardwareAccelerationRequested = false;
+  //  ...
+  final boolean wideGamut =
+        mContext.getResources().getConfiguration().isScreenWideColorGamut()
+        && attrs.getColorMode() == ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT;
+
+        mAttachInfo.mThreadedRenderer = ThreadedRenderer.create(mContext, translucent,
+                    attrs.getTitle().toString());
+            mAttachInfo.mThreadedRenderer.setWideGamut(wideGamut);
+
+
+    //...
+}
+```
+之后通过Jni方式设置到native RenderProxy 中
+
+```
+void RenderProxy::setWideGamut(bool wideGamut) {
+    mRenderThread.queue().post([=]() { mContext->setWideGamut(wideGamut); });
+}
+```
+
+其中mContext为CanvasContext. 起创建函数如下：
+```
+CanvasContext* CanvasContext::create(RenderThread& thread, bool translucent,
+                                     RenderNode* rootRenderNode, IContextFactory* contextFactory) {
+    auto renderType = Properties::getRenderPipelineType();
+
+    switch (renderType) {
+        case RenderPipelineType::SkiaGL:
+            return new CanvasContext(thread, translucent, rootRenderNode, contextFactory,
+                                     std::make_unique<skiapipeline::SkiaOpenGLPipeline>(thread));
+        case RenderPipelineType::SkiaVulkan:
+            return new CanvasContext(thread, translucent, rootRenderNode, contextFactory,
+                                     std::make_unique<skiapipeline::SkiaVulkanPipeline>(thread));
+        default:
+            LOG_ALWAYS_FATAL("canvas context type %d not supported", (int32_t)renderType);
+            break;
+    }
+    return nullptr;
+}
+```
+这里可以看到RenderPipeline分为 SkiaGL和SkiaVulkan,目前Android R上面是 SkiaGL和SkiaVulkan。继续分析setWideGamut函数
+```
+void CanvasContext::setWideGamut(bool wideGamut) {
+    ColorMode colorMode = wideGamut ? ColorMode::WideColorGamut : ColorMode::SRGB;
+    mRenderPipeline->setSurfaceColorProperties(colorMode);
+}
+
+```
+调用mRenderPipeline 的 setSurfaceColorProperties很函数，mRenderPipeline即上面提到的skiapipeline::SkiaOpenGLPipeline。但setSurfaceColorProperties这个方法是在父类SkiaPipeline 中实现的
+
+
+frameworks/base/libs/hwui/pipeline/skia/SkiaPipeline.cpp
+```
+void SkiaPipeline::setSurfaceColorProperties(ColorMode colorMode) {
+    mColorMode = colorMode;
+    if (colorMode == ColorMode::SRGB) {
+        mSurfaceColorType = SkColorType::kN32_SkColorType;
+        mSurfaceColorSpace = SkColorSpace::MakeSRGB();
+    } else if (colorMode == ColorMode::WideColorGamut) {
+        mSurfaceColorType = DeviceInfo::get()->getWideColorType();
+        mSurfaceColorSpace = DeviceInfo::get()->getWideColorSpace();
+    } else {
+        LOG_ALWAYS_FATAL("Unreachable: unsupported color mode.");
+    }
+}
+```
+最终设置mSurfaceColorType和mSurfaceColorSpace2个变量，从名称来看即设置Surface的2个颜色属性。
+
+frameworks/base/libs/hwui/DeviceInfo.cpp
+```
+void DeviceInfo::updateDisplayInfo() {
+ //...
+    ADisplay_getPreferredWideColorFormat(primaryDisplay, &dataspace, &format);
+
+ switch (dataspace) {
+     case ADATASPACE_DISPLAY_P3:
+         mWideColorSpace =
+                 SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDCIP3);
+         break;
+     case ADATASPACE_SCRGB:
+         mWideColorSpace = SkColorSpace::MakeSRGB();
+         break;
+     case ADATASPACE_SRGB:
+         // when sRGB is returned, it means wide color gamut is not supported.
+         mWideColorSpace = SkColorSpace::MakeSRGB();
+         break;
+     default:
+         LOG_ALWAYS_FATAL("Unreachable: unsupported wide color space.");
+ }
+ switch (format) {
+     case AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM:
+         mWideColorType = SkColorType::kN32_SkColorType;
+         break;
+     case AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT:
+         mWideColorType = SkColorType::kRGBA_F16_SkColorType;
+         break;
+     default:
+         LOG_ALWAYS_FATAL("Unreachable: unsupported pixel format.");
+//...
+}
+```
+* 1.mWideColorType 支持 RGBA_F16 和kN32_SkColorType（8888）类型，技术软件流程已经支持8位和16位的数据显示，主要看Display Device 设备是否支持。
+* 2.同样SkColorSpace支持  DISPLAY_P3和SRGB ，也是看Display Device 设备是否支持。
+
+mWideColorType 变量的哪里起作用的 ？
+```
+bool SkiaOpenGLPipeline::draw(const Frame& frame, const SkRect& screenDirty, const SkRect& dirty,
+                              const LightGeometry& lightGeometry,
+                              LayerUpdateQueue* layerUpdateQueue, const Rect& contentDrawBounds,
+                              bool opaque, const LightInfo& lightInfo,
+                              const std::vector<sp<RenderNode>>& renderNodes,
+                              FrameInfoVisualizer* profiler) {
+    mEglManager.damageFrame(frame, dirty);
+
+    SkColorType colorType = getSurfaceColorType();
+
+    //[1] 根据上面设置的colorType。 设置fbo的fFormat
+    if (colorType == kRGBA_F16_SkColorType) {
+        fboInfo.fFormat = GL_RGBA16F;
+    } else if (colorType == kN32_SkColorType) {
+        // Note: The default preference of pixel format is RGBA_8888, when other
+        // pixel format is available, we should branch out and do more check.
+        fboInfo.fFormat = GL_RGBA8;
+    } else {
+        LOG_ALWAYS_FATAL("Unsupported color type.");
+    }
+
+    GrBackendRenderTarget backendRT(frame.width(), frame.height(), 0, STENCIL_BUFFER_SIZE, fboInfo);
+
+
+    //[2] 使用fbo 初始化 画布surface
+    SkASSERT(mRenderThread.getGrContext() != nullptr);
+    sk_sp<SkSurface> surface(SkSurface::MakeFromBackendRenderTarget(
+            mRenderThread.getGrContext(), backendRT, this->getSurfaceOrigin(), colorType,
+            mSurfaceColorSpace, &props));
+
+
+    //[3] 开始渲染。
+    renderFrame(*layerUpdateQueue, dirty, renderNodes, opaque, contentDrawBounds, surface,
+                SkMatrix::I());
+    layerUpdateQueue->clear();
+
+
+    return true;
+}
+
+```
+对于colorType 和 ColorSpace的追踪，往下实在没有头绪了。这里只知道设置到离屏幕渲染buf fbo的参数中，我们先放一放。我们从另一个角度来分析
+
+在渲染广色域图像时，除了具体的广色域内容之外，您还需要创建一个广色域 surface，以 OpenGL 为例，应用必须先检查以下扩展:
+
+  * EXT_gl_colorspace_display_p3_passthrough
+  * EXT_gl_colorspace_display_p3
+
+然后，在创建 surface 时请求 Display P3 作为色彩空间，具体代码见下:
+
+```
+private static final int EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT = 0x3490;
+
+public EGLSurface createWindowSurface(EGL10 egl, EGLDisplay display,
+                                      EGLConfig config, Object nativeWindow) {
+  EGLSurface surface = null;
+  try {
+    int attribs[] = {
+      EGL_GL_COLORSPACE_KHR, EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT,
+      egl.EGL_NONE
+    };
+    surface = egl.eglCreateWindowSurface(display, config, nativeWindow, attribs);
+  } catch (IllegalArgumentException e) {}
+  return surface;
+}
+```
+如果您想了解如何在原生代码中采用广色域，请参阅官方文档[使用广色域内容增强图形](https://developer.android.com/training/wide-color-gamut)。
+
+## Oppo 到底改了什么？
+   从上面的流程来看，Oppo 最要修改是，添加了对12bit编解码的支持，这一块工作量还蛮大的。
+
+详细参考:
+
+1. [解读HEIF格式：精小且强大][1]
+2. [Android P新的图片格式 HEIF 调研](https://segmentfault.com/a/1190000015947004?utm_source=tag-newest)
+  3. [Skia图片解析流程与图片编码原理初探](https://zhuanlan.zhihu.com/p/30453831)
+4. [使用广色域内容增强图形效果bookmark_border](https://developer.android.com/training/wide-color-gamut)
+
+[1]: https://xw.qq.com/cmsid/20200322A0L7UB00?f=newdc
