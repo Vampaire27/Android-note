@@ -1,136 +1,15 @@
-
-1. Recovery codes
-
-Recovery codes are used to access your account in the event you cannot receive two-factor authentication codes.
-Download, print, or copy your recovery codes before continuing two-factor authentication setup below
-
-6f4d8-fb5af
-65973-a2c9f
-b4777-91d50
-5807c-e166f
-530f4-7c2e3
-6f321-1832d
-a863d-b86d4
-7bef4-1ebd3
-78981-b101e
-38599-87c27
-aa810-405e9
-c8a03-8ddb9
-f608f-23f96
-c8b98-60ad5
-01d8f-8efb0
-e2f63-9e009
+# 常用网址
 
 
+1. [gooogle android 英文网址](https://source.android.com/)
 
 
+2. [gooogle Android  简体中文网址 ](https://source.android.google.cn/devices/tech/perf)
 
+3. [android 开发者](https://developer.android.google.cn/)
 
+4. [性能优化课程](https://blog.yorek.xyz/android/paid/master/io_3/)
 
+5. [图解Linux网络包接收过程](https://www.cnblogs.com/kfngxl/p/14083956.html)
 
-
-岗位要求：
-1.良好的Java/C++语言基础，熟悉设计模式；
-2.了解Android基本框架，有2年以上系统Framework开发经验；
-
-有以下工作经验之一者优先
-1: 有高通,MTK手机系统FrameWork开发维护经验着尤佳.
-2. 有Android编译系统开发,定制,维护经验.
-3. 熟悉Android框架层核心服务AMS、WMS、PMS等模块着.
-4. 熟悉UserManger,StorageManger,PowerManger模块开发和维护经验.
-5. 具有Android系统性能优化,熟悉ams，input，display相关机制,熟悉linux kernel 的调度，内存，文件系统.
-6. 有手机功耗处理经验,熟悉手机外设(屏幕，Camera，Audio，RF，memory)工作原理及常用功耗优化手段.
-7. 有Android输入系统开发和维护经验,熟悉Android原生输入法.
-8. 熟悉蓝牙、WIFI、以太网、Camera、GPS及NFC模块，有相关开发工作经验.
-9. 熟悉Android DAC权限管理,Selinux权限,Runtime权限,Fuse文件系统等.
-10. 有系统常见异常如重启、卡死、黑屏、闪退、休眠/唤醒、第三方应用报错等工作经验.
-11. 有OTA 开发和维护经验, 熟悉dm verity,手机加密等功能.
-12. 了解ARM trust Zone,有ＴＥＥ开发经验.
-13. 熟悉Audio/Media service流程，有AudioFlinger，MediaCodec等工作经验优先。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-1.WiFi/BT/GPS/FM四合一模块
-2.fingerprint(指纹)
-3. 系统启动
-4. sensor/NFC   通信框架工程师
-
-任职要求:
-1.本科及以上学历，计算机相关专业；
-2.熟悉Linux和Android体系架构，熟悉操作系统原理；
-3.熟悉ARM体系机构以及总线接口协议，具备硬件基础知识，能看懂原理图，会使用示波器；
-4.精通Linux下的CCjava开发；
-6.良好的英语读、写能力，有良好的团队精神和敬业精神。 
-
-有以下工作经验之一者优先
-1.有WiFi/BT/GPS/FM四合一模块工作经验
-2.有fingerprint(指纹)模块工作经验
-3. 有lk，kernel系统启动模块工作经验
-4. 有sensor/NFC   通信框架工作经
-
-
-岗位要求：
-1.熟悉Modem/RIL/PRC等部分技术；
-2.有高通平台Modem的开发经验，熟悉高通平台modem架构；
-3.3年以上通信产品研发工作经验，熟悉3GPP或者3GPP2协议，熟悉GSM/WCDMA/1x/EVDO/LTE/USIM相关通信协议，有搜网注册、PS域业务、CS域业务（通话，短信，补充业务等等）等经验者优先；
-4.通信与电子、计算机相关专业，了解通信原理，本科以上学历。
-岗位职责：
-1.负责4G、5G协议研究；
-2.Modem技术架构深度优化；
-3.解决网络稳定性和功耗问题；
-4.负责智能产品modem侧软件的开发、调试以及维护工作；
-5.负责modem侧QCN和MBN的管理与维护；
-6.参与涉及协议相关的需求评估、分析、设计及实现；
-7.负责分析处理CDMA/GSM/WCDMA/TDSCDMA/LTE相关协议认证及外场问题，解决问题或者给出优化设计方案并设计实现。；
-8.RF的driver调试；
-9.提出新的技术研究方向，撰写核心专利、标准提案。
-
-
-
-1.熟悉Modem/RIL/PRC等部分技术；
-2.有高通平台Modem的开发经验，熟悉高通平台modem架构；
-3.3年以上通信产品研发工作经验，熟悉3GPP或者3GPP2协议，熟悉GSM/WCDMA/1x/EVDO/LTE/USIM相关通信协议，有搜网注册、PS域业务、CS域业务（通话，短信，补充业务等等）等经验者优先；
-4.通信与电子、计算机相关专业，了解通信原理，本科以上学历；
-岗位职责：
-1.负责4G、5G协议研究；FlipCover 应用是配合 twin 手机皮套使用的 apk 。 在盖上皮套之后,可以更好的显示提示信
-息和 music play 的操作,这个文档主要介绍 FlipCover 的工作原理和实现方法。
-2.Modem技术架构深度优化；
-3.解决网络稳定性和功耗问题；
-4.负责智能产品modem侧软件的开发、调试以及维护工作；
-5.负责modem侧QCN和MBN的管理与维护；
-6.参与涉及协议相关的需求评估、分析、设计及实现；
-7.负责分析处理CDMA/GSM/WCDMA/TDSCDMA/LTE相关协议认证及外场问题，解决问题或者给出优化设计方案并设计实现。
-8.RF的driver调试
-9.提出新的技术研究方向，撰写核心专利、标准提案；
-
-
-FlipCover 应用是配合 twin 手机皮套使用的 apk 。 在盖上皮套之后,可以更好的显示提示信
-息和 music play 的操作,这个文档主要介绍 FlipCover 的工作原理和实现方法。
-xiangmu
-TCL 代号为"twin "手机项目 Android 2.3系统
-Android 手机项目 FlipCover app开发：
-2011年 Android
-
-
-
-https://www.processon.com/i/60b5ea5c6376894e10e999c5 
+6. [Android流畅度评估及卡顿优化](https://www.ontheway.cool/posts/14244.html)

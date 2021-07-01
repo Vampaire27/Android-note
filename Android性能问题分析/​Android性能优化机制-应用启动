@@ -1,0 +1,197 @@
+# Android性能优化机制-应用启动
+
+
+## 1 背景
+
+应用的启动速度是一个非常重要的性能指标，Android原始系统为了增加应用的启动速度也做了一些方案。熟悉这些方案，有助于对系统的理解。做优化，一方面要充分利用好Android已有优化方案，另外一方面可以思考未来还有哪些改进方向。
+
+## 2 Android系统层优化方案简介
+
+### 2.1 zygote preforking机制
+
+usap：unspecialized app process
+
+zygote会提前产生一定数量的进程usap，等待应用程序去加载代码，相关代码可以参考：
+
+
+```
+//client
+// frameworks\base\core\java\android\os\Process.java
+// frameworks\base\core\java\android\os\ZygoteProcess.java
+ZygoteProcess.zygoteSendArgsAndGetResult
+试图去连接一个usap进程的socket，如果有，则使用usap进程直接加载应用，否则从zygote进行孵化
+
+//server
+// ZygoteServer.java
+// Zygote.java
+1. ZygoteServer.fillUsapPool用于产生usap进程
+2. usap进程执行Zygote.usapMain等待usapPoolSocket的连接
+3. public static final String USAP_POOL_PRIMARY_SOCKET_NAME = "usap_pool_primary";
+4. 打开：setprop persist.device_config.runtime_native.usap_pool_enabled true
+
+```
+
+这个地方有个技术细节：多个usap进程使用的同一个名字的socket name，client端连接的时候选择使用哪个usap进程呢？
+
+```
+main        707       root   24u     unix   0t0      25745 /dev/socket/usap_pool_primary
+main        708       root   24u     unix   0t0      25757 /dev/socket/usap_pool_secondary
+usap32    22465       root   24u     unix   0t0      25757 /dev/socket/usap_pool_secondary
+usap32    22466       root   24u     unix   0t0      25757 /dev/socket/usap_pool_secondary
+usap32    22468       root   24u     unix   0t0      25757 /dev/socket/usap_pool_secondary
+usap32    22470       root   24u     unix   0t0      25757 /dev/socket/usap_pool_secondary
+usap64    22471       root   24u     unix   0t0      25745 /dev/socket/usap_pool_primary
+usap32    22472       root   24u     unix   0t0      25757 /dev/socket/usap_pool_secondary
+usap64    22475       root   24u     unix   0t0      25745 /dev/socket/usap_pool_primary
+usap64    22745       root   24u     unix   0t0      25745 /dev/socket/usap_pool_primary
+usap64    22746       root   24u     unix   0t0      25745 /dev/socket/usap_pool_primary
+usap64    22747       root   24u     unix   0t0      25745 /dev/socket/usap_pool_primary
+```
+
+
+usap方案未来还是可以继续进行扩展的，现在google弄了几个接口：
+
+>handlePreloadPackage可以针对性的预加载一些特殊的包；
+
+未来一个优化思路可能是特化几种不同类型的usap进程，针对不同类型的进程，提前去加载一些东西，如游戏进程等。
+
+## 2.2 iorap预取机制
+
+
+  ![](image/v2-7e7e15b345da9521feb97776708497b2_720w.png)
+
+  附图中有一篇文章对iorap进行了介绍：
+
+1） frameworks/base/startop/iorap
+
+
+
+
+一个java层服务，跟iorapd进行通信；java层主要是通过注册一些应用启动切换和系统相关的事件通知给iorapd：
+
+```
+IorapForwardingService.java
+
+1. 跟iorapd进行连接，binder die重连等处理
+
+2. Listen to App Launch Sequence events from ActivityTaskManager
+
+3. 注册backgrounddexopt事件（BackgroundDexOptService.PackagesUpdatedListener）
+
+4. 实现IorapdJobService，实现idle状态下事件处理
+
+```
+
+2） system/iorap
+
+```
+//iorapd.rc
+用于启动/system/bin/iorapd进程
+
+//system/iorap/src/perfetto
+主要是通过解析ftrace中的两个事件点，记录读写文件的inode
+  auto* ds_config = trace_config.add_data_sources()->mutable_config();
+  ds_config->set_name("linux.ftrace");
+  ds_config->mutable_ftrace_config()->add_ftrace_events(
+      "mm_filemap_add_to_page_cache");
+  ds_config->mutable_ftrace_config()->add_ftrace_events(
+      "mm_filemap_delete_from_page_cache");
+  ds_config->set_target_buffer(0);
+
+//system/iorap/src/compiler
+将采取的PerfettoTraceProto trace数据，汇总转为一个db文件。
+
+//system/iorap/src/db
+1. 使用sqlite3实现的一个数据库
+2. tracefile /data/misc/iorapd
+
+//system/iorap/src/inode2filename
+将inode转为真正filename的功能
+
+//system/iorap/src/prefetcher
+实现文件预取的功能，三类预取：fadvise，mmap(locked), mlock
+
+//system/iorap/src/manager
+iorapd主要实现逻辑，事件驱动的一个模型，跟java层服务进行互动，并且驱动各个模块进行工作。
+
+```
+
+google这个功能实现模块划分的职责是清晰的，只是感觉实现有些复杂。
+
+问题1：依赖ftrace去分析哪些文件什么的。google是基于通用的linux实现去做的，如果在内核里面能够针对性的做一些模块，也许实现起来负载小些；
+
+问题2：预取的时机稍微晚一些，如果结合应用启动预判断，提前预取可能会好。
+
+
+##  2.3 view_compiler编译机制
+
+
+1）view compiler编译器
+
+[https://android.googlesource.com/platform/frameworks/base/+/master/startop/view_compiler/](https://android.googlesource.com/platform/frameworks/base/+/master/startop/view_compiler/)
+
+```
+It will take a layout XML file and produce a CompiledLayout.java file with a specialized layout inflation function.
+
+To use it, let's assume you had a layout in my_layout.xml and your app was in the Java language package com.example.myapp.
+
+```
+
+目前是一个早期测试版本，后续Google的目标应该是瞄准自动化的。
+
+2）installd在安装应用的时候，会调用这个工具
+
+```
+PackageManagerService.performDexOptUpgrade
+  -> ArtManagerService.compileLayouts
+    -> InstalldNativeService::compileLayouts
+
+```
+
+3)  配置属性
+
+```
+    private static final String PRECOMPILE_LAYOUTS = "pm.precompile_layouts";
+
+```
+
+
+## 2.4 启动分析scripts
+
+1) iorap配套的一些工具
+
+//compiler_ri.py
+Compile systrace file into TraceFile.pb
+
+//collector.py
+Runs an application, causes an iorap trace to be collected for it,
+and then invokes the iorap compiler to generate a TraceFile.pb.
+
+2) trace_analyzer
+
+将ftrace转化成一个数据库，可以通过数据库sql查询各种指标，也可以基于这个工具开发一些自己的sql语句，用于展示一些结果。
+
+2.5 zygote preload class机制
+
+配置文件：frameworks/base/preloaded-classes
+
+工具：framework/base/tools/preload/
+
+预加载：通过Class.forName显示对class进行初始化，避免on-demand时候再去加载
+```
+framework/base/core/java/com/android/internal/os/ZygoteInit.java
+// Load and explicitly initialize the given class.
+Class.forName(line, true, null);
+```
+
+
+## 参考
+[Android 10] Faster App Launch ,by enabling Zygote preforking](https://forum.xda-developers.com/t/android-10-faster-app-launch-by-enabling-zygote-preforking.4108817/)
+
+[管理启动时间](https://source.android.com/devices/automotive/power/boot_time)
+
+
+[应用启动时间](https://developer.android.com/topic/performance/vitals/launch-time)
+
+
+https://zhuanlan.zhihu.com/p/348852031

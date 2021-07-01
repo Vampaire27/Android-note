@@ -1,0 +1,392 @@
+## AndroidP/Q/R编译系统
+
+### 概述
+
+Android编译环境的初始化过程，在编译环境初始化完成后，我们就可以用m/mm/mmm/make命令编译源代码了。当然，这要求每一个模块都有一个Android.mk文件。Android.mk实际上是一个Makefile脚本，用来描述模块编译信息。Android编译系统通过整合Android.mk文件完成编译过程。
+
+![](image/2020042014005219.png)
+
+
+mmm命令的编译过程，需要依赖会make命令全部模块编译完成，下面使用编译mmm命令分析Android源码的编译过程，如图1所示：
+![](image/2020042014011337.png)
+
+通过上图可以知道mmm命令执行流程，具体可以看下，本文主要研究他的编译原理，感兴趣根据上图追下流程.
+
+Android最初是用 Android.mk 来定义模块的， Android.mk 本质上就是 Makefile。随着 Android 工程越来越大，包含的模块越来越多，以 Makefile 组织的项目编译花费的时间越来越多。google 在 Android 7.0 开始引入了 ninja 编译系统。相对于 make 来说 ninja 在大的项目管理中速度和并行方面有突出的优势，因此 google 采用了 ninja 来取代之前使用的 make。由于 Android.mk 的数量巨大且复杂，不可能把所有的 Android.mk 改写成 ninja 的构建规则，因此 google 搞了个 kati 工具，用于将 Androd.mk 转换成 ninja 的构建规则文件 build.ninja，再使用 ninja 来进行构建工作。
+
+Android 8.0 开始，google 引入了 Android.bp 文件来替代之前的Android.mk 文件，Android.bp 只是纯粹的配置文件，不包括分支、循环等流程控制， 本质上就是一个 json 配置文件。同时还引入 Soong 这个工具，用于将 Android.bp 转换为 ninja 的构建规则文件 build.ninja，再使用 ninja 来进行构建工作。但之前的模块全部是用 Android.mk 来定义的，google 不可能一下子把所有模块都修改成 Android.bp，只能逐步替换。无论是 Android.mk 还是 Android.bp 最后都是转化成 ninja 的构建规则，再进行编译的。Soong、Blueprint、Kati、Ninja之间的关系.
+
+
+![](image/20200420140141709.png)
+
+![](image/2020042014015011.png)
+
+
+## 1.Kati构建编译系统
+```
+<1>.kati是专为Android开发的一个基于Golang和C++的工具，主要功能是把Android中的Android.mk文件转换成 Ninja文件。代码路径是build/kati，编译后的产物是ckati。
+
+Kati代码是开源的，可以把它clone下来，简单分析下它的运行原理,在Android全编译以后，可以使用ninja来编译已经生成的.ninja文件。
+
+<2>.执行编译odex编译命令
+
+```
+
+
+## 2.Blueprint和Soong构建编译系统
+
+    1. Soong、Blueprint
+
+Soong类似于之前的Makefile编译系统的核心，负责提供Android.bp语义解析，并将之转换成Ninja文件。Soong还会编译生成一个androidmk命令，用于将Android.mk文件转换为Android.bp文件，不过这个转换功能仅限于没有分支、循环等流程控制的Android.mk才有效。
+
+Blueprint是生成、解析Android.bp的工具，是Soong的一部分。Soong负责Android编译而设计的工具，而Blueprint只是解析文件格式，Soong解析内容的具体含义。Blueprint和Soong都是由Golang写的项目，从Android 7.0，prebuilts/go/目录下新增Golang所需的运行环境，在编译时使用。
+
+因为Soong和Blueprint是Google谷歌为Android.bp特别定制的工具，所以不要摘出来单独来操作，下面是我编译时通过执行编译命令
+
+```
+#mmm extern/zgj/test_bp
+```
+
+在out目录下会生成3个以.ninja文件,进去查看下是ninja语法,通过ninja命令来编译.
+```
+build-sdm660_64-_test_bp_Android.mk-cleanspec.ninja
+build-sdm660_64-_test_bp_Android.mk-cleanspec.ninja
+combined-sdm660_64-_test_bp_Android.mk.ninja
+```
+
+具体运行可以分为4个步骤:
+
+```
+第一步：进入Makefile执行
+
+#out/soong_ui --make-mode -j32 MODULES-IN-external-zgj-test_bp
+
+第二步：如果没有build.ninja，则生成
+
+#prebuilts/build-tools/linux-x86/bin/ckati --ninja --ninja_dir=out --ninja_suffix=-sdm660_64-_external_zgj_test_bp_Android.mk-cleanspec --regen --detect_android_echo --color_warnings --gen_all_targets --werror_find_emulator --use_find_emulator -f build/make/core/cleanbuild.mk BUILDING_WITH_NINJA=true SOONG_MAKEVARS_MK=out/soong/make_vars-sdm660_64.mk
+
+第三步：生成目标ninja
+
+#prebuilts/build-tools/linux-x86/bin/ckati --ninja --ninja_dir=out --ninja_suffix=-sdm660_64-_external_zgj_test_bp_Android.mk --regen --ignore_optional_include=out/%.P --detect_android_echo --color_warnings --gen_all_targets --werror_find_emulator --kati_stats -f build/make/core/main.mk --use_find_emulator BUILDING_WITH_NINJA=true SOONG_ANDROID_MK=out/soong/Android-sdm660_64.mk SOONG_MAKEVARS_MK=out/soong/make_vars-sdm660_64.mk
+
+第四步：编译生成odex
+
+#prebuilts/build-tools/linux-x86/bin/ninja -d keepdepfile MODULES-IN-external-zgj-test_bp -j 32 -f out/combined-sdm660_64-_external_zgj_test_bp_Android.mk.ninja -w dupbuild=err
+
+```
+
+
+
+3.0  Android.bp
+
+Android.bp的出现就是为了替换Android.mk文件。bp跟mk文件不同，它是纯粹的配置，没有分支、循环等流程控制，不能做算数逻辑运算。如果需要控制逻辑，那么只能通过Go语言编写。
+编译android源码后，androidmk工具会生成在：out/soong/host/linux-x86/bin目录下，用于Android.mk转换成Android.bp使用，如下转换命令
+
+```
+#androidmk Android.mk > Android.bp
+```
+
+4.0 Ninja
+
+ninja是一个编译框架，会根据相应的ninja格式的配置文件进行编译，但是ninja文件一般不会手动修改，而是通过将Android.bp文件转换成ninja格文件来编译。
+
+
+
+
+## 环境搭建
+
+下载依赖包
+
+```
+    sudo apt-get install git-core gnupg flex bison gperf build-essential
+    zip curl zlib1g-dev gcc-multilib g+±multilib libc6-dev-i386
+    lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev ccache
+    libgl1-mesa-dev libxml2-utils xsltproc unzip m4 libssl-dev libswitch-perl
+
+```
+
+编译源码的时候可能需要切换jdk
+
+```
+    sudo update-alternatives --config java
+    sudo update-alternatives --config javac
+
+    如果没有将jdk路径添加进系统，需要先添加。
+
+    sudo update-alternatives --install /usr/bin/java java ~/tools/java/jdk1.6.0_45/bin/java 700
+
+    sudo update-alternatives --install /usr/bin/javac javac ~/tools/java/jdk1.6.0_45/bin/javac 700
+
+    sudo update-alternatives --install /usr/bin/jar jar ~/tools/java/jdk1.6.0_45/bin/jar 700
+
+    这里的700是优先级， ~/tools/java/jdk1.6.0_45/bin是自己安装jdk的目录
+
+```
+配置ccache
+```
+ccache是一个编译cache系统，可以加快c/c++代码编译的速度（编译过一次之后）。
+有ccache的情况下，整个android编译的时间从超过1个小时下降到约半个小时。
+配置方法见android网站说明：
+https://source.android.com/source/initializing.html#optimizing-a-build-environment
+上述配置对kernel代码无效。kernel编译使用ccache请参考下述文章：
+https://apuroth.gitbooks.io/android-study/content/20160701.html
+
+    编译安卓P、Q启用ccache方法：
+    sudo apt install ccache
+    vim ~/.bashrc
+    export USE_CCACHE=1
+    source ~/.bashrc
+    ccache -M 100G
+    缓存数据默认保持在~/.ccache，上一行指令可以自己设置缓存的最大值
+
+
+```
+
+
+编译
+
+ * 动态分区
+
+    在android Q 中加入了动态分区，为了在ota的时候能够灵活创建分区和修改分区大小，将system,vendor,odm,product合并成super分区，并在super分区上预留出一定量的free space，这样就可以动态调整这些分区的大小，解决了ota的时候分区不足，以及调整分区的风险.
+
+
+* qssi
+
+  为了配合project treble，将系统与odm相关的解耦，需要单独编译system.img和其他img。而编译systemimage的时候需要lunch qssi，而编译其他分区的时候需要lunch target.
+
+
+  ![](image/20200507174737461.png)
+
+
+  编译
+
+  make命令来进行编译
+  ```
+  source build/envsetup.sh
+
+    编译 system.img
+    lunch qssi-userdebug
+    make target-files-package
+    编译除system.img外的其他img
+    lunch xx-userdebug
+    make target-files-package
+
+  ```
+  高通提供的build.sh脚本进行编译
+  ```
+  编译所有img，包括system和其它img
+  source build/envsetup.sh
+  lunch XX-userdebug
+  ./build.sh dist -j32
+
+  编译system.img，产物在qssi目录下
+  source build/envsetup.sh
+  lunch xx-userdebug
+  ./build.sh dist qssi_only -j32
+
+  编译super.img
+  source build/envsetup.sh
+  lunch xx-userdebug
+  ./build.sh dist merge_only -j32
+
+  编译其它img，例如vendorimage，如果不指定会编译其它所有img，产物在XX目录下
+  source build/envsetup.sh
+  lunch xx-userdebug
+  ./build.sh vendorimage dist target_only -j32
+
+    ```
+
+  ##  动态分区刷机的方法
+
+    ```
+    Q版本将system和vendor分区合并为super分区，无法通过adb reboot bootloader模式单独刷动态分区里面的img，例如system,vendor,product,odm，只能刷super.img和其他的
+    但是fastboot模式下可以单独刷动态分区里面的img
+
+    推荐进入fastboot模式刷机:
+
+    adb reboot fastboot
+    fastboot getvar is-userspace
+    is-userspace: yes
+    Finished. Total time: 0.002s
+    fastboot flash vendor vendor.img
+    fastboot flash system system.img
+    fastboot flash vbmeta vbmeta.img
+    fastboot flash vbmeta_system vbmeta_system.img
+    fastbootd是用户空间的代码，因为动态的逻辑分区只能在应用空间识别
+
+    ```
+
+  ```
+  fastboot刷机出现权限问题，需要将fastboot的所有者属性改成root
+  sudo chown root:root fastboot
+  sudo chmod +s fastboot
+  ```
+
+
+  ## ninja快速编译
+
+  在开发过程中经常遇到make、mm时候特别慢，原因有很多地方
+
+
+* 全部编译的时候需要find所有Android.mk和Android.bp，耗时比较长，导致make时候电脑卡住，不能进行其它操作。
+* 每次source/lunch完成，厂商预装逻辑会动态生成一个app_config.mk，虽然内容不会变化但是会修改时间戳，导致make的时候需要重新生成ninja文件，很烦。
+* 执行真正编译前，build系统需要检查ninja文件是否需要更新？soong环境是否正常？如果不是需要进行soong_ui相关初始化，例如查找全部的Android.mk/Android.bp检查lastModifiedTime，检查microfactory/minibp/soong_ui/soong_build等是否完成，以及动态配置各种config.
+
+
+ ninja编译时不会重新解析mk文件，会使用上次生成的 ninja build 文件，因此比较省时间
+要使用ninja 需要先用make/mm/mmm等编译过一次才行，如果更改了文件目录结构、增删文件、repo sync等操作，或者修改Makefile或Android.bp文件，还需要再重新make一次
+
+
+### Android N:
+
+```
+第一次make的时候系统会将所有的Android.mk 通过kati 转换成 out/build-mido.ninja，然后通过ninja -f out/build-mido.ninja 进行最终编译。
+操作步骤：
+croot
+cp prebuilts/ninja/linux-x86/ninja out/host/linux-x86/bin/ #将ninja 放到export的PATH目录下
+
+ln -sf out/build-$(device).ninja build.ninja # 因为ninja默认执行build.ninja文件，所以通过一个软链接来指定。
+
+ninja // 编译全部，如果不进行上面的ln软链接的，可以手动指定 ninja -f out/build-$(device).ninja 也是同样效果。
+
+ninja services // 单独编译services模块，参数一般是LOCAL_MODULE的名字
+
+```
+
+
+## Android O和R:
+
+```
+第一make的时候系统会将所有Android.mk 通过kati转换成 out/build-sagit.ninja，将所有的Android.bp通过soong转换成 out/soong/build.ninja，并合并到out/combined-$(device).ninja，进行最终编译。
+操作步骤：
+croot
+cp prebuilts/build-tools/linux-x86/bin/ninja out/host/linux-x86/bin/
+cp prebuilts/build-tools/linux-x86/lib64/libjemalloc.so out/host/linux-x86/lib64/
+ln -sf out/combined-$(device).ninja build.ninja
+ninja // 编译全部，支持 -j 8 指定多个线程编译。
+ninja services // 单独编译services模块，参数一般是LOCAL_MODULE的名字
+
+```
+
+这种快速编译最大的好处是，编译单个模块速度快，自动查找编译相关依赖，不会出现mm时提示缺少依赖的问题
+
+
+## Framework快速编译
+
+```
+androidR之前单独编译framework和service命令为:
+
+make -j8 framework
+make -j8 services
+
+androidR命令为:
+
+make -j8 framework-minus-apex
+make -j8 services
+push framework 并删除设备中oat arm arm64 目录
+
+```
+
+
+当前Q编译framework的时间非常久, 编译一次需要10~30分钟, 这样对于我们本地多次修改代码编译调试就效率非常低
+
+ 原理:
+
+只编译少量修改的代码文件, 单独编译到一个jar里, 运行时提前加载它, 覆盖原始的framework.jar的services.jar
+
+不支持的case: (以下类似修改需要更新framework.jar/services.jar)
+
+```
+类继承关系发生改变
+如framework.jar里Canvas继承BaseCanvas, testdebug.jar里修改为Canvas继承TestCanvas, TestCanvas继承BaseCanvas,
+此时testdebug.jar的Canvas.java无法覆盖framework.jar的Canvas.java
+
+```
+
+具体操作:
+
+```
+整编过一次framework.jar和services.jar
+
+这个整编过程耗时挺长, 目前暂无办法跳过, 后续还需改进
+
+只编译修改的或者新加的代码
+
+将quickbuild.zip解压到源码根目录, 将修改的或者新加的代码路径填入Android.bp中
+
+base/core的代码填在testdebug.jar, base/services的代码填在testdebugservices.jar
+
+在quickbuild目录下mm快速编译出的testdebug.jar和testdebugservices.jar, push到framework目录
+
+将testdebug.jar和testdebugservices.jar放入CLASSPATH, 比framework.jar和services.jar提前加载
+
+从手机中pull出init.environ.rc (adb root; adb pull /init.environ.rc .)
+
+修改环境变量, 在framework.jar和services.jar前面分别添加自己的jar, 之后 push 到手机目录/system/etc/init/
+
+BOOTCLASSPATH的/system/framework/framework.jar前面添加/system/framework/testdebug.jar
+
+DEX2OATBOOTCLASSPATH的/system/framework/framework.jar前面添加/system/framework/testdebug.jar
+
+SYSTEMSERVERCLASSPATH的/system/framework/services.jar:前面添加/system/framework/testdebugservices.jar:
+
+```
+
+# 内核快速编译
+
+全编
+
+```
+make showcommands -j6 bootimage > build.log
+gzip -cd out/verbose.log.5.gz | grep "/bin/bash -c" | sed 's/\[.*\/.*\] //g'> build_XXX1.sh
+chmod +x build_XXX1.sh
+./build_XXX1.sh
+
+```
+Android.bp条件编译
+
+  一个基本的雏形如下：
+
+  ```
+  module类型 {
+    name:“module名字”,
+    srcs: [“依赖的源文件路径”]
+}
+
+注意name在整个Android编译系统必须全局唯一
+如以下是一个hello world:
+cc_binary {
+    name: “hello_world”,
+   src: [“main.c”],
+}
+
+cc_binary代表target是一个可执行文件，make hello_world之后在out目录就可以得到名为hello_world的可执行文件
+Android.bp中各种关键字的作用，请参考 Soong 构建系统(https://source.android.com/setup/build)
+
+
+```
+
+```
+由于Android.bp是一个树形结构，不像Makefile是一套拥有完整功能的脚本语言，所以只能实现一些简单的逻辑控制，例如
+
+  ```
+
+
+  ```
+  cc_library {
+    ...
+    srcs: ["generic.cpp"],
+    arch: {
+        arm: {
+            srcs: ["arm.cpp"],
+        },
+        x86: {
+            srcs: ["x86.cpp"],
+        },
+    },
+}
+
+  ```
+
+
+[AndroidP/Q/R编译系统](https://blog.csdn.net/zhzhangnews/article/details/105634037)

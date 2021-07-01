@@ -463,7 +463,127 @@ private Package parseBaseApkCommon(Package pkg, Set<String> acceptedTags, Resour
   ...
 
 
+  6.4
 
+system/vold/Utils.cpp
+```
+status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
+                       const std::string& relative_upper_path, android::base::unique_fd* fuse_fd) {
+    std::string pre_fuse_path(StringPrintf("/mnt/user/%d", user_id));
+    std::string fuse_path(
+            StringPrintf("%s/%s", pre_fuse_path.c_str(), relative_upper_path.c_str()));
+
+    std::string pre_pass_through_path(StringPrintf("/mnt/pass_through/%d", user_id));
+    std::string pass_through_path(
+            StringPrintf("%s/%s", pre_pass_through_path.c_str(), relative_upper_path.c_str()));
+    //begin huzy3 add for app doubleOpen function 202100319
+    mode_t pass_throgh_mode  = 0710;
+    if(user_id == 9876){
+        pass_throgh_mode = 0711;
+    }
+   //ned  huzy3 add for app doubleOpen function 202100319
+
+    // Ensure that /mnt/user is 0700. With FUSE, apps don't need access to /mnt/user paths directly.
+    // Without FUSE however, apps need /mnt/user access so /mnt/user in init.rc is 0755 until here
+    auto result = PrepareDir("/mnt/user", 0750, AID_ROOT, AID_MEDIA_RW);
+    if (result != android::OK) {
+        PLOG(ERROR) << "Failed to prepare directory /mnt/user";
+        return -1;
+    }
+
+    // Shell is neither AID_ROOT nor AID_EVERYBODY. Since it equally needs 'execute' access to
+    // /mnt/user/0 to 'adb shell ls /sdcard' for instance, we set the uid bit of /mnt/user/0 to
+    // AID_SHELL. This gives shell access along with apps running as group everybody (user 0 apps)
+    // These bits should be consistent with what is set in zygote in
+    // com_android_internal_os_Zygote#MountEmulatedStorage on volume bind mount during app fork
+    result = PrepareDir(pre_fuse_path, 0710, user_id ? AID_ROOT : AID_SHELL,
+                             multiuser_get_uid(user_id, AID_EVERYBODY));
+    if (result != android::OK) {
+        PLOG(ERROR) << "Failed to prepare directory " << pre_fuse_path;
+        return -1;
+    }
+
+    result = PrepareDir(fuse_path, 0700, AID_ROOT, AID_ROOT);
+    if (result != android::OK) {
+        PLOG(ERROR) << "Failed to prepare directory " << fuse_path;
+        return -1;
+    }
+   //begin huzy3 add for app doubleOpen function 202100319
+    result = PrepareDir(pre_pass_through_path, pass_throgh_mode, AID_ROOT, AID_MEDIA_RW);
+    //end
+    if (result != android::OK) {
+        PLOG(ERROR) << "Failed to prepare directory " << pre_pass_through_path;
+        return -1;
+    }
+    //begin huzy3 add for app doubleOpen function 202100319
+    result = PrepareDir(pass_through_path, pass_throgh_mode, AID_ROOT, AID_MEDIA_RW);
+    //end
+
+    if (result != android::OK) {
+        PLOG(ERROR) << "Failed to prepare directory " << pass_through_path;
+        return -1;
+    }
+
+    if (relative_upper_path == "emulated") {
+        std::string linkpath(StringPrintf("/mnt/user/%d/self", user_id));
+        result = PrepareDir(linkpath, 0755, AID_ROOT, AID_ROOT);
+        if (result != android::OK) {
+            PLOG(ERROR) << "Failed to prepare directory " << linkpath;
+            return -1;
+        }
+        linkpath += "/primary";
+        Symlink("/storage/emulated/" + std::to_string(user_id), linkpath);
+
+        std::string pass_through_linkpath(StringPrintf("/mnt/pass_through/%d/self", user_id));
+         //begin huzy3 add for app doubleOpen function 202100319
+        result = PrepareDir(pass_through_linkpath, pass_throgh_mode, AID_ROOT, AID_MEDIA_RW);
+        //end
+        if (result != android::OK) {
+            PLOG(ERROR) << "Failed to prepare directory " << pass_through_linkpath;
+            return -1;
+        }
+        pass_through_linkpath += "/primary";
+        Symlink("/storage/emulated/" + std::to_string(user_id), pass_through_linkpath);
+    }
+
+    // Open fuse fd.
+    fuse_fd->reset(open("/dev/fuse", O_RDWR | O_CLOEXEC));
+    if (fuse_fd->get() == -1) {
+        PLOG(ERROR) << "Failed to open /dev/fuse";
+        return -1;
+    }
+
+    // Note: leaving out default_permissions since we don't want kernel to do lower filesystem
+    // permission checks before routing to FUSE daemon.
+    const auto opts = StringPrintf(
+        "fd=%i,"
+        "rootmode=40000,"
+        "allow_other,"
+        "user_id=0,group_id=0,",
+        fuse_fd->get());
+
+    result = TEMP_FAILURE_RETRY(mount("/dev/fuse", fuse_path.c_str(), "fuse",
+                                      MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME | MS_LAZYTIME,
+                                      opts.c_str()));
+    if (result != 0) {
+        PLOG(ERROR) << "Failed to mount " << fuse_path;
+        return -errno;
+    }
+
+    if (IsSdcardfsUsed()) {
+        std::string sdcardfs_path(
+                StringPrintf("/mnt/runtime/full/%s", relative_upper_path.c_str()));
+
+        LOG(INFO) << "Bind mounting " << sdcardfs_path << " to " << pass_through_path;
+        return BindMount(sdcardfs_path, pass_through_path);
+    } else {
+        LOG(INFO) << "Bind mounting " << absolute_lower_path << " to " << pass_through_path;
+        return BindMount(absolute_lower_path, pass_through_path);
+    }
+}
+
+
+```
 
   7.键盘共享问题
 

@@ -34,3 +34,26 @@ fastboot reboot  //重启
   <string name="app_profileUser_vx">微信 双开/string>
 
   <string name="app_profileUser_tb">淘宝 双开/string>
+
+  * The matrix provided is an affine color transformation of the following form:
+*
+* |r.r r.g r.b 0|
+* |g.r g.g g.b 0|
+* |b.r b.g b.b 0|
+* |Tr  Tg  Tb  1|
+*
+
+色温值
+
+* This matrix must be provided in row-major form:
+*
+* {r.r, r.g, r.b, 0, g.r, ...}.
+*
+* Given a matrix of this form and an input color [R_in, G_in, B_in],
+* the input color must first be converted to linear space
+* [R_linear, G_linear, B_linear], then the output linear color
+* [R_out_linear, G_out_linear, B_out_linear] will be:
+*
+* R_out_linear = R_linear * r.r + G_linear * g.r + B_linear * b.r + Tr
+* G_out_linear = R_linear * r.g + G_linear * g.g + B_linear * b.g + Tg
+* B_out_linear = R_linear * r.b + G_linear * g.b + B_linear * b.b + Tb
