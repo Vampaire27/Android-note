@@ -410,7 +410,7 @@ Container[1] - container uts.nodename: [cizixs007]!
 root@cizixs007:~/code/namespace# ls -l /proc/$$/ns/pid
 lrwxrwxrwx 1 root root 0 Aug 28 16:08 /proc/1/ns/pid -> pid:[4026531836]
 ```
-
+d
 可以发现，容器内部 PID namespace 文件的 inode 不同，说明进入了不同的 PID namespace。另外容器内部第一个进程的 pid 是 1，而父进程的 pid 是 5957，说明 PID namespace 中进程号是独立的，重新从 1 开始分配。
 
 NOTE：如果在容器中运行 ps aux 命令，还是能看到主机上所有的进程信息，那是不是 PID namespace 隔离程度不够呢？并不是！ps aux 是从 /proc 文件中读取并展示进程信息的，这个特殊的目录并不属于 PID namespace 隔离的一部分，而是属于下面要讲到的 Mount namespace。默认情况下，容器会集成父进程的 namespace，所以 /proc 中还是父进程的信息，接下来我们会讲到解决方案。

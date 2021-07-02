@@ -14,3 +14,166 @@ service surfaceflinger /system/bin/surfaceflinger
 
 
 ```
+
+
+## Cgroup 抽象层
+
+Android 10 包含一个 Cgroup 抽象层和一些任务配置文件，开发者可以使用它们来描述一系列可应用到线程或进程的限制。系统使用配置文件选择如何利用可用的 Cgroup 应用限制，并且可以更改底层 Cgroup 功能集，而不会影响较高的软件层
+
+### 关于控制组 (Cgroup)
+
+控制组提供一种机制，可将任务集（进程、线程及其所有未来的子级）聚合/分区到具有专门行为的层级组中。Android 使用 Cgroup 控制和考量 CPU 和内存等系统资源。
+
+* 在 Android 9 及更低版本中，可用的 Cgroup 集及其装载点和版本在 init.rc 初始化脚本中进行描述，且（假设）可以更改。Android 框架的设定是一组特定的 Cgroup 存在于特定位置，并且具有特定版本和子组层次结构，因此（实际上）无法随意选择下一个 Cgroup 版本或更改 Cgroup 层次结构以使用新功能。
+
+* 在 Android 10 中：
+
+  Cgroup 设置使用 cgroups.json 文件进行描述（以前通过 init.rc 初始化脚本完成），并且所有 Cgroup 均会在初始化过程的 early-init 阶段之前装载。
+任务配置文件提供了一种抽象概念，将必需的功能与该功能的实现方式分离。配置文件使用 task_profiles.json 文件描述，Android 框架可以使用新的 SetTaskProfiles 和 SetProcessProfiles API 将这些配置文件应用到进程或线程。
+
+  为实现向后兼容性，旧版 set_cpuset_policy、set_sched_policy 和 get_sched_policy 函数提供相同的 API，但其实现修改为使用任务配置文件。原始设备制造商 (OEM)、SoC 和运营商合作伙伴可以使用旧版 API，也可以直接使用任务配置文件。其他 Cgroup 仍然可以通过 init.rc 初始化脚本装载，供应商代码可以像以前一样使用它们；但是，如果 Android 框架需要识别并使用这些新的 Cgroup，就应在 cgroups.json 文件中予以描述，并在 task_profiles.json 文件中定义新的任务配置文件。
+
+
+## Cgroup 描述文件
+
+Cgroup 在 cgroups.json 文件（位于 <ANDROID_BUILD_TOP>/system/core/libprocessgroup/profiles/ 下）中描述。各个控制器在子部分中描述，至少应具有一个名称和装载路径（模式、UID 和 GID 属性是可选项）。
+
+cgroups.json 文件示例：
+
+```
+{
+  "Cgroups": [
+    {
+      "Controller": "cpu",
+      "Path": "/dev/cpuctl",
+      "Mode": "0755",
+      "UID": "system",
+      "GID": "system"
+    },
+    {
+      "Controller": "cpuacct",
+      "Path": "/acct",
+      "Mode": "0555"
+    }
+}
+
+```
+此文件由 init 进程在 early-init 阶段之前解析，Cgroup 装载在指定位置。Cgroup 装载位置可以在稍后使用 CgroupGetControllerPath API 函数获取。
+
+## 任务配置文件
+
+ 任务配置文件和属性在 task_profiles.json 文件（位于 <ANDROID_BUILD_TOP>/system/core/libprocessgroup/profiles/ 下）中描述。配置文件描述了需应用到进程或线程的一组特定操作。这组操作与一个配置文件名称相关联，后者在 SetTaskProfiles 和 SetProcessProfiles 调用中用于调用配置文件操作。支持的配置文件操作包括 SetTimerSlack、SetAttribute 和 JoinCgroup。
+
+task_profiles.json 文件示例：
+```
+{
+  "Attributes": [
+    {
+      "Name": "MemSoftLimit",
+      "Controller": "memory",
+      "File": "memory.soft_limit_in_bytes"
+    },
+    {
+      "Name": "MemSwappiness",
+      "Controller": "memory",
+      "File": "memory.swappiness"
+    }
+  ],
+  "Profiles": [
+    {
+      "Name": "MaxPerformance",
+      "Actions" : [
+        {
+          "Name" : "JoinCgroup",
+          "Params" :
+          {
+            "Controller": "schedtune",
+            "Path": "top-app"
+          }
+        }
+      ]
+    },
+    {
+      "Name": "TimerSlackHigh",
+      "Actions" : [
+        {
+          "Name" : "SetTimerSlack",
+          "Params" :
+          {
+            "Slack": "40000000"
+          }
+        }
+      ]
+    },
+    {
+      "Name": "LowMemoryUsage",
+      "Actions" : [
+        {
+          "Name" : "SetAttribute",
+          "Params" :
+          {
+            "Name" : "MemSoftLimit",
+            "Value" : "16MB"
+          }
+        },
+        {
+          "Name" : "SetAttribute",
+          "Params" :
+          {
+            "Name" : "MemSwappiness",
+            "Value" : "150"
+
+          }
+        }
+      ]
+    }
+  ]
+}
+
+```
+
+属性用于为特定 Cgroup 文件命名，仅当框架需要直接访问相应文件且无法使用任务配置文件抽象访问时，才应使用属性。在所有其他情况下，均应使用任务配置文件，因为它们能更好地分离必需的行为与其实现详情。
+
+## 对现有 API 的更改
+
+Android 10 保留了函数 set_cpuset_policy、set_sched_policy 和 get_sched_policy，并且没有对 API 进行任何更改；但是，Android 10 将这些函数移到了 libprocessgroup 中，libprocessgroup 现在包含所有与 Cgroup 相关的功能。
+
+cutils/sched_policy.h 标头仍然存在且可以进行添加，但它只包含一个新的 processgroup/sched_policy.h 标头，因此所有新代码都应直接包含 processgroup/sched_policy.h。
+
+使用上述任何函数的模块应该将 libprocessgroup 库上的依赖项添加到其 makefile 中。如果模块没有使用 libcutils 中的其他功能，应该从 makefile 中移除对 libcutils 库的依赖项。
+
+
+
+## Task profiles API
+
+以下私有 API 在 processgroup/processgroup.h 中引入并定义：
+
+* bool SetTaskProfiles(int tid, const std::vector<std::string>& profiles)
+
+  将 profiles 中指定的任务配置文件应用于由其线程 ID 使用 tid 参数指定的线程。
+
+* bool SetProcessProfiles(uid_t uid, pid_t pid, const std::vector<std::string>& profiles)
+
+  将 profiles 中指定的任务配置文件应用于由其用户 ID 和进程 ID 使用 uid 和 pid 参数指定的进程。
+
+* bool CgroupGetControllerPath(const std::string& cgroup_name, std::string* path)
+
+  返回 cgroup_name 指定的 Cgroup 控制器是否存在，并将 path 变量设置为该 Cgroup 的根。
+
+*  bool CgroupGetAttributePath(const std::string& attr_name, std::string* path)
+
+   返回 attr_name 指定的配置文件属性是否存在，并将 path 变量设置为与该配置文件属性相关联的文件的路径。
+
+* bool CgroupGetAttributePathForTask(const std::string& attr_name, int tid, std::string* path)
+
+  返回 attr_name 指定的配置文件属性是否存在，并将 path 变量设置为与该配置文件属性以及由其线程 ID 使用 tid 参数指定的线程相关联的文件的路径。
+
+* bool UsePerAppMemcg()
+
+  返回系统是否配置为使用应用级别内存 Cgroup。
+
+
+
+
+
+[Cgroup 抽象层](https://source.android.com/devices/tech/perf/cgroups?hl=zh-cn)

@@ -1,0 +1,121 @@
+新项目，Android Q，按照之前的惯例，在配置blkio的前后台weight比例。
+
+今天在验证效果时发现，/bg分组下的tasks为空——即表示没有任何task被移入此组。
+
+第一反应是cgroup的blkio没有生效，但是在ls -al /dev/blkio查看后发现，存在一个我并没有创建的目录（分组）：/dev/blkio/background：
+
+```
+XXX:/ $ ls -al dev/blkio/
+total 0
+drwxr-xr-x  3 root   system    0 2019-09-29 10:31 .
+drwxr-xr-x 21 root   root   4640 2019-09-29 10:31 ..
+drwxr-xr-x  2 system system    0 2019-09-29 10:31 background
+drwxr-xr-x  2 system system    0 2019-09-29 10:31 bg
+-rw-r--r--  1 root   root      0 2019-09-29 10:31 blkio.group_idle
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_merged
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_merged_recursive
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_queued
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_queued_recursive
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_service_bytes
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_service_bytes_recursive
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_service_time
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_service_time_recursive
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_serviced
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_serviced_recursive
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_wait_time
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.io_wait_time_recursive
+-rw-r--r--  1 root   root      0 2019-09-29 11:27 blkio.leaf_weight
+-rw-r--r--  1 root   root      0 2019-09-29 11:27 blkio.leaf_weight_device
+--w-------  1 root   root      0 2019-09-29 11:27 blkio.reset_stats
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.sectors
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.sectors_recursive
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.time
+-r--r--r--  1 root   root      0 2019-09-29 11:27 blkio.time_recursive
+-rw-r--r--  1 root   system    0 2019-09-29 10:31 blkio.weight
+-rw-r--r--  1 root   root      0 2019-09-29 11:27 blkio.weight_device
+-rw-r--r--  1 root   root      0 2019-09-29 11:27 cgroup.clone_children
+-rw-r--r--  1 root   root      0 2019-09-29 11:27 cgroup.procs
+-r--r--r--  1 root   root      0 2019-09-29 11:27 cgroup.sane_behavior
+-rw-r--r--  1 root   root      0 2019-09-29 11:27 notify_on_release
+-rw-r--r--  1 root   root      0 2019-09-29 11:27 release_agent
+-rw-rw-r--  1 root   system    0 2019-09-29 10:31 tasks
+
+```
+查看background分组中的tasks发现有大量task号，且在动态变动：
+```
+XXX:/ $ cat dev/blkio/background/tasks | wc -l
+339
+XXX:/ $ cat dev/blkio/background/tasks | wc -l
+315
+```
+
+基本确定Android Q上的AMS与LMKD在修改进程优先级时控制前后台blkio.weight的分组已经从以前的/与/bg，变更为了/与/background。
+
+为了进一步确认这一点，开始跟代码。
+
+发现sched_policy.cpp中的set_cpuset_policy函数实现变化较大：
+
+```
+int set_cpuset_policy(int tid, SchedPolicy policy) {
+    if (tid == 0) {
+        tid = GetThreadId();
+    }
+    policy = _policy(policy);
+
+    switch (policy) {
+        case SP_BACKGROUND:
+            return SetTaskProfiles(tid,
+                                   {"HighEnergySaving", "ProcessCapacityLow", "LowIoPriority",
+                                    "TimerSlackHigh"},
+                                   true)
+                           ? 0
+                           : -1;
+        case SP_FOREGROUND:
+        case SP_AUDIO_APP:
+        case SP_AUDIO_SYS:
+            return SetTaskProfiles(tid,
+                                   {"HighPerformance", "ProcessCapacityHigh", "HighIoPriority",
+                                    "TimerSlackNormal"},
+                                   true)
+                           ? 0
+                           : -1;
+        case SP_TOP_APP:
+            return SetTaskProfiles(tid,
+                                   {"MaxPerformance", "ProcessCapacityMax", "MaxIoPriority",
+                                    "TimerSlackNormal"},
+                                   true)
+                           ? 0
+                           : -1;
+        case SP_SYSTEM:
+            return SetTaskProfiles(tid, {"ServiceCapacityLow", "TimerSlackNormal"}, true) ? 0 : -1;
+        case SP_RESTRICTED:
+            return SetTaskProfiles(tid, {"ServiceCapacityRestricted", "TimerSlackNormal"}, true)
+                           ? 0
+                           : -1;
+        default:
+            break;
+    }
+
+    return 0;
+}
+```
+
+SetTaskProfiles为配置文件，具体定义在system/core/libprocessgroup/profiles/task_profiles.json，比如LowIoPriority定义则为：
+
+```
+{
+  "Name": "LowIoPriority",
+  "Actions": [
+    {
+      "Name": "JoinCgroup",
+      "Params":
+      {
+        "Controller": "blkio",
+        "Path": "background"
+      }
+    }
+  ]
+},
+```
+
+此处真相大白。
